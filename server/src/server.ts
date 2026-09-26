@@ -16,6 +16,7 @@ const app = await buildApp({
   database,
   authProvider,
   authStore: database,
+  deviceStore: database,
   logger: createLoggerOptions(environment.LOG_LEVEL),
 });
 

@@ -11,8 +11,18 @@ import {
 import type {
   AccountRecord,
   AuthStore,
+  DeviceRecord,
+  DeviceStore,
   ProfilePatch,
+  RegisterDeviceInput,
+  RegisterDeviceResult,
+  RevokeDeviceInput,
+  RevokeDeviceResult,
 } from '../src/database.js';
+import {
+  DeviceConflictError,
+  IdempotencyKeyReusedError,
+} from '../src/errors.js';
 
 export class FakeAuthProvider implements AuthProvider {
   readonly #access = new Map<string, VerifiedIdentity>();
@@ -161,5 +171,172 @@ export class FakeAuthStore implements AuthStore {
     const account = this.#accounts.get(accountId);
     if (!account) throw new Error('Fake account does not exist');
     return account;
+  }
+}
+
+interface FakeDeviceEntry {
+  accountId: string;
+  device: DeviceRecord;
+  publicKey: Buffer;
+}
+
+interface FakeIdempotencyEntry {
+  hash: string;
+  status: number;
+  resourceId: string;
+}
+
+interface FakeSessionEntry {
+  accountId: string;
+  deviceId: string;
+  revokedAt: string | null;
+}
+
+export class FakeDeviceStore implements DeviceStore {
+  readonly #devices = new Map<string, FakeDeviceEntry>();
+  readonly #idempotency = new Map<string, FakeIdempotencyEntry>();
+  // Mirrors echo.sessions so tests can prove revocation stays account-scoped.
+  readonly #sessions = new Map<string, FakeSessionEntry>();
+
+  #identity(accountId: string, scope: string, key: string): string {
+    return `${accountId}:${scope}:${key}`;
+  }
+
+  #replay(
+    accountId: string,
+    scope: string,
+    key: string,
+    requestHash: Buffer,
+  ): FakeIdempotencyEntry | null {
+    const entry = this.#idempotency.get(this.#identity(accountId, scope, key));
+    if (!entry) return null;
+    if (entry.hash !== requestHash.toString('hex'))
+      throw new IdempotencyKeyReusedError();
+    return entry;
+  }
+
+  registerDevice({
+    accountId,
+    registration,
+    idempotencyKey,
+    requestHash,
+  }: RegisterDeviceInput): Promise<RegisterDeviceResult> {
+    const replay = this.#replay(
+      accountId,
+      'device.register',
+      idempotencyKey,
+      requestHash,
+    );
+    if (replay) {
+      const existing = this.#devices.get(replay.resourceId);
+      if (!existing) throw new Error('Idempotent device replay failed');
+      return Promise.resolve({
+        device: existing.device,
+        status: replay.status === 201 ? 201 : 200,
+        replayed: true,
+      });
+    }
+
+    const existing = this.#devices.get(registration.deviceId);
+    if (existing && existing.accountId !== accountId)
+      throw new DeviceConflictError();
+
+    const now = new Date().toISOString();
+    let device: DeviceRecord;
+    let status: 200 | 201;
+    if (existing) {
+      status = 200;
+      device = {
+        ...existing.device,
+        platform: registration.platform,
+        appVersion: registration.appVersion,
+        lastSeenAt: now,
+        revokedAt: null,
+      };
+    } else {
+      status = 201;
+      device = {
+        id: registration.deviceId,
+        platform: registration.platform,
+        appVersion: registration.appVersion,
+        createdAt: now,
+        lastSeenAt: now,
+        revokedAt: null,
+      };
+    }
+    this.#devices.set(registration.deviceId, {
+      accountId,
+      device,
+      publicKey: registration.publicKey,
+    });
+    this.#idempotency.set(
+      this.#identity(accountId, 'device.register', idempotencyKey),
+      { hash: requestHash.toString('hex'), status, resourceId: device.id },
+    );
+    return Promise.resolve({ device, status, replayed: false });
+  }
+
+  revokeDevice({
+    accountId,
+    deviceId,
+    idempotencyKey,
+    requestHash,
+  }: RevokeDeviceInput): Promise<RevokeDeviceResult> {
+    const replay = this.#replay(
+      accountId,
+      'device.revoke',
+      idempotencyKey,
+      requestHash,
+    );
+    if (replay) return Promise.resolve({ replayed: true });
+
+    const existing = this.#devices.get(deviceId);
+    if (existing && existing.accountId === accountId) {
+      const now = new Date().toISOString();
+      if (existing.device.revokedAt === null) {
+        this.#devices.set(deviceId, {
+          ...existing,
+          device: { ...existing.device, revokedAt: now, lastSeenAt: now },
+        });
+      }
+      // Only the owning account's sessions for this device are revoked. A
+      // foreign or unknown device revokes nothing.
+      for (const [sessionId, session] of this.#sessions) {
+        if (
+          session.accountId === accountId &&
+          session.deviceId === deviceId &&
+          session.revokedAt === null
+        ) {
+          this.#sessions.set(sessionId, { ...session, revokedAt: now });
+        }
+      }
+    }
+    this.#idempotency.set(
+      this.#identity(accountId, 'device.revoke', idempotencyKey),
+      { hash: requestHash.toString('hex'), status: 204, resourceId: deviceId },
+    );
+    return Promise.resolve({ replayed: false });
+  }
+
+  devicesForAccount(accountId: string): DeviceRecord[] {
+    return [...this.#devices.values()]
+      .filter((entry) => entry.accountId === accountId)
+      .map((entry) => entry.device);
+  }
+
+  device(deviceId: string): DeviceRecord | undefined {
+    return this.#devices.get(deviceId)?.device;
+  }
+
+  addSession(sessionId: string, accountId: string, deviceId: string): void {
+    this.#sessions.set(sessionId, { accountId, deviceId, revokedAt: null });
+  }
+
+  session(
+    sessionId: string,
+  ):
+    | { accountId: string; deviceId: string; revokedAt: string | null }
+    | undefined {
+    return this.#sessions.get(sessionId);
   }
 }

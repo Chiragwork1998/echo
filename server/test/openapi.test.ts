@@ -23,6 +23,8 @@ describe('OpenAPI contract', () => {
       '/v1/configuration',
       '/v1/health',
       '/v1/me',
+      '/v1/me/devices',
+      '/v1/me/devices/{deviceId}',
     ]);
     expect(document.paths?.['/v1/health']?.get?.operationId).toBe('getHealth');
     expect(document.paths?.['/v1/configuration']?.get?.operationId).toBe(

@@ -1,6 +1,11 @@
 import pg from 'pg';
 
 import type { VerifiedIdentity } from './auth.js';
+import {
+  DeviceConflictError,
+  IdempotencyInProgressError,
+  IdempotencyKeyReusedError,
+} from './errors.js';
 
 const { Pool } = pg;
 
@@ -41,6 +46,57 @@ export interface AuthStore {
   updateAccount(accountId: string, patch: ProfilePatch): Promise<AccountRecord>;
 }
 
+export type DevicePlatform = 'ios' | 'android';
+
+export interface DeviceRegistration {
+  deviceId: string;
+  publicKey: Buffer;
+  platform: DevicePlatform;
+  appVersion: string;
+}
+
+export interface DeviceRecord {
+  id: string;
+  platform: DevicePlatform;
+  appVersion: string;
+  createdAt: string;
+  lastSeenAt: string;
+  revokedAt: string | null;
+}
+
+export interface RegisterDeviceInput {
+  accountId: string;
+  registration: DeviceRegistration;
+  idempotencyKey: string;
+  requestHash: Buffer;
+}
+
+export interface RegisterDeviceResult {
+  device: DeviceRecord;
+  status: 200 | 201;
+  replayed: boolean;
+}
+
+export interface RevokeDeviceInput {
+  accountId: string;
+  deviceId: string;
+  idempotencyKey: string;
+  requestHash: Buffer;
+}
+
+export interface RevokeDeviceResult {
+  replayed: boolean;
+}
+
+/**
+ * Device registration is always account-scoped. Callers may only pass the
+ * account id derived from the authenticated identity.
+ */
+export interface DeviceStore {
+  registerDevice(input: RegisterDeviceInput): Promise<RegisterDeviceResult>;
+  revokeDevice(input: RevokeDeviceInput): Promise<RevokeDeviceResult>;
+}
+
 const accountColumns = `
   a.id,
   a.display_name AS "displayName",
@@ -51,7 +107,7 @@ const accountColumns = `
 
 export function createPostgresDependency(
   connectionString: string,
-): DatabaseDependency & AuthStore {
+): DatabaseDependency & AuthStore & DeviceStore {
   const pool = new Pool({
     connectionString,
     // Keep each autoscaled Vercel instance from exhausting the Supabase pool.
@@ -204,6 +260,190 @@ export function createPostgresDependency(
       const account = result.rows[0];
       if (!account) throw new Error('Account update failed');
       return account;
+    },
+    async registerDevice({
+      accountId,
+      registration,
+      idempotencyKey,
+      requestHash,
+    }) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const begun = await client.query(
+          `INSERT INTO echo.idempotency_records
+             (account_id, scope, idempotency_key, request_hash, state, expires_at)
+           VALUES ($1, 'device.register', $2, $3, 'processing', now() + interval '1 day')
+           ON CONFLICT (account_id, scope, idempotency_key) DO NOTHING
+           RETURNING id`,
+          [accountId, idempotencyKey, requestHash],
+        );
+        if ((begun.rowCount ?? 0) === 0) {
+          const existing = await client.query<{
+            requestHash: Buffer;
+            state: string;
+            responseStatus: number | null;
+            resourceId: string | null;
+          }>(
+            `SELECT request_hash AS "requestHash", state,
+                    response_status AS "responseStatus",
+                    resource_id AS "resourceId"
+               FROM echo.idempotency_records
+              WHERE account_id = $1 AND scope = 'device.register'
+                AND idempotency_key = $2
+              FOR UPDATE`,
+            [accountId, idempotencyKey],
+          );
+          const record = existing.rows[0];
+          if (!record) throw new IdempotencyInProgressError();
+          if (!record.requestHash.equals(requestHash)) {
+            throw new IdempotencyKeyReusedError();
+          }
+          if (
+            record.state !== 'complete' ||
+            record.responseStatus === null ||
+            record.resourceId === null
+          ) {
+            throw new IdempotencyInProgressError();
+          }
+          const replay = await client.query<DeviceRecord>(
+            `SELECT id, platform, app_version AS "appVersion",
+                    created_at AS "createdAt",
+                    last_seen_at AS "lastSeenAt",
+                    revoked_at AS "revokedAt"
+               FROM echo.devices
+              WHERE account_id = $1 AND id = $2`,
+            [accountId, record.resourceId],
+          );
+          const device = replay.rows[0];
+          if (!device) throw new Error('Idempotent device replay failed');
+          await client.query('COMMIT');
+          return {
+            device,
+            status: record.responseStatus === 201 ? 201 : 200,
+            replayed: true,
+          };
+        }
+
+        const upsert = await client.query<DeviceRecord & { created: boolean }>(
+          `INSERT INTO echo.devices AS d
+             (id, account_id, public_key, platform, app_version)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (id) DO UPDATE
+              SET public_key = EXCLUDED.public_key,
+                  platform = EXCLUDED.platform,
+                  app_version = EXCLUDED.app_version,
+                  last_seen_at = now(),
+                  revoked_at = NULL
+            WHERE d.account_id = EXCLUDED.account_id
+           RETURNING id, platform, app_version AS "appVersion",
+                     created_at AS "createdAt",
+                     last_seen_at AS "lastSeenAt",
+                     revoked_at AS "revokedAt",
+                     (xmax = 0) AS created`,
+          [
+            registration.deviceId,
+            accountId,
+            registration.publicKey,
+            registration.platform,
+            registration.appVersion,
+          ],
+        );
+        const row = upsert.rows[0];
+        if (!row) {
+          throw new DeviceConflictError();
+        }
+        const status = row.created ? 201 : 200;
+        await client.query(
+          `UPDATE echo.idempotency_records
+              SET state = 'complete', response_status = $4, resource_id = $5
+            WHERE account_id = $1 AND scope = 'device.register'
+              AND idempotency_key = $2 AND request_hash = $3`,
+          [accountId, idempotencyKey, requestHash, status, row.id],
+        );
+        await client.query('COMMIT');
+        return {
+          device: {
+            id: row.id,
+            platform: row.platform,
+            appVersion: row.appVersion,
+            createdAt: row.createdAt,
+            lastSeenAt: row.lastSeenAt,
+            revokedAt: row.revokedAt,
+          },
+          status,
+          replayed: false,
+        };
+      } catch (error: unknown) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    },
+    async revokeDevice({ accountId, deviceId, idempotencyKey, requestHash }) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const begun = await client.query(
+          `INSERT INTO echo.idempotency_records
+             (account_id, scope, idempotency_key, request_hash, state, expires_at)
+           VALUES ($1, 'device.revoke', $2, $3, 'processing', now() + interval '1 day')
+           ON CONFLICT (account_id, scope, idempotency_key) DO NOTHING
+           RETURNING id`,
+          [accountId, idempotencyKey, requestHash],
+        );
+        if ((begun.rowCount ?? 0) === 0) {
+          const existing = await client.query<{
+            requestHash: Buffer;
+            state: string;
+          }>(
+            `SELECT request_hash AS "requestHash", state
+               FROM echo.idempotency_records
+              WHERE account_id = $1 AND scope = 'device.revoke'
+                AND idempotency_key = $2
+              FOR UPDATE`,
+            [accountId, idempotencyKey],
+          );
+          const record = existing.rows[0];
+          if (!record) throw new IdempotencyInProgressError();
+          if (!record.requestHash.equals(requestHash)) {
+            throw new IdempotencyKeyReusedError();
+          }
+          if (record.state !== 'complete') {
+            throw new IdempotencyInProgressError();
+          }
+          await client.query('COMMIT');
+          return { replayed: true };
+        }
+
+        // Account-scoped and idempotent: a foreign or unknown device affects
+        // zero rows and is never distinguished from an already-revoked device.
+        await client.query(
+          `UPDATE echo.sessions SET revoked_at = now()
+            WHERE account_id = $1 AND device_id = $2 AND revoked_at IS NULL`,
+          [accountId, deviceId],
+        );
+        await client.query(
+          `UPDATE echo.devices SET revoked_at = now(), last_seen_at = now()
+            WHERE account_id = $1 AND id = $2 AND revoked_at IS NULL`,
+          [accountId, deviceId],
+        );
+        await client.query(
+          `UPDATE echo.idempotency_records
+              SET state = 'complete', response_status = 204, resource_id = $4
+            WHERE account_id = $1 AND scope = 'device.revoke'
+              AND idempotency_key = $2 AND request_hash = $3`,
+          [accountId, idempotencyKey, requestHash, deviceId],
+        );
+        await client.query('COMMIT');
+        return { replayed: false };
+      } catch (error: unknown) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
     },
   };
 }

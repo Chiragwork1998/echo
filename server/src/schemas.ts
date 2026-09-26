@@ -136,9 +136,61 @@ export const ProfilePatchSchema = Type.Partial(
   { additionalProperties: false, minProperties: 1, $id: 'ProfilePatch' },
 );
 
+/**
+ * Device public keys are transferred as canonical, padded standard base64. A
+ * 32-byte raw key always encodes to exactly 44 characters ending in `=`.
+ * The exact algorithm is pending the cross-device recovery decision; the
+ * length is centralized here so it can change with one edit.
+ */
+export const DEVICE_PUBLIC_KEY_BYTES = 32;
+
+export const DevicePlatformSchema = Type.Union([
+  Type.Literal('ios'),
+  Type.Literal('android'),
+]);
+
+export const DeviceRegistrationSchema = Type.Object(
+  {
+    deviceId: Type.String({ format: 'uuid' }),
+    publicKey: Type.String({
+      pattern: '^[A-Za-z0-9+/]{43}=$',
+      minLength: 44,
+      maxLength: 44,
+    }),
+    platform: DevicePlatformSchema,
+    appVersion: Type.String({
+      minLength: 5,
+      maxLength: 32,
+      pattern: '^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]{1,16})?$',
+    }),
+  },
+  { additionalProperties: false, $id: 'DeviceRegistration' },
+);
+
+export const DeviceParamsSchema = Type.Object(
+  { deviceId: Type.String({ format: 'uuid' }) },
+  { additionalProperties: false, $id: 'DeviceParams' },
+);
+
+export const DeviceSchema = Type.Object(
+  {
+    id: Type.String({ format: 'uuid' }),
+    platform: DevicePlatformSchema,
+    appVersion: Type.String(),
+    createdAt: Type.String({ format: 'date-time' }),
+    lastSeenAt: Type.String({ format: 'date-time' }),
+    revokedAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
+  },
+  { additionalProperties: false, $id: 'Device' },
+);
+
+export const NoContentSchema = Type.Null({ $id: 'NoContent' });
+
 export type ExchangeRequest = Static<typeof ExchangeRequestSchema>;
 export type MagicLinkRequest = Static<typeof MagicLinkRequestSchema>;
 export type MagicLinkVerifyRequest = Static<typeof MagicLinkVerifySchema>;
 export type RefreshRequest = Static<typeof RefreshRequestSchema>;
 export type LogoutRequest = Static<typeof LogoutRequestSchema>;
 export type ProfilePatchRequest = Static<typeof ProfilePatchSchema>;
+export type DeviceRegistrationRequest = Static<typeof DeviceRegistrationSchema>;
+export type DeviceParams = Static<typeof DeviceParamsSchema>;

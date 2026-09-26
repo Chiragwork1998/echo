@@ -175,7 +175,15 @@ npm run openapi:check
 - `POST /v1/auth/logout`
 - `GET /v1/me`
 - `PATCH /v1/me`
+- `POST /v1/me/devices`
+- `DELETE /v1/me/devices/{deviceId}`
 
 Every response includes a server-generated `x-request-id`. Errors use the
 standard `{ code, message, retryable, requestId }` envelope. Request bodies are
 not logged, and credential-bearing headers are redacted.
+
+Authenticated device routes require an `Idempotency-Key` header. Registration
+derives ownership from the bearer token only; a device is identified by the
+client-supplied stable `deviceId`, and repeat registration updates metadata in
+place. Revocation is account-scoped and idempotent, and never distinguishes a
+foreign device from an unknown one.
