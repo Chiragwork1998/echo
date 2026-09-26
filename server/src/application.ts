@@ -1,11 +1,18 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { createWriteStream } from 'node:fs';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { extname, join } from 'node:path';
+import { pipeline } from 'node:stream/promises';
 
+import multipart from '@fastify/multipart';
 import swagger from '@fastify/swagger';
 import fastify, {
   type FastifyInstance,
   type FastifyServerOptions,
   LogController,
 } from 'fastify';
+import { parseFile } from 'music-metadata';
 
 import {
   AuthenticationError,
@@ -14,7 +21,12 @@ import {
   type ProviderSession,
 } from './auth.js';
 import { createBearerAuthentication } from './auth-middleware.js';
-import { publicConfiguration } from './config.js';
+import {
+  publicConfiguration,
+  REFRESH_SESSION_LIFETIME_SECONDS,
+  TRANSCRIPTION_MAX_BYTES,
+  TRANSCRIPTION_RATE_LIMIT_PER_HOUR,
+} from './config.js';
 import type {
   AccountRecord,
   AuthStore,
@@ -34,6 +46,8 @@ import {
   MagicLinkVerifySchema,
   ProfilePatchSchema,
   RefreshRequestSchema,
+  TranscriptionMultipartSchema,
+  TranscriptionResponseSchema,
   type ErrorEnvelope,
   type ExchangeRequest,
   type LogoutRequest,
@@ -42,12 +56,24 @@ import {
   type ProfilePatchRequest,
   type RefreshRequest,
 } from './schemas.js';
+import {
+  AccountRateLimiter,
+  IdempotencyConflictError,
+  TranscriptionIdempotencyStore,
+  TranscriptionProviderError,
+  unavailableTranscriptionProvider,
+  type TranscriptionProvider,
+} from './transcription.js';
 import { SERVICE_VERSION } from './version.js';
 
 interface BuildAppOptions {
   database: DatabaseDependency;
   authProvider?: AuthProvider;
   authStore?: AuthStore;
+  transcriptionProvider?: TranscriptionProvider;
+  transcriptionRateLimiter?: AccountRateLimiter;
+  transcriptionIdempotency?: TranscriptionIdempotencyStore;
+  transcriptionMaxBytes?: number;
   logger?: Exclude<FastifyServerOptions['logger'], boolean | undefined> | false;
 }
 
@@ -72,6 +98,13 @@ export async function buildApp({
   database,
   authProvider = unavailableAuthProvider,
   authStore = unavailableAuthStore,
+  transcriptionProvider = unavailableTranscriptionProvider,
+  transcriptionRateLimiter = new AccountRateLimiter(
+    TRANSCRIPTION_RATE_LIMIT_PER_HOUR,
+    60 * 60 * 1000,
+  ),
+  transcriptionIdempotency = new TranscriptionIdempotencyStore(),
+  transcriptionMaxBytes = TRANSCRIPTION_MAX_BYTES,
   logger = false,
 }: BuildAppOptions): Promise<FastifyInstance> {
   const app = fastify({
@@ -82,6 +115,10 @@ export async function buildApp({
   });
   app.decorateRequest('authenticatedAccount', null);
   const authenticate = createBearerAuthentication(authProvider, authStore);
+
+  await app.register(multipart, {
+    limits: { files: 1, fields: 0, parts: 1, fileSize: transcriptionMaxBytes },
+  });
 
   await app.register(swagger, {
     openapi: {
@@ -246,8 +283,8 @@ export async function buildApp({
     return createHash('sha256').update(credential, 'utf8').digest();
   }
 
-  function expiry(expiresIn: number): Date {
-    return new Date(Date.now() + expiresIn * 1000);
+  function refreshSessionExpiry(): Date {
+    return new Date(Date.now() + REFRESH_SESSION_LIFETIME_SECONDS * 1000);
   }
 
   app.post<{ Body: ExchangeRequest }>(
@@ -273,7 +310,7 @@ export async function buildApp({
       const account = await authStore.createSession(
         session.identity,
         credentialHash(session.refreshToken),
-        expiry(session.expiresIn),
+        refreshSessionExpiry(),
       );
       void reply.header('cache-control', 'no-store');
       return credentialResponse(session, account);
@@ -324,7 +361,7 @@ export async function buildApp({
       const account = await authStore.createSession(
         session.identity,
         credentialHash(session.refreshToken),
-        expiry(session.expiresIn),
+        refreshSessionExpiry(),
       );
       void reply.header('cache-control', 'no-store');
       return credentialResponse(session, account);
@@ -352,7 +389,7 @@ export async function buildApp({
         session.identity,
         credentialHash(request.body.refreshToken),
         credentialHash(session.refreshToken),
-        expiry(session.expiresIn),
+        refreshSessionExpiry(),
       );
       if (!account) throw new AuthenticationError();
       void reply.header('cache-control', 'no-store');
@@ -387,6 +424,249 @@ export async function buildApp({
       if (!revoked) throw new AuthenticationError();
       await authProvider.logout(authenticated.accessToken);
       return { loggedOut: true as const };
+    },
+  );
+
+  const supportedAudioTypes = new Set([
+    'audio/mp4',
+    'video/mp4',
+    'audio/m4a',
+    'audio/x-m4a',
+    'audio/wav',
+    'audio/x-wav',
+    'audio/webm',
+    'video/webm',
+    'audio/mpeg',
+  ]);
+  const supportedAudioExtensions = new Set([
+    '.m4a',
+    '.mp4',
+    '.wav',
+    '.webm',
+    '.mpeg',
+    '.mp3',
+  ]);
+
+  app.post(
+    '/v1/transcriptions',
+    {
+      preHandler: authenticate,
+      // Multipart streams are validated explicitly below. This compiler keeps
+      // the binary request contract in OpenAPI without asking AJV to consume it.
+      validatorCompiler: () => () => true,
+      schema: {
+        operationId: 'createTranscription',
+        tags: ['Transcription'],
+        security: [{ bearerAuth: [] }],
+        consumes: ['multipart/form-data'],
+        headers: {
+          type: 'object',
+          required: ['idempotency-key'],
+          properties: {
+            'idempotency-key': {
+              type: 'string',
+              minLength: 1,
+              maxLength: 200,
+            },
+          },
+        },
+        body: TranscriptionMultipartSchema,
+        response: {
+          200: TranscriptionResponseSchema,
+          400: ErrorEnvelopeSchema,
+          401: ErrorEnvelopeSchema,
+          409: ErrorEnvelopeSchema,
+          413: ErrorEnvelopeSchema,
+          415: ErrorEnvelopeSchema,
+          422: ErrorEnvelopeSchema,
+          429: ErrorEnvelopeSchema,
+          503: ErrorEnvelopeSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const authenticated = request.authenticatedAccount;
+      if (!authenticated) throw new AuthenticationError();
+      const idempotencyKey = request.headers['idempotency-key'];
+      if (
+        typeof idempotencyKey !== 'string' ||
+        idempotencyKey.length === 0 ||
+        idempotencyKey.length > 200
+      )
+        return reply
+          .status(400)
+          .send(
+            errorEnvelope(
+              request.id,
+              'VALIDATION_ERROR',
+              'A valid Idempotency-Key header is required.',
+              false,
+            ),
+          );
+
+      let temporaryDirectory: string | undefined;
+      try {
+        const part = await request.file({
+          limits: {
+            files: 1,
+            fields: 0,
+            parts: 1,
+            fileSize: transcriptionMaxBytes,
+          },
+        });
+        if (!part || part.fieldname !== 'audio')
+          return await reply
+            .status(422)
+            .send(
+              errorEnvelope(
+                request.id,
+                'UNUSABLE_AUDIO',
+                'A usable audio file is required.',
+                false,
+              ),
+            );
+        const extension = extname(part.filename).toLowerCase();
+        if (
+          !supportedAudioTypes.has(part.mimetype.toLowerCase()) ||
+          !supportedAudioExtensions.has(extension)
+        )
+          return await reply
+            .status(415)
+            .send(
+              errorEnvelope(
+                request.id,
+                'UNSUPPORTED_AUDIO_FORMAT',
+                'The audio format is not supported.',
+                false,
+              ),
+            );
+
+        temporaryDirectory = await mkdtemp(join(tmpdir(), 'echo-audio-'));
+        const temporaryPath = join(temporaryDirectory, `upload${extension}`);
+        await pipeline(
+          part.file,
+          createWriteStream(temporaryPath, { mode: 0o600 }),
+        );
+        if (part.file.truncated)
+          return await reply
+            .status(413)
+            .send(
+              errorEnvelope(
+                request.id,
+                'AUDIO_TOO_LARGE',
+                'The audio file exceeds the 25 MB limit.',
+                false,
+              ),
+            );
+
+        let durationSeconds: number;
+        try {
+          const metadata = await parseFile(temporaryPath, { duration: true });
+          const duration = metadata.format.duration;
+          if (
+            typeof duration !== 'number' ||
+            !Number.isFinite(duration) ||
+            duration <= 0
+          )
+            throw new Error('Missing duration');
+          durationSeconds = duration;
+        } catch {
+          return await reply
+            .status(422)
+            .send(
+              errorEnvelope(
+                request.id,
+                'UNUSABLE_AUDIO',
+                'A usable audio file is required.',
+                false,
+              ),
+            );
+        }
+
+        const requestHash = createHash('sha256')
+          .update(await readFile(temporaryPath))
+          .digest('hex');
+        try {
+          const result = await transcriptionIdempotency.run(
+            authenticated.account.id,
+            idempotencyKey,
+            requestHash,
+            async () => {
+              if (!transcriptionRateLimiter.consume(authenticated.account.id))
+                throw new TranscriptionProviderError('rate_limited');
+              const transcription =
+                await transcriptionProvider.transcribe(temporaryPath);
+              return { ...transcription, durationSeconds };
+            },
+          );
+          void reply.header('cache-control', 'no-store');
+          return result;
+        } catch (error: unknown) {
+          if (error instanceof IdempotencyConflictError)
+            return await reply
+              .status(409)
+              .send(
+                errorEnvelope(
+                  request.id,
+                  'IDEMPOTENCY_CONFLICT',
+                  'The idempotency key was already used for another request.',
+                  false,
+                ),
+              );
+          if (error instanceof TranscriptionProviderError) {
+            const status =
+              error.kind === 'unusable'
+                ? 422
+                : error.kind === 'rate_limited'
+                  ? 429
+                  : 503;
+            const code =
+              error.kind === 'unusable'
+                ? 'UNUSABLE_AUDIO'
+                : error.kind === 'rate_limited'
+                  ? 'TRANSCRIPTION_RATE_LIMITED'
+                  : 'TRANSCRIPTION_UNAVAILABLE';
+            const message =
+              error.kind === 'unusable'
+                ? 'The audio could not be transcribed.'
+                : error.kind === 'rate_limited'
+                  ? 'The transcription rate limit was reached.'
+                  : 'Transcription is temporarily unavailable.';
+            return await reply
+              .status(status)
+              .send(
+                errorEnvelope(
+                  request.id,
+                  code,
+                  message,
+                  error.kind !== 'unusable',
+                ),
+              );
+          }
+          throw error;
+        }
+      } catch (error: unknown) {
+        if (
+          typeof error === 'object' &&
+          error !== null &&
+          'code' in error &&
+          error.code === 'FST_REQ_FILE_TOO_LARGE'
+        )
+          return await reply
+            .status(413)
+            .send(
+              errorEnvelope(
+                request.id,
+                'AUDIO_TOO_LARGE',
+                'The audio file exceeds the 25 MB limit.',
+                false,
+              ),
+            );
+        throw error;
+      } finally {
+        if (temporaryDirectory)
+          await rm(temporaryDirectory, { recursive: true, force: true });
+      }
     },
   );
 

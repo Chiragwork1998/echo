@@ -81,19 +81,45 @@ export function createPostgresDependency(
           [identity.provider, identity.subject],
         );
         if (!result.rows[0]) {
-          result = await client.query<AccountRecord>(
+          const created = await client.query<AccountRecord>(
             `INSERT INTO echo.accounts DEFAULT VALUES
              RETURNING id, display_name AS "displayName", locale, timezone,
                        created_at AS "createdAt", updated_at AS "updatedAt"`,
           );
-          const account = result.rows[0];
-          if (!account) throw new Error('Account creation failed');
-          await client.query(
+          const candidate = created.rows[0];
+          if (!candidate) throw new Error('Account creation failed');
+          const identityInsert = await client.query<{ accountId: string }>(
             `INSERT INTO echo.auth_identities
                (account_id, provider, provider_subject, last_authenticated_at)
-             VALUES ($1, $2, $3, now())`,
-            [account.id, identity.provider, identity.subject],
+             VALUES ($1, $2, $3, now())
+             ON CONFLICT (provider, provider_subject) DO NOTHING
+             RETURNING account_id AS "accountId"`,
+            [candidate.id, identity.provider, identity.subject],
           );
+          if (identityInsert.rows[0]) {
+            result = created;
+          } else {
+            // A concurrent request won the identity insert. Remove this
+            // transaction's orphan candidate and lock/read the winner.
+            await client.query('DELETE FROM echo.accounts WHERE id = $1', [
+              candidate.id,
+            ]);
+            result = await client.query<AccountRecord>(
+              `SELECT ${accountColumns}
+                 FROM echo.accounts a
+                 JOIN echo.auth_identities i ON i.account_id = a.id
+                WHERE i.provider = $1 AND i.provider_subject = $2
+                  AND a.status = 'active'
+                FOR UPDATE OF a`,
+              [identity.provider, identity.subject],
+            );
+            if (!result.rows[0]) throw new Error('Account lookup failed');
+            await client.query(
+              `UPDATE echo.auth_identities SET last_authenticated_at = now()
+                WHERE account_id = $1 AND provider = $2 AND provider_subject = $3`,
+              [result.rows[0].id, identity.provider, identity.subject],
+            );
+          }
         } else {
           await client.query(
             `UPDATE echo.auth_identities SET last_authenticated_at = now()

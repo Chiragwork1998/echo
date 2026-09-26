@@ -21,10 +21,13 @@
     "openapi:check": "tsx scripts/openapi.ts --check"
   },
   "dependencies": {
+    "@fastify/multipart": "10.1.2",
     "@fastify/swagger": "9.5.1",
     "@sinclair/typebox": "0.34.33",
     "dotenv": "16.5.0",
     "fastify": "5.12.5",
+    "music-metadata": "11.16.1",
+    "openai": "7.23.0",
     "pg": "8.16.0",
     "zod": "3.25.28"
   },
@@ -38,6 +41,6 @@
     "tsx": "4.19.4",
     "typescript": "5.8.3",
     "typescript-eslint": "8.32.1",
-    "vitest": "3.2.7"
+    "vitest": "5.0.2"
   }
 }
