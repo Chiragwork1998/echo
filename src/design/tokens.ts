@@ -16,8 +16,11 @@ export const tokens = {
     },
   },
   typography: {
-    displayFamilyIOS: 'New York Large', displayFamilyFallback: 'Cormorant Garamond',
-    uiFamilyIOS: 'SF Pro Text', uiFamilyFallback: 'Inter',
+    displayFamily: 'CormorantGaramond_400Regular',
+    displayFamilyMedium: 'CormorantGaramond_500Medium',
+    uiFamily: 'Inter_400Regular',
+    uiFamilyMedium: 'Inter_500Medium',
+    uiFamilySemibold: 'Inter_600SemiBold',
     wordmark: { size: 28, weight: 400, tracking: 12, lineHeight: 32 },
     displayXL: { size: 52, weight: 400, lineHeight: 54, tracking: -1 },
     displayL: { size: 44, weight: 400, lineHeight: 48, tracking: -0.6 },

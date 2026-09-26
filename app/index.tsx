@@ -1,33 +1,39 @@
-import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AppShell } from '@/components/AppShell';
 import { EchoBackground } from '@/components/EchoBackground';
-import { themes } from '@/design/themes';
+import { ReadabilityScrim, type DayScrims } from '@/components/ReadabilityScrim';
+import { screenBackgrounds } from '@/design/backgrounds';
+import { useEchoTheme } from '@/design/ThemeProvider';
 import { tokens } from '@/design/tokens';
 
-const landingBackground = require('../assets/echo/backgrounds/day/00-landing.png');
+/** Day keeps the existing two scrims; Night is handled inside the component. */
+const LANDING_DAY_SCRIMS: DayScrims = {
+  top: {
+    colors: ['rgba(3, 11, 22, 0.42)', 'rgba(3, 11, 22, 0)'],
+    locations: [0, 1],
+    height: '42%',
+  },
+  bottom: {
+    colors: ['rgba(3, 11, 22, 0)', 'rgba(3, 11, 22, 0.54)'],
+    locations: [0, 1],
+    height: '34%',
+  },
+};
 
 export default function LandingPreview() {
-  const theme = themes.day;
+  const router = useRouter();
+  const { name, theme } = useEchoTheme();
 
   return (
     <AppShell
       theme={theme}
-      background={<EchoBackground source={landingBackground} fallbackColor={theme.color.textInk} />}
+      background={
+        <EchoBackground source={screenBackgrounds[name].landing} fallbackColor={theme.color.textInk} />
+      }
     >
-      <LinearGradient
-        colors={['rgba(3, 11, 22, 0.42)', 'rgba(3, 11, 22, 0)']}
-        locations={[0, 1]}
-        pointerEvents="none"
-        style={styles.topScrim}
-      />
-      <LinearGradient
-        colors={['rgba(3, 11, 22, 0)', 'rgba(3, 11, 22, 0.54)']}
-        locations={[0, 1]}
-        pointerEvents="none"
-        style={styles.bottomScrim}
-      />
+      <ReadabilityScrim day={LANDING_DAY_SCRIMS} />
       <View style={styles.content}>
         <View style={styles.hero}>
           <Text accessibilityRole="header" style={[styles.wordmark, { color: theme.color.textPrimary }]}>ECHO</Text>
@@ -35,7 +41,15 @@ export default function LandingPreview() {
           <Text style={[styles.tagline, { color: theme.color.textSecondary }]}>Meet the hidden parts of you.</Text>
         </View>
         <View style={styles.actions}>
-          <Pressable accessibilityRole="button" style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push('/onboarding/intent')}
+            style={({ pressed }) => [
+              styles.button,
+              { backgroundColor: theme.color.surfacePrimary },
+              pressed && styles.buttonPressed,
+            ]}
+          >
             <Text style={[styles.buttonLabel, { color: theme.color.textInk }]}>BEGIN</Text>
           </Pressable>
           <Text style={[styles.caption, { color: theme.color.textSecondary }]}>SEVEN MINUTES, ONCE A DAY</Text>
@@ -46,20 +60,6 @@ export default function LandingPreview() {
 }
 
 const styles = StyleSheet.create({
-  topScrim: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    left: 0,
-    height: '42%',
-  },
-  bottomScrim: {
-    position: 'absolute',
-    right: 0,
-    bottom: 0,
-    left: 0,
-    height: '34%',
-  },
   content: {
     flex: 1,
     paddingHorizontal: tokens.layout.gutter,
@@ -70,18 +70,18 @@ const styles = StyleSheet.create({
     marginTop: '24%',
   },
   wordmark: {
-    fontFamily: tokens.typography.displayFamilyIOS,
+    fontFamily: tokens.typography.displayFamily,
     fontSize: tokens.typography.wordmark.size,
-    fontWeight: '400',
     letterSpacing: tokens.typography.wordmark.tracking,
     lineHeight: tokens.typography.wordmark.lineHeight,
   },
   rule: { width: 16, height: 1, marginTop: 18, opacity: 0.8 },
   tagline: {
     marginTop: 16,
-    fontFamily: tokens.typography.displayFamilyIOS,
-    fontSize: 16,
+    fontFamily: tokens.typography.displayFamily,
+    fontSize: tokens.typography.bodyM.size,
     fontStyle: 'italic',
+    lineHeight: tokens.typography.bodyM.lineHeight,
   },
   actions: { alignItems: 'center', paddingBottom: 10 },
   button: {
@@ -89,19 +89,21 @@ const styles = StyleSheet.create({
     maxWidth: tokens.layout.maxContentWidth,
     height: tokens.size.primaryButtonHeight,
     borderRadius: tokens.radius.button,
-    backgroundColor: '#F6F1E8',
     alignItems: 'center',
     justifyContent: 'center',
   },
   buttonPressed: { opacity: 0.9, transform: [{ scale: 0.985 }] },
   buttonLabel: {
+    fontFamily: tokens.typography.uiFamilyMedium,
     fontSize: tokens.typography.button.size,
-    fontWeight: '500',
     letterSpacing: tokens.typography.button.tracking,
+    lineHeight: tokens.typography.button.lineHeight,
   },
   caption: {
     marginTop: 14,
+    fontFamily: tokens.typography.uiFamily,
     fontSize: tokens.typography.caption.size,
     letterSpacing: tokens.typography.caption.tracking,
+    lineHeight: tokens.typography.caption.lineHeight,
   },
 });
