@@ -1,0 +1,21 @@
+{
+  "user": {"displayName":"","theme":"automatic","mode":"guide","horizon":"present","intent":"understand_self"},
+  "reminder": {"enabled":true,"time":"21:30","preset":"before_sleep","timezone":"device"},
+  "privacy": {"biometricLock":true,"privateBackup":true,"localEncryption":true},
+  "home": {
+    "dayGreeting":"Good morning.",
+    "dayHeadline":"There is room for you here.",
+    "nightHeadline":"Where are you, really?",
+    "prompt":"What is asking for your attention?",
+    "rhythmDays":4,
+    "recent":{"title":"The weight I didn’t name","relativeDate":"Yesterday","durationMinutes":6,"excerpt":"Sometimes the heaviest things live in the quietest corners."},
+    "draft":{"title":"I keep returning to…","minutesRemaining":2}
+  },
+  "firstEntry": {
+    "prompt":"What are you carrying that no one can see?",
+    "moodBefore":"unsettled",
+    "reflection":"You’re carrying more uncertainty than failure. The part asking for clarity already knows what needs your attention.",
+    "durationMinutes":7
+  }
+}
+

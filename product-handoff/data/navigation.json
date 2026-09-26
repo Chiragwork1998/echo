@@ -1,0 +1,16 @@
+{
+  "initialRoute":"landing",
+  "routes":[
+    {"id":"landing","path":"/","next":"intent"},
+    {"id":"intent","path":"/onboarding/intent","back":"landing","next":"horizon"},
+    {"id":"horizon","path":"/onboarding/horizon","back":"intent","next":"voice"},
+    {"id":"voice","path":"/onboarding/voice","back":"horizon","next":"rhythm"},
+    {"id":"rhythm","path":"/onboarding/rhythm","back":"voice","next":"privacy"},
+    {"id":"privacy","path":"/onboarding/privacy","back":"rhythm","next":"arrival","conditional":"authentication when private backup is enabled and user is anonymous"},
+    {"id":"arrival","path":"/onboarding/arrival","back":"privacy","next":"first-echo","skippable":true},
+    {"id":"first-echo","path":"/onboarding/first-echo","back":"arrival","next":"completion"},
+    {"id":"completion","path":"/onboarding/completion","next":"home"},
+    {"id":"home","path":"/home","tabs":["today","echoes","patterns","you"]}
+  ]
+}
+

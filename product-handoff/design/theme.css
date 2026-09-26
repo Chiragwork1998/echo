@@ -1,0 +1,38 @@
+:root {
+  --echo-display: "New York Large", "Cormorant Garamond", Georgia, serif;
+  --echo-ui: "SF Pro Text", Inter, system-ui, sans-serif;
+  --echo-gutter: 24px;
+  --echo-cream: #f6f1e8;
+  --echo-ink: #13263a;
+  --echo-text: #f8f5ee;
+  --echo-glass: rgba(11,25,42,.54);
+  --echo-glass-border: rgba(255,255,255,.58);
+  --echo-warm: #d9be91;
+  --echo-river: #5bc7d9;
+  --echo-button-h: 56px;
+  --echo-button-r: 28px;
+}
+[data-theme="night"] {
+  --echo-cream: #f3ede3;
+  --echo-ink: #0b1d35;
+  --echo-text: #f7f3eb;
+  --echo-glass: rgba(7,18,35,.66);
+  --echo-glass-border: rgba(244,239,229,.54);
+  --echo-warm: #e8cca0;
+  --echo-river: #41bbd4;
+}
+.echo-glass {
+  background: var(--echo-glass);
+  border: 1px solid var(--echo-glass-border);
+  box-shadow: 0 18px 50px rgba(0,0,0,.26);
+  backdrop-filter: blur(24px) saturate(112%);
+}
+.echo-primary {
+  min-height: var(--echo-button-h);
+  border-radius: var(--echo-button-r);
+  background: linear-gradient(135deg,#fbf8f2,#ede6dc);
+  color: var(--echo-ink);
+  font: 500 16px/20px var(--echo-ui);
+  letter-spacing: 3.2px;
+}
+

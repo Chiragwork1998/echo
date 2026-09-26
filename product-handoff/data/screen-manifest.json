@@ -1,0 +1,16 @@
+{
+  "referenceViewport":{"width":393,"height":852,"unit":"pt"},
+  "screens":[
+    {"id":"landing","route":"/","from":null,"next":"/onboarding/intent","background":"00-landing.png","focalPoint":{"x":0.50,"y":0.56}},
+    {"id":"intent","route":"/onboarding/intent","from":"landing","next":"horizon","background":"01-intent.png","focalPoint":{"x":0.53,"y":0.55}},
+    {"id":"horizon","route":"/onboarding/horizon","from":"intent","next":"voice","background":"02-horizon.png","focalPoint":{"x":0.50,"y":0.53}},
+    {"id":"voice","route":"/onboarding/voice","from":"horizon","next":"rhythm","background":"03-voice.png","focalPoint":{"x":0.50,"y":0.58}},
+    {"id":"rhythm","route":"/onboarding/rhythm","from":"voice","next":"privacy","background":"04-rhythm.png","focalPoint":{"x":0.55,"y":0.50}},
+    {"id":"privacy","route":"/onboarding/privacy","from":"rhythm","next":"arrival","background":"05-privacy.png","focalPoint":{"x":0.50,"y":0.46}},
+    {"id":"arrival","route":"/onboarding/arrival","from":"privacy","next":"first-echo","background":"06-arrival.png","focalPoint":{"x":0.50,"y":0.62}},
+    {"id":"first-echo","route":"/onboarding/first-echo","from":"arrival","next":"completion","background":"07-first-echo.png","focalPoint":{"x":0.55,"y":0.54}},
+    {"id":"completion","route":"/onboarding/completion","from":"first-echo","next":"home","background":"08-completion.png","focalPoint":{"x":0.55,"y":0.48}},
+    {"id":"home","route":"/home","from":"completion","next":null,"background":"09-home.png","focalPoint":{"x":0.54,"y":0.42}}
+  ]
+}
+
