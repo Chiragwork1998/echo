@@ -25,10 +25,14 @@ describe('OpenAPI contract', () => {
       '/v1/me',
       '/v1/me/devices',
       '/v1/me/devices/{deviceId}',
+      '/v1/transcriptions',
     ]);
     expect(document.paths?.['/v1/health']?.get?.operationId).toBe('getHealth');
     expect(document.paths?.['/v1/configuration']?.get?.operationId).toBe(
       'getConfiguration',
+    );
+    expect(document.paths?.['/v1/transcriptions']?.post?.operationId).toBe(
+      'createTranscription',
     );
     await app.close();
   });

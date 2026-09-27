@@ -121,6 +121,20 @@ export const LogoutResponseSchema = Type.Object(
   { additionalProperties: false, $id: 'LogoutResponse' },
 );
 
+export const TranscriptionResponseSchema = Type.Object(
+  {
+    transcript: Type.String(),
+    durationSeconds: Type.Number({ minimum: 0 }),
+    language: Type.String({ minLength: 2, maxLength: 35 }),
+  },
+  { additionalProperties: false, $id: 'TranscriptionResponse' },
+);
+
+export const TranscriptionMultipartSchema = Type.Object(
+  { audio: Type.String({ format: 'binary' }) },
+  { additionalProperties: false, $id: 'TranscriptionMultipart' },
+);
+
 export const ProfilePatchSchema = Type.Partial(
   Type.Object(
     {

@@ -94,6 +94,7 @@ Configure these encrypted environment variables for Production and Preview:
 DATABASE_URL
 SUPABASE_URL
 SUPABASE_AUTH_API_KEY
+OPENAI_API_KEY
 LOG_LEVEL=info
 ```
 
@@ -104,6 +105,17 @@ at three connections per autoscaled function instance.
 Run `npm run migrate` as a separate, controlled release step before deploying
 code that depends on a new schema. Do not add migrations to the Vercel build
 command: concurrent preview builds must not mutate the shared database.
+
+`OPENAI_API_KEY` is a backend-only secret used by `POST /v1/transcriptions`.
+Configure it directly in the deployment platform's encrypted secret manager.
+It is intentionally absent from `.env.example`, client configuration, logs,
+screenshots, and API responses.
+
+The transcription endpoint accepts one `audio` multipart field up to 25 MB in
+m4a, mp4, wav, webm, or MPEG format. It requires authentication and an
+`Idempotency-Key`, applies a per-account rate limit, sends the temporary file to
+`gpt-4o-transcribe`, and removes the temporary file before completing the
+request. Audio and transcript content are excluded from application logs.
 
 After deployment, configure `/v1/health` as the uptime probe and verify that it
 returns HTTP 200 with `dependencies.database` set to `ok`.

@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { randomUUID } from 'node:crypto';
 
 import pg from 'pg';
 import {
@@ -11,6 +12,8 @@ import {
   expect,
   it,
 } from 'vitest';
+
+import { createPostgresDependency } from '../src/database.js';
 
 const { Client } = pg;
 const expectedTables = [
@@ -66,9 +69,9 @@ async function expectConstraintViolation(
   }
 }
 
-describe
-  .skipIf(databaseUrl === undefined)
-  .sequential('backend database migrations', () => {
+describe.skipIf(databaseUrl === undefined)(
+  'backend database migrations',
+  () => {
     beforeAll(async () => {
       if (!databaseUrl) throw new Error('TEST_DATABASE_URL is required');
       client = new Client({ connectionString: databaseUrl });
@@ -179,6 +182,40 @@ describe
       );
     });
 
+    it('creates one account when the same identity authenticates concurrently', async () => {
+      if (!databaseUrl) throw new Error('TEST_DATABASE_URL is required');
+      const database = createPostgresDependency(databaseUrl);
+      const subject = `race-${randomUUID()}`;
+      const identity = { provider: 'google' as const, subject };
+      try {
+        const accounts = await Promise.all(
+          Array.from({ length: 8 }, (_, index) =>
+            database.createSession(
+              identity,
+              Buffer.from(`refresh-${String(index)}`),
+              new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+            ),
+          ),
+        );
+        expect(new Set(accounts.map((account) => account.id)).size).toBe(1);
+        const rows = await client.query<{
+          accounts: number;
+          identities: number;
+        }>(
+          `SELECT
+             count(DISTINCT a.id)::integer AS accounts,
+             count(DISTINCT i.id)::integer AS identities
+           FROM echo.accounts a
+           JOIN echo.auth_identities i ON i.account_id = a.id
+          WHERE i.provider = 'google' AND i.provider_subject = $1`,
+          [subject],
+        );
+        expect(rows.rows).toEqual([{ accounts: 1, identities: 1 }]);
+      } finally {
+        await database.close();
+      }
+    });
+
     it('declares reversible migration sections without executing them', async () => {
       const migrationPath = fileURLToPath(
         new URL('../migrations/002_create_backend_tables.sql', import.meta.url),
@@ -193,4 +230,5 @@ describe
       expect(down).toContain('DROP TABLE IF EXISTS echo.idempotency_records');
       expect(down).toContain('DROP TABLE IF EXISTS echo.accounts');
     });
-  });
+  },
+);

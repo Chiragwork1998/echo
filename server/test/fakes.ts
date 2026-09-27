@@ -96,6 +96,7 @@ export class FakeAuthStore implements AuthStore {
   readonly #accounts = new Map<string, AccountRecord>();
   readonly #identityAccounts = new Map<string, string>();
   readonly #sessions = new Map<string, string>();
+  sessionExpiries: Date[] = [];
 
   #identityKey(identity: VerifiedIdentity): string {
     return `${identity.provider}:${identity.subject}`;
@@ -104,6 +105,7 @@ export class FakeAuthStore implements AuthStore {
   createSession(
     identity: VerifiedIdentity,
     refreshCredentialHash: Buffer,
+    expiresAt: Date,
   ): Promise<AccountRecord> {
     const key = this.#identityKey(identity);
     let accountId = this.#identityAccounts.get(key);
@@ -121,6 +123,7 @@ export class FakeAuthStore implements AuthStore {
       this.#identityAccounts.set(key, accountId);
     }
     this.#sessions.set(refreshCredentialHash.toString('hex'), accountId);
+    this.sessionExpiries.push(expiresAt);
     return Promise.resolve(this.#requiredAccount(accountId));
   }
 
@@ -128,6 +131,7 @@ export class FakeAuthStore implements AuthStore {
     identity: VerifiedIdentity,
     previousHash: Buffer,
     nextHash: Buffer,
+    expiresAt: Date,
   ): Promise<AccountRecord | null> {
     const previousKey = previousHash.toString('hex');
     const accountId = this.#sessions.get(previousKey);
@@ -138,6 +142,7 @@ export class FakeAuthStore implements AuthStore {
       return Promise.resolve(null);
     this.#sessions.delete(previousKey);
     this.#sessions.set(nextHash.toString('hex'), accountId);
+    this.sessionExpiries.push(expiresAt);
     return Promise.resolve(this.#requiredAccount(accountId));
   }
 

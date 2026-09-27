@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildApp } from '../src/application.js';
 import type { DatabaseDependency } from '../src/database.js';
 import { FakeAuthProvider, FakeAuthStore } from './fakes.js';
+import { REFRESH_SESSION_LIFETIME_SECONDS } from '../src/config.js';
 
 const apps: Awaited<ReturnType<typeof buildApp>>[] = [];
 
@@ -18,14 +19,15 @@ function database(): DatabaseDependency {
 async function testApp(
   logger: Parameters<typeof buildApp>[0]['logger'] = false,
 ) {
+  const authStore = new FakeAuthStore();
   const app = await buildApp({
     database: database(),
     authProvider: new FakeAuthProvider(),
-    authStore: new FakeAuthStore(),
+    authStore,
     logger,
   });
   apps.push(app);
-  return app;
+  return { app, authStore };
 }
 
 async function exchange(
@@ -45,7 +47,7 @@ afterEach(async () => {
 
 describe('authentication and account API', () => {
   it('authenticates and returns the current account', async () => {
-    const app = await testApp();
+    const { app } = await testApp();
     const auth = await exchange(app, 'alice');
     const credentials = auth.json<{
       accessToken: string;
@@ -64,7 +66,7 @@ describe('authentication and account API', () => {
   });
 
   it('returns a generic error for invalid credentials', async () => {
-    const app = await testApp();
+    const { app } = await testApp();
     const response = await app.inject({
       method: 'POST',
       url: '/v1/auth/exchange',
@@ -79,7 +81,7 @@ describe('authentication and account API', () => {
   });
 
   it('rotates refresh credentials and rejects reuse', async () => {
-    const app = await testApp();
+    const { app } = await testApp();
     const initial = (await exchange(app, 'alice')).json<{
       refreshToken: string;
     }>();
@@ -101,7 +103,7 @@ describe('authentication and account API', () => {
   });
 
   it('logs out and revokes the refresh credential', async () => {
-    const app = await testApp();
+    const { app } = await testApp();
     const credentials = (await exchange(app, 'alice')).json<{
       accessToken: string;
       refreshToken: string;
@@ -122,7 +124,7 @@ describe('authentication and account API', () => {
   });
 
   it('enforces account isolation during logout', async () => {
-    const app = await testApp();
+    const { app } = await testApp();
     const alice = (await exchange(app, 'alice')).json<{
       accessToken: string;
       refreshToken: string;
@@ -146,7 +148,7 @@ describe('authentication and account API', () => {
   });
 
   it('allowlists mutable profile fields', async () => {
-    const app = await testApp();
+    const { app } = await testApp();
     const credentials = (await exchange(app, 'alice')).json<{
       accessToken: string;
     }>();
@@ -184,7 +186,7 @@ describe('authentication and account API', () => {
         callback();
       },
     });
-    const app = await testApp({ level: 'info', stream });
+    const { app } = await testApp({ level: 'info', stream });
     const assertion = 'private-assertion';
     const response = await exchange(app, 'private');
     const credentials = response.json<{
@@ -199,5 +201,16 @@ describe('authentication and account API', () => {
     expect(logs).not.toContain(assertion);
     expect(logs).not.toContain(credentials.accessToken);
     expect(logs).not.toContain(credentials.refreshToken);
+  });
+
+  it('stores refresh sessions for 30 days independently of access expiry', async () => {
+    const before = Date.now();
+    const { app, authStore } = await testApp();
+    await exchange(app, 'alice');
+    const expiry = authStore.sessionExpiries[0];
+    if (!expiry) throw new Error('Expected a refresh-session expiry');
+    const expected = REFRESH_SESSION_LIFETIME_SECONDS * 1000;
+    expect(expiry.getTime() - before).toBeGreaterThanOrEqual(expected - 1000);
+    expect(expiry.getTime() - before).toBeLessThanOrEqual(expected + 1000);
   });
 });
