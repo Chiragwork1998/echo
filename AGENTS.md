@@ -11,3 +11,12 @@ Read `product-handoff/HANDOFF_TO_CODING_AGENT.md` before changing UI. The entire
 - Run the relevant type, lint, behavior, and screenshot checks before declaring a task complete.
 - Never commit credentials, signing files, local environment files, or production secrets.
 
+## Expo rules
+
+- This is an Expo and React Native mobile app. Prioritize mobile performance and cross-platform compatibility.
+- Read the installed Expo major version before changing Expo or React Native APIs and consult matching versioned Expo documentation.
+- Use `npx expo install <package>` for Expo-compatible dependencies.
+- Use Expo Router for navigation; routes live in `app/` and non-route code lives in `src/`.
+- When native `ios/` and `android/` directories are absent, configure native behavior through Expo config and plugins.
+- Run typecheck, lint, and Expo Doctor before declaring foundation work complete.
+
