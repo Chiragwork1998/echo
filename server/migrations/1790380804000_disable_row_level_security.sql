@@ -1,0 +1,31 @@
+-- Up Migration
+-- Fastify is the sole data-access boundary. The echo schema and its tables
+-- remain inaccessible to PUBLIC, anon, and authenticated through grants.
+ALTER TABLE echo.accounts DISABLE ROW LEVEL SECURITY;
+ALTER TABLE echo.auth_identities DISABLE ROW LEVEL SECURITY;
+ALTER TABLE echo.devices DISABLE ROW LEVEL SECURITY;
+ALTER TABLE echo.sessions DISABLE ROW LEVEL SECURITY;
+ALTER TABLE echo.sync_items DISABLE ROW LEVEL SECURITY;
+ALTER TABLE echo.sync_cursors DISABLE ROW LEVEL SECURITY;
+ALTER TABLE echo.recovery_envelopes DISABLE ROW LEVEL SECURITY;
+ALTER TABLE echo.consent_records DISABLE ROW LEVEL SECURITY;
+ALTER TABLE echo.stored_objects DISABLE ROW LEVEL SECURITY;
+ALTER TABLE echo.export_jobs DISABLE ROW LEVEL SECURITY;
+ALTER TABLE echo.deletion_jobs DISABLE ROW LEVEL SECURITY;
+ALTER TABLE echo.reflection_jobs DISABLE ROW LEVEL SECURITY;
+ALTER TABLE echo.idempotency_records DISABLE ROW LEVEL SECURITY;
+
+-- Down Migration
+ALTER TABLE echo.idempotency_records ENABLE ROW LEVEL SECURITY;
+ALTER TABLE echo.reflection_jobs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE echo.deletion_jobs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE echo.export_jobs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE echo.stored_objects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE echo.consent_records ENABLE ROW LEVEL SECURITY;
+ALTER TABLE echo.recovery_envelopes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE echo.sync_cursors ENABLE ROW LEVEL SECURITY;
+ALTER TABLE echo.sync_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE echo.sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE echo.devices ENABLE ROW LEVEL SECURITY;
+ALTER TABLE echo.auth_identities ENABLE ROW LEVEL SECURITY;
+ALTER TABLE echo.accounts ENABLE ROW LEVEL SECURITY;
