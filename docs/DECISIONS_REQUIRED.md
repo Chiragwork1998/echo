@@ -14,7 +14,7 @@ Development of the locked onboarding and Today experience can begin. These decis
 - Cloud provider, production region, and operational owner.
 - Cross-device encryption recovery model: recovery secret, device transfer, or server-assisted key wrapping.
 - AI reflection provider, processing region, retention, training policy, safety behavior, and consent copy.
-- Final authentication providers and their developer-console configuration.
+- Production Supabase Auth configuration: redirect URLs, email templates, and a custom SMTP sender.
 - Remote deletion SLA and backup retention policy.
 
 ## Commercial and legal gates

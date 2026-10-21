@@ -9,13 +9,9 @@ Base path: `/v1`. JSON uses ISO-8601 UTC timestamps and UUIDs. Every mutating re
 
 ## Authentication
 
-The client authenticates with Apple, Google, or email magic link. The backend verifies provider assertions and issues short-lived access plus rotating refresh credentials.
+The client signs in directly with Supabase Auth: Google through the system browser with PKCE, and email through a six-digit one-time code. Apple is not offered. The first sign-in creates the account, so sign-up and sign-in are one flow. Supabase issues the short-lived access token and rotating refresh token; the client keeps the session in SecureStore and sends the access token as `Authorization: Bearer` to this API, which verifies it with Supabase Auth.
 
-- `POST /auth/exchange`
-- `POST /auth/magic-link/request`
-- `POST /auth/magic-link/verify`
-- `POST /auth/refresh`
-- `POST /auth/logout`
+The backend's `POST /auth/exchange`, `/auth/magic-link/request`, `/auth/magic-link/verify`, `/auth/refresh`, and `/auth/logout` routes are not used by the mobile client.
 
 ## Account
 
