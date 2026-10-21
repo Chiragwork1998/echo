@@ -24,11 +24,14 @@ const expectedTables = [
   'devices',
   'export_jobs',
   'idempotency_records',
+  'operational_audit_events',
+  'rate_limit_buckets',
   'recovery_envelopes',
   'reflection_jobs',
   'sessions',
   'stored_objects',
   'sync_cursors',
+  'sync_item_revisions',
   'sync_items',
 ];
 
@@ -56,12 +59,15 @@ async function createAccountAndDevice(): Promise<{
 }
 
 async function expectConstraintViolation(
-  query: Promise<unknown>,
+  query: () => Promise<unknown>,
 ): Promise<void> {
+  await client.query('SAVEPOINT expected_constraint_violation');
   try {
-    await query;
+    await query();
+    await client.query('ROLLBACK TO SAVEPOINT expected_constraint_violation');
     expect.fail('Expected PostgreSQL to reject the row');
   } catch (error: unknown) {
+    await client.query('ROLLBACK TO SAVEPOINT expected_constraint_violation');
     expect(error).toBeInstanceOf(pg.DatabaseError);
     if (error instanceof pg.DatabaseError) {
       expect(error.code).toMatch(/^23/);
@@ -128,10 +134,80 @@ describe.skipIf(databaseUrl === undefined)(
       expect(grants.rows).toEqual([{ count: 0 }]);
     });
 
+    it('has valid foreign keys, checks, triggers, and indexes on every table', async () => {
+      const invalidConstraints = await client.query<{ count: number }>(
+        `SELECT count(*)::integer AS count
+           FROM pg_constraint
+          WHERE connamespace = 'echo'::regnamespace AND NOT convalidated`,
+      );
+      const tablesWithoutIndexes = await client.query<{ table_name: string }>(
+        `SELECT t.tablename AS table_name
+           FROM pg_tables t
+          WHERE t.schemaname = 'echo'
+            AND NOT EXISTS (
+              SELECT 1 FROM pg_indexes i
+              WHERE i.schemaname = t.schemaname AND i.tablename = t.tablename
+            )
+          ORDER BY t.tablename`,
+      );
+      const invalidIndexes = await client.query<{ count: number }>(
+        `SELECT count(*)::integer AS count
+           FROM pg_index i
+           JOIN pg_class c ON c.oid = i.indrelid
+           JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE n.nspname = 'echo' AND NOT i.indisvalid`,
+      );
+      const expectedIndexes = await client.query<{ indexname: string }>(
+        `SELECT indexname FROM pg_indexes
+          WHERE schemaname = 'echo' AND indexname IN (
+            'sync_items_cursor_idx',
+            'sync_items_tombstone_cleanup_idx',
+            'sync_item_revisions_conflict_idx',
+            'sync_item_revisions_cleanup_idx',
+            'sessions_expiry_cleanup_idx',
+            'export_jobs_worker_idx',
+            'export_jobs_expiry_cleanup_idx',
+            'reflection_jobs_expiry_cleanup_idx',
+            'rate_limit_buckets_cleanup_idx',
+            'operational_audit_events_cleanup_idx'
+          ) ORDER BY indexname`,
+      );
+
+      expect(invalidConstraints.rows).toEqual([{ count: 0 }]);
+      expect(tablesWithoutIndexes.rows).toEqual([]);
+      expect(invalidIndexes.rows).toEqual([{ count: 0 }]);
+      expect(expectedIndexes.rows).toHaveLength(10);
+    });
+
+    it('keeps every account-scoped relationship within its owner account', async () => {
+      const unsafe = await client.query<{ conname: string }>(
+        `SELECT c.conname
+           FROM pg_constraint c
+           JOIN pg_class source ON source.oid = c.conrelid
+           JOIN pg_namespace n ON n.oid = source.relnamespace
+          WHERE n.nspname = 'echo' AND c.contype = 'f'
+            AND EXISTS (
+              SELECT 1 FROM unnest(c.conkey) key(attnum)
+              JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = key.attnum
+              WHERE a.attname <> 'account_id'
+            )
+            AND EXISTS (
+              SELECT 1 FROM pg_attribute a
+              WHERE a.attrelid = c.conrelid AND a.attname = 'account_id'
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM unnest(c.conkey) key(attnum)
+              JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = key.attnum
+              WHERE a.attname = 'account_id'
+            )`,
+      );
+      expect(unsafe.rows).toEqual([]);
+    });
+
     it('rejects a device belonging to another account', async () => {
       const first = await createAccountAndDevice();
       const second = await createAccountAndDevice();
-      await expectConstraintViolation(
+      await expectConstraintViolation(() =>
         client.query(
           `INSERT INTO echo.sessions
            (account_id, device_id, refresh_credential_hash, expires_at)
@@ -143,7 +219,7 @@ describe.skipIf(databaseUrl === undefined)(
 
     it('rejects an invalid sync revision', async () => {
       const owner = await createAccountAndDevice();
-      await expectConstraintViolation(
+      await expectConstraintViolation(() =>
         client.query(
           `INSERT INTO echo.sync_items
            (id, account_id, kind, revision, updated_at, ciphertext, nonce,
@@ -157,7 +233,7 @@ describe.skipIf(databaseUrl === undefined)(
 
     it('rejects an incomplete encryption envelope', async () => {
       const owner = await createAccountAndDevice();
-      await expectConstraintViolation(
+      await expectConstraintViolation(() =>
         client.query(
           `INSERT INTO echo.recovery_envelopes
            (account_id, ciphertext, algorithm, content_hash)
@@ -214,6 +290,198 @@ describe.skipIf(databaseUrl === undefined)(
       } finally {
         await database.close();
       }
+    });
+
+    it('enforces monotonic revisions and archives encrypted history', async () => {
+      const owner = await createAccountAndDevice();
+      const inserted = await client.query<{
+        id: string;
+        change_sequence: string;
+      }>(
+        `INSERT INTO echo.sync_items
+           (id, account_id, kind, revision, updated_at, ciphertext, nonce,
+            algorithm, content_hash, created_by_device_id)
+         VALUES (gen_random_uuid(), $1, 'entry', 1, now(), decode('01','hex'),
+                 decode('02','hex'), 'A256GCM', decode('03','hex'), $2)
+         RETURNING id, change_sequence`,
+        [owner.accountId, owner.deviceId],
+      );
+      const item = inserted.rows[0];
+      if (!item) throw new Error('Sync item insert failed');
+
+      await expectConstraintViolation(() =>
+        client.query(
+          `UPDATE echo.sync_items SET revision = 1, updated_at = now()
+            WHERE account_id = $1 AND id = $2`,
+          [owner.accountId, item.id],
+        ),
+      );
+
+      const updated = await client.query<{ change_sequence: string }>(
+        `UPDATE echo.sync_items
+            SET revision = 2, updated_at = now(), ciphertext = decode('04','hex'),
+                nonce = decode('05','hex'), content_hash = decode('06','hex')
+          WHERE account_id = $1 AND id = $2
+          RETURNING change_sequence`,
+        [owner.accountId, item.id],
+      );
+      const history = await client.query<{ revision: string }>(
+        `SELECT revision FROM echo.sync_item_revisions
+          WHERE account_id = $1 AND sync_item_id = $2`,
+        [owner.accountId, item.id],
+      );
+      expect(BigInt(updated.rows[0]?.change_sequence ?? 0)).toBeGreaterThan(
+        BigInt(item.change_sequence),
+      );
+      expect(history.rows).toEqual([{ revision: '1' }]);
+    });
+
+    it('orders sync changes deterministically by cursor sequence and id', async () => {
+      const owner = await createAccountAndDevice();
+      await client.query(
+        `INSERT INTO echo.sync_items
+           (id, account_id, kind, revision, updated_at, ciphertext, nonce,
+            algorithm, content_hash, created_by_device_id)
+         VALUES
+           ('00000000-0000-4000-8000-000000000002', $1, 'settings', 1, now(), decode('01','hex'), decode('02','hex'), 'A256GCM', decode('03','hex'), $2),
+           ('00000000-0000-4000-8000-000000000001', $1, 'profile', 1, now(), decode('04','hex'), decode('05','hex'), 'A256GCM', decode('06','hex'), $2)`,
+        [owner.accountId, owner.deviceId],
+      );
+      const result = await client.query<{
+        id: string;
+        change_sequence: string;
+      }>(
+        `SELECT id, change_sequence FROM echo.sync_items
+          WHERE account_id = $1
+          ORDER BY change_sequence, id`,
+        [owner.accountId],
+      );
+      expect(result.rows).toHaveLength(2);
+      expect(BigInt(result.rows[1]?.change_sequence ?? 0)).toBeGreaterThan(
+        BigInt(result.rows[0]?.change_sequence ?? 0),
+      );
+    });
+
+    it('prevents refresh-hash reuse and supports session revocation and expiry', async () => {
+      const owner = await createAccountAndDevice();
+      await client.query(
+        `INSERT INTO echo.sessions
+           (account_id, device_id, refresh_credential_hash, expires_at, revoked_at)
+         VALUES ($1, $2, decode('a1','hex'), now() + interval '1 day', now())`,
+        [owner.accountId, owner.deviceId],
+      );
+      await expectConstraintViolation(() =>
+        client.query(
+          `INSERT INTO echo.sessions
+             (account_id, refresh_credential_hash, expires_at)
+           VALUES ($1, decode('a1','hex'), now() + interval '1 day')`,
+          [owner.accountId],
+        ),
+      );
+    });
+
+    it('preserves immutable consent history', async () => {
+      const owner = await createAccountAndDevice();
+      const consent = await client.query<{ id: string }>(
+        `INSERT INTO echo.consent_records
+           (account_id, consent_type, policy_version, granted)
+         VALUES ($1, 'privacy', 'v1', true) RETURNING id`,
+        [owner.accountId],
+      );
+      await expectConstraintViolation(() =>
+        client.query(
+          `UPDATE echo.consent_records SET policy_version = 'v2'
+            WHERE account_id = $1 AND id = $2`,
+          [owner.accountId, consent.rows[0]?.id],
+        ),
+      );
+      await client.query(
+        `INSERT INTO echo.consent_records
+           (account_id, consent_type, policy_version, granted, revoked_at)
+         VALUES ($1, 'privacy', 'v2', false, now())`,
+        [owner.accountId],
+      );
+      const history = await client.query<{ policy_version: string }>(
+        `SELECT policy_version FROM echo.consent_records
+          WHERE account_id = $1 AND consent_type = 'privacy'
+          ORDER BY recorded_at, id`,
+        [owner.accountId],
+      );
+      expect(history.rows).toHaveLength(2);
+    });
+
+    it('enforces job state integrity', async () => {
+      const owner = await createAccountAndDevice();
+      await expectConstraintViolation(() =>
+        client.query(
+          `INSERT INTO echo.deletion_jobs (account_id, status)
+           VALUES ($1, 'processing')`,
+          [owner.accountId],
+        ),
+      );
+      await expectConstraintViolation(() =>
+        client.query(
+          `INSERT INTO echo.export_jobs (account_id, status)
+           VALUES ($1, 'complete')`,
+          [owner.accountId],
+        ),
+      );
+    });
+
+    it('enforces idempotency uniqueness and supports cleanup persistence', async () => {
+      const owner = await createAccountAndDevice();
+      await client.query(
+        `INSERT INTO echo.idempotency_records
+           (account_id, scope, idempotency_key, request_hash, expires_at)
+         VALUES ($1, 'sync', 'same-key', decode('01','hex'), now() + interval '1 day')`,
+        [owner.accountId],
+      );
+      await expectConstraintViolation(() =>
+        client.query(
+          `INSERT INTO echo.idempotency_records
+             (account_id, scope, idempotency_key, request_hash, expires_at)
+           VALUES ($1, 'sync', 'same-key', decode('02','hex'), now() + interval '1 day')`,
+          [owner.accountId],
+        ),
+      );
+      await client.query(
+        `INSERT INTO echo.rate_limit_buckets
+           (account_id, scope, subject_hash, window_start, expires_at)
+         VALUES ($1, 'sync', decode('03','hex'), now(), now() + interval '1 hour')`,
+        [owner.accountId],
+      );
+      await client.query(
+        `INSERT INTO echo.operational_audit_events
+           (account_id, event_type, outcome, expires_at)
+         VALUES ($1, 'sync.push', 'succeeded', now() + interval '30 days')`,
+        [owner.accountId],
+      );
+    });
+
+    it('revokes function execution from client roles', async () => {
+      const privileges = await client.query<{
+        public_execute: boolean;
+        anon_execute: boolean;
+        authenticated_execute: boolean;
+      }>(
+        `SELECT
+           has_function_privilege('public', p.oid, 'EXECUTE') AS public_execute,
+           CASE WHEN EXISTS (SELECT 1 FROM pg_roles WHERE rolname='anon')
+             THEN has_function_privilege('anon', p.oid, 'EXECUTE') ELSE false END AS anon_execute,
+           CASE WHEN EXISTS (SELECT 1 FROM pg_roles WHERE rolname='authenticated')
+             THEN has_function_privilege('authenticated', p.oid, 'EXECUTE') ELSE false END AS authenticated_execute
+         FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+         WHERE n.nspname='echo'`,
+      );
+      expect(privileges.rows.length).toBeGreaterThan(0);
+      expect(
+        privileges.rows.every(
+          (row) =>
+            !row.public_execute &&
+            !row.anon_execute &&
+            !row.authenticated_execute,
+        ),
+      ).toBe(true);
     });
 
     it('declares reversible migration sections without executing them', async () => {

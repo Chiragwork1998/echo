@@ -61,8 +61,31 @@ $env:DATABASE_URL='postgresql://...?...sslmode=require'
 npm run migrate
 ```
 
-Supabase Auth, Storage, and its public Data API are outside issue #1. Fastify is
-the only public API boundary.
+Supabase Auth provides identity verification, while Fastify remains the only
+public application-data boundary. The private `echo` schema is not exposed by
+the Supabase Data API.
+
+## Database inventory
+
+The private `echo` schema contains:
+
+- accounts, authentication identities, devices, and rotating sessions
+- encrypted sync items, deterministic sync cursors, and encrypted revision
+  history for conflict recovery
+- encrypted recovery envelopes and immutable consent history
+- encrypted-object metadata for audio, sync payloads, and exports
+- export, deletion, and reflection jobs
+- idempotency records, persistent rate-limit buckets, and privacy-safe
+  operational audit events
+
+Every table has RLS enabled with no policies because mobile clients never query
+these tables. `PUBLIC`, `anon`, and `authenticated` have no schema, table,
+sequence, or function access. New objects inherit secure default privileges.
+
+The `echo-private` Storage bucket is private, accepts only
+`application/octet-stream`, and has a 50 MiB object limit. Store only encrypted
+bytes under opaque, account-prefixed paths. There are no client Storage
+policies; Fastify performs all access with server-side credentials.
 
 ## Run the API
 
@@ -132,6 +155,35 @@ npm run migrate:down
 
 `migrate:down` changes the configured database and is destructive. Use it only
 against a disposable database after reviewing the migration being reverted.
+
+Applied migrations must remain immutable. To release a schema change:
+
+1. Add a new ordered SQL migration; never edit an applied file.
+2. Run the full up/down/up lifecycle on disposable PostgreSQL.
+3. Run the database integration tests with an isolated `TEST_DATABASE_URL`.
+4. Confirm the Supabase project reference and hosted migration history.
+5. Back up the hosted database, then run `npm run migrate` once as a controlled
+   release step.
+6. Verify tables, constraints, indexes, RLS, grants, Storage, and advisors with
+   read-only queries. Never run down migrations against hosted Supabase.
+
+The migrations through `1790380810000_secure_defaults_and_storage.sql` create
+the current inventory. Revision history, tombstones, sessions, idempotency,
+rate limits, audit events, job artifacts, and encrypted objects expose indexed
+timestamps for scheduled cleanup; retention durations belong in deployment
+policy rather than database constraints.
+
+Supabase point-in-time recovery or scheduled backups are the operational
+database restore mechanism. Restore into an isolated project first, verify the
+migration history and encrypted-object references, and only then perform a
+controlled cutover. Storage-object backup and restoration must be coordinated
+with database restoration because PostgreSQL stores metadata, not object bytes.
+
+The final recovery-envelope policy is intentionally blocked pending an owner
+decision between device transfer, a recovery secret, or server-assisted key
+wrapping. Remote-deletion SLA, backup retention, AI-processing retention, audit
+retention, and conflict/tombstone cleanup windows also remain product or
+operational decisions.
 
 ## Optional isolated PostgreSQL
 
