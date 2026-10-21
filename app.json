@@ -24,7 +24,28 @@
     },
     "plugins": [
       "expo-router",
-      "expo-font"
+      "expo-font",
+      "expo-sqlite",
+      [
+        "expo-secure-store",
+        {
+          "faceIDPermission": "Unlock your private journal with Face ID."
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "ECHO uses the microphone only while you record a spoken echo."
+        }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Unlock your private journal with Face ID."
+        }
+      ],
+      "expo-notifications",
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true

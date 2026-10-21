@@ -1,26 +1,12 @@
 import { useRouter } from 'expo-router';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 import { AppShell } from '@/components/AppShell';
 import { EchoBackground } from '@/components/EchoBackground';
-import { ReadabilityScrim, type DayScrims } from '@/components/ReadabilityScrim';
-import { screenBackgrounds } from '@/design/backgrounds';
+import { PrimaryCTA } from '@/components/PrimaryCTA';
+import { screenBackgrounds, screenFocalPoints } from '@/design/backgrounds';
 import { useEchoTheme } from '@/design/ThemeProvider';
 import { tokens } from '@/design/tokens';
-
-/** Day keeps the existing two scrims; Night is handled inside the component. */
-const LANDING_DAY_SCRIMS: DayScrims = {
-  top: {
-    colors: ['rgba(3, 11, 22, 0.42)', 'rgba(3, 11, 22, 0)'],
-    locations: [0, 1],
-    height: '42%',
-  },
-  bottom: {
-    colors: ['rgba(3, 11, 22, 0)', 'rgba(3, 11, 22, 0.54)'],
-    locations: [0, 1],
-    height: '34%',
-  },
-};
 
 export default function LandingPreview() {
   const router = useRouter();
@@ -30,10 +16,13 @@ export default function LandingPreview() {
     <AppShell
       theme={theme}
       background={
-        <EchoBackground source={screenBackgrounds[name].landing} fallbackColor={theme.color.textInk} />
+        <EchoBackground
+          fallbackColor={theme.color.textInk}
+          focalPoint={screenFocalPoints.landing}
+          source={screenBackgrounds[name].landing}
+        />
       }
     >
-      <ReadabilityScrim day={LANDING_DAY_SCRIMS} />
       <View style={styles.content}>
         <View style={styles.hero}>
           <Text accessibilityRole="header" style={[styles.wordmark, { color: theme.color.textPrimary }]}>ECHO</Text>
@@ -41,17 +30,7 @@ export default function LandingPreview() {
           <Text style={[styles.tagline, { color: theme.color.textSecondary }]}>Meet the hidden parts of you.</Text>
         </View>
         <View style={styles.actions}>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => router.push('/onboarding/intent')}
-            style={({ pressed }) => [
-              styles.button,
-              { backgroundColor: theme.color.surfacePrimary },
-              pressed && styles.buttonPressed,
-            ]}
-          >
-            <Text style={[styles.buttonLabel, { color: theme.color.textInk }]}>BEGIN</Text>
-          </Pressable>
+          <PrimaryCTA label="Begin" onPress={() => router.push('/onboarding/intent')} />
           <Text style={[styles.caption, { color: theme.color.textSecondary }]}>SEVEN MINUTES, ONCE A DAY</Text>
         </View>
       </View>
@@ -65,43 +44,32 @@ const styles = StyleSheet.create({
     paddingHorizontal: tokens.layout.gutter,
     justifyContent: 'space-between',
   },
+  /**
+   * Golden hero: wordmark cap top 118 pt, hairline rule at 182 pt, italic
+   * tagline cap top 200 pt. The wordmark is a 56 pt display cut, not the 28 pt
+   * header cut.
+   */
   hero: {
     alignItems: 'center',
-    marginTop: '24%',
+    marginTop: 47,
   },
   wordmark: {
-    fontFamily: tokens.typography.displayFamily,
-    fontSize: tokens.typography.wordmark.size,
-    letterSpacing: tokens.typography.wordmark.tracking,
-    lineHeight: tokens.typography.wordmark.lineHeight,
+    ...tokens.type.display,
+    fontSize: 56,
+    letterSpacing: 7.5,
+    lineHeight: 60,
   },
-  rule: { width: 16, height: 1, marginTop: 18, opacity: 0.8 },
+  rule: { width: 21, height: 1.6, marginTop: 16, opacity: 0.78 },
   tagline: {
-    marginTop: 16,
-    fontFamily: tokens.typography.displayFamily,
-    fontSize: tokens.typography.bodyM.size,
-    fontStyle: 'italic',
-    lineHeight: tokens.typography.bodyM.lineHeight,
+    marginTop: 12,
+    ...tokens.type.displayItalic,
+    fontSize: tokens.typography.bodyL.size,
+    lineHeight: tokens.typography.bodyL.lineHeight,
   },
-  actions: { alignItems: 'center', paddingBottom: 10 },
-  button: {
-    width: '100%',
-    maxWidth: tokens.layout.maxContentWidth,
-    height: tokens.size.primaryButtonHeight,
-    borderRadius: tokens.radius.button,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  buttonPressed: { opacity: 0.9, transform: [{ scale: 0.985 }] },
-  buttonLabel: {
-    fontFamily: tokens.typography.uiFamilyMedium,
-    fontSize: tokens.typography.button.size,
-    letterSpacing: tokens.typography.button.tracking,
-    lineHeight: tokens.typography.button.lineHeight,
-  },
+  actions: { alignItems: 'center', paddingBottom: 16 },
   caption: {
-    marginTop: 14,
-    fontFamily: tokens.typography.uiFamily,
+    marginTop: 18,
+    ...tokens.type.ui,
     fontSize: tokens.typography.caption.size,
     letterSpacing: tokens.typography.caption.tracking,
     lineHeight: tokens.typography.caption.lineHeight,

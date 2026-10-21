@@ -56,7 +56,7 @@ function resolveThemeName(
 
 export function EchoThemeProvider({ children }: PropsWithChildren) {
   const systemScheme = useColorScheme();
-  const [setting, setSetting] = useState<EchoThemeSetting>('automatic');
+  const [setting, setSetting] = useState<EchoThemeSetting>('night');
 
   useEffect(() => {
     if (!__DEV__) {

@@ -1,254 +1,248 @@
-import { LinearGradient } from 'expo-linear-gradient';
 import { type Href, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
 import { AppShell } from '@/components/AppShell';
+import { ChoiceMarker } from '@/components/ChoiceMarker';
 import { EchoBackground } from '@/components/EchoBackground';
 import { OnboardingHeader } from '@/components/OnboardingHeader';
-import { ReadabilityScrim, type DayScrims } from '@/components/ReadabilityScrim';
-import { screenBackgrounds } from '@/design/backgrounds';
+import { PrimaryCTA } from '@/components/PrimaryCTA';
+import { screenBackgrounds, screenFocalPoints } from '@/design/backgrounds';
 import { useEchoTheme } from '@/design/ThemeProvider';
+import { FRAME, HERO, INTENT_CHOICES, INTENT_TRAIL } from '@/design/onboardingLayout';
+import { REFERENCE_INSETS } from '@/design/safeArea';
 import { tokens } from '@/design/tokens';
+import { setIntentSelection, type IntentSelection } from '@/state/onboardingSelections';
 
-/** Day keeps the existing two scrims; Night is handled inside the component. */
-const INTENT_DAY_SCRIMS: DayScrims = {
-  top: {
-    colors: ['rgba(4,14,28,0.48)', 'rgba(4,14,28,0.08)', 'rgba(4,14,28,0)'],
-    locations: [0, 0.42, 0.7],
-    height: '62%',
-  },
-  bottom: {
-    colors: ['rgba(3,11,22,0)', 'rgba(3,11,22,0.12)', 'rgba(3,11,22,0.70)'],
-    locations: [0, 0.52, 1],
-    height: '30%',
-  },
-};
+type IntentChoiceId = IntentSelection;
 
-// Reference geometry from SCREEN_SPECS.md: 393 x 852 pt viewport; the safe-area
-// content box is 852 - (59 top + 34 bottom) = 759 pt tall.
-const REFERENCE = { width: 393, contentHeight: 759 };
-
-type IntentChoiceId = 'quiet_noise' | 'understand_self' | 'hold_moments' | 'find_direction';
-
-type IntentChoice = {
-  id: IntentChoiceId;
-  label: string;
-  /** Marker centre in reference content-box points (x measured from screen left). */
-  center: { x: number; y: number };
-};
-
-const CHOICES: IntentChoice[] = [
-  { id: 'quiet_noise', label: 'Quiet the noise', center: { x: 68, y: 349 } },
-  { id: 'understand_self', label: 'Understand myself', center: { x: 194, y: 419 } },
-  { id: 'hold_moments', label: 'Hold onto moments', center: { x: 68, y: 500 } },
-  { id: 'find_direction', label: 'Find my direction', center: { x: 236, y: 580 } },
-];
-
-// Restrained dotted trail through the four marker centres, same reference points.
-const TRAIL_PATH = [
-  'M 68 349',
-  'C 108 386, 148 372, 194 419',
-  'C 238 462, 120 462, 68 500',
-  'C 26 535, 190 545, 236 580',
-].join(' ');
-
-const MARKER_SLOT = 30;
-const CTA_COLORS = ['#FBF8F2', '#EDE6DC'] as const;
+const STAGE_OFFSET = REFERENCE_INSETS.top;
+const TITLE_TOP = HERO.titleCapTop - HERO.title.capTopOffset - STAGE_OFFSET;
+const SUBTITLE_TOP = HERO.subtitleCapTop - HERO.subtitle.capTopOffset - STAGE_OFFSET;
+const ROW_HEIGHT = tokens.size.tapTarget;
+const MARKER_SLOT = 26;
+const LABEL_GAP = 4.5;
 
 export default function IntentScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const [selection, setSelection] = useState<IntentChoiceId | null>(null);
+  const { width } = useWindowDimensions();
+  const { fontScale } = useWindowDimensions();
   const { name, theme } = useEchoTheme();
+
+  const accessibleLayout = fontScale >= 1.25;
+  const xOffset = (width - FRAME.width) / 2;
+
+  const choose = (id: IntentChoiceId) => {
+    setSelection(id);
+    setIntentSelection(id);
+  };
 
   return (
     <AppShell
       theme={theme}
       background={
-        <EchoBackground source={screenBackgrounds[name].intent} fallbackColor={theme.color.textInk} />
+        <EchoBackground
+          fallbackColor={theme.color.textInk}
+          focalPoint={screenFocalPoints.intent}
+          source={screenBackgrounds[name].intent}
+        />
       }
     >
-      <ReadabilityScrim day={INTENT_DAY_SCRIMS} style={{ bottom: -insets.bottom, top: -insets.top }} />
-
-      <OnboardingHeader currentStep={1} onBack={() => router.back()} />
-
-      <View style={styles.copy}>
-        <Text accessibilityRole="header" style={styles.title}>
-          What brought you here?
-        </Text>
-        <Text style={styles.subtitle}>Choose what feels closest today.</Text>
-      </View>
-
-      <View accessibilityRole="radiogroup" pointerEvents="box-none" style={StyleSheet.absoluteFill}>
-        <Svg
-          height="100%"
-          pointerEvents="none"
-          preserveAspectRatio="none"
-          style={StyleSheet.absoluteFill}
-          viewBox={`0 0 ${REFERENCE.width} ${REFERENCE.contentHeight}`}
-          width="100%"
-        >
-          <Path
-            d={TRAIL_PATH}
-            fill="none"
-            stroke="rgba(3,11,22,0.22)"
-            strokeDasharray="0.1 7"
-            strokeLinecap="round"
-            strokeWidth={3}
+      {accessibleLayout ? (
+        <ScrollView contentContainerStyle={styles.accessibleContent} showsVerticalScrollIndicator={false}>
+          <OnboardingHeader currentStep={1} onBack={() => router.back()} />
+          <Text accessibilityRole="header" style={styles.title}>
+            What brought you here?
+          </Text>
+          <Text style={styles.screenSubtitle}>Choose what feels closest today.</Text>
+          <View accessibilityRole="radiogroup" style={styles.accessibleChoices}>
+            {INTENT_CHOICES.map((choice) => {
+              const selected = selection === choice.id;
+              return (
+                <Pressable
+                  accessibilityLabel={choice.label}
+                  accessibilityRole="radio"
+                  accessibilityState={{ checked: selected }}
+                  key={choice.id}
+                  onPress={() => choose(choice.id)}
+                  style={({ pressed }) => [
+                    styles.accessibleChoice,
+                    {
+                      backgroundColor: theme.color.surfaceGlassStrong,
+                      borderColor: selected ? theme.color.focus : theme.color.borderGlass,
+                    },
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <ChoiceMarker selected={selected} />
+                  <Text style={styles.accessibleChoiceLabel}>{choice.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <PrimaryCTA
+            disabled={!selection}
+            label="Begin with this"
+            onPress={() => router.push('/onboarding/horizon' as Href)}
+            style={styles.accessibleCta}
           />
-          <Path
-            d={TRAIL_PATH}
-            fill="none"
-            stroke="rgba(255,249,239,0.85)"
-            strokeDasharray="0.1 7"
-            strokeLinecap="round"
-            strokeWidth={2}
-          />
-        </Svg>
+        </ScrollView>
+      ) : (
+        <View style={styles.stage}>
+          <OnboardingHeader currentStep={1} onBack={() => router.back()} />
 
-        {CHOICES.map((choice) => {
-          const selected = selection === choice.id;
-          return (
-            <Pressable
-              accessibilityLabel={choice.label}
-              accessibilityRole="radio"
-              accessibilityState={{ checked: selected }}
-              hitSlop={10}
-              key={choice.id}
-              onPress={() => setSelection(choice.id)}
-              style={({ pressed }) => [
-                styles.choice,
-                {
-                  left: choice.center.x - MARKER_SLOT / 2,
-                  top: `${((choice.center.y - tokens.size.tapTarget / 2) / REFERENCE.contentHeight) * 100}%`,
-                },
-                pressed && styles.choicePressed,
-              ]}
-            >
-              <View style={styles.markerSlot}>
-                <View style={selected ? styles.markerSelected : styles.markerIdle}>
-                  {selected ? <View style={styles.markerCore} /> : null}
-                </View>
-              </View>
-              <Text style={styles.choiceLabel}>{choice.label}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
+          <Text accessibilityRole="header" style={[styles.title, styles.stageTitle, { top: TITLE_TOP }]}>
+            What brought you here?
+          </Text>
+          <Text style={[styles.screenSubtitle, { top: SUBTITLE_TOP }]}>
+            Choose what feels closest today.
+          </Text>
 
-      <View style={styles.footer}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityState={{ disabled: !selection }}
-          disabled={!selection}
-          onPress={() => router.push('/onboarding/horizon' as Href)}
-          style={({ pressed }) => [styles.cta, !selection && styles.ctaDisabled, pressed && styles.ctaPressed]}
-        >
-          <LinearGradient
-            colors={CTA_COLORS}
-            end={{ x: 1, y: 1 }}
+          <Svg
+            height="100%"
             pointerEvents="none"
-            start={{ x: 0, y: 0 }}
-            style={StyleSheet.absoluteFill}
-          />
-          <Text style={[styles.ctaLabel, { color: theme.color.textInk }]}>Begin with this</Text>
-        </Pressable>
-      </View>
+            preserveAspectRatio="none"
+            style={[StyleSheet.absoluteFill, { left: xOffset }]}
+            viewBox={`0 0 ${FRAME.width} ${FRAME.height}`}
+            width={FRAME.width}
+          >
+            <Path
+              d={INTENT_TRAIL}
+              fill="none"
+              stroke="rgba(3,11,22,0.20)"
+              strokeDasharray="0.1 7"
+              strokeLinecap="round"
+              strokeWidth={3.2}
+            />
+            <Path
+              d={INTENT_TRAIL}
+              fill="none"
+              stroke="rgba(255,249,239,0.88)"
+              strokeDasharray="0.1 7"
+              strokeLinecap="round"
+              strokeWidth={2.2}
+            />
+          </Svg>
+
+          <View
+            accessibilityRole="radiogroup"
+            pointerEvents="box-none"
+            style={[StyleSheet.absoluteFill, styles.clip]}
+          >
+            {INTENT_CHOICES.map((choice) => {
+              const selected = selection === choice.id;
+              return (
+                <Pressable
+                  accessibilityLabel={choice.label}
+                  accessibilityRole="radio"
+                  accessibilityState={{ checked: selected }}
+                  key={choice.id}
+                  onPress={() => choose(choice.id)}
+                  style={({ pressed }) => [
+                    styles.choice,
+                    {
+                      left: choice.center.x + xOffset - MARKER_SLOT / 2,
+                      top: choice.center.y - STAGE_OFFSET - ROW_HEIGHT / 2,
+                    },
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <ChoiceMarker selected={selected} />
+                  <Text style={styles.choiceLabel}>{choice.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <View style={styles.footer}>
+            <PrimaryCTA
+              disabled={!selection}
+              label="Begin with this"
+              onPress={() => router.push('/onboarding/horizon' as Href)}
+            />
+          </View>
+        </View>
+      )}
     </AppShell>
   );
 }
 
 const styles = StyleSheet.create({
-  copy: { marginTop: 20, paddingHorizontal: tokens.layout.gutter, alignItems: 'center' },
+  /** Clipping the stage keeps the dotted trail from widening the web viewport. */
+  stage: { flex: 1, overflow: 'hidden' },
+  clip: { overflow: 'hidden' },
   title: {
     color: '#FFF9EF',
-    fontFamily: tokens.typography.displayFamily,
-    fontSize: tokens.typography.displayM.size,
-    letterSpacing: tokens.typography.displayM.tracking,
-    lineHeight: tokens.typography.displayM.lineHeight,
+    ...tokens.type.display,
+    fontSize: HERO.title.size,
+    letterSpacing: HERO.title.tracking,
+    lineHeight: HERO.title.lineHeight,
     textAlign: 'center',
+    textShadowColor: 'rgba(3,11,22,0.40)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 5,
   },
-  subtitle: {
-    marginTop: 8,
+  stageTitle: { position: 'absolute', left: 24, right: 24 },
+  screenSubtitle: {
+    position: 'absolute',
+    left: 24,
+    right: 24,
     color: 'rgba(255,249,239,0.92)',
-    fontFamily: tokens.typography.displayFamily,
-    fontSize: tokens.typography.bodyM.size,
-    lineHeight: tokens.typography.bodyM.lineHeight,
+    ...tokens.type.ui,
+    fontSize: HERO.subtitle.size,
+    letterSpacing: tokens.typography.bodyM.tracking,
+    lineHeight: HERO.subtitle.lineHeight,
     textAlign: 'center',
     textShadowColor: 'rgba(3,11,22,0.35)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
   },
-  choice: { position: 'absolute', height: tokens.size.tapTarget, flexDirection: 'row', alignItems: 'center' },
-  choicePressed: { opacity: 0.72 },
-  markerSlot: { width: MARKER_SLOT, height: MARKER_SLOT, alignItems: 'center', justifyContent: 'center' },
-  markerIdle: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255,249,239,0.92)',
-    shadowColor: '#03111F',
-    shadowOpacity: 0.35,
-    shadowRadius: 3,
-    shadowOffset: { width: 0, height: 1 },
-  },
-  markerSelected: {
-    width: MARKER_SLOT,
-    height: MARKER_SLOT,
-    borderRadius: MARKER_SLOT / 2,
-    borderWidth: 2,
-    borderColor: '#E7B65B',
-    backgroundColor: 'rgba(231,182,91,0.16)',
+  choice: {
+    position: 'absolute',
+    height: ROW_HEIGHT,
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#E7B65B',
-    shadowOpacity: 0.85,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 6,
   },
-  markerCore: { width: 18, height: 18, borderRadius: 9, backgroundColor: '#FFFDF7' },
+  pressed: { opacity: 0.72 },
   choiceLabel: {
-    marginLeft: 10,
+    marginLeft: LABEL_GAP,
     color: '#FFF9EF',
-    fontFamily: tokens.typography.displayFamily,
-    fontSize: tokens.typography.bodyM.size,
-    lineHeight: tokens.typography.bodyM.lineHeight,
+    ...tokens.type.display,
+    fontSize: 18,
+    lineHeight: 22,
     textShadowColor: 'rgba(3,11,22,0.45)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
   },
   footer: {
     position: 'absolute',
-    right: tokens.layout.gutter,
-    bottom: 24,
-    left: tokens.layout.gutter,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    paddingHorizontal: 24,
+    paddingBottom: 16,
     alignItems: 'center',
   },
-  cta: {
-    width: '100%',
-    maxWidth: tokens.layout.maxContentWidth,
-    height: tokens.size.primaryButtonHeight,
-    borderRadius: tokens.size.primaryButtonHeight / 2,
-    overflow: 'hidden',
+  accessibleContent: { paddingHorizontal: 24, paddingBottom: 28 },
+  accessibleChoices: { marginTop: 24, gap: 12 },
+  accessibleChoice: {
+    minHeight: 64,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    borderRadius: tokens.radius.card,
+    borderWidth: 1,
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000000',
-    shadowOpacity: 0.18,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 8,
+    gap: 14,
   },
-  ctaDisabled: { opacity: 0.42, shadowOpacity: 0, elevation: 0 },
-  ctaPressed: { opacity: 0.88, transform: [{ scale: 0.985 }] },
-  ctaLabel: {
-    fontFamily: tokens.typography.uiFamilyMedium,
-    fontSize: tokens.typography.button.size,
-    letterSpacing: tokens.typography.button.tracking,
-    lineHeight: tokens.typography.button.lineHeight,
+  accessibleChoiceLabel: {
+    flex: 1,
+    color: '#FFF9EF',
+    ...tokens.type.display,
+    fontSize: 22,
+    lineHeight: 26,
   },
+  accessibleCta: { alignSelf: 'center', marginTop: 32 },
 });

@@ -1,18 +1,22 @@
 import type { PropsWithChildren, ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ReadabilityScrim } from './ReadabilityScrim';
+import { useEchoInsets } from '@/design/safeArea';
 import type { EchoTheme } from '@/design/themes';
 
 type AppShellProps = PropsWithChildren<{ theme: EchoTheme; background?: ReactNode }>;
 
 export function AppShell({ background, children, theme }: AppShellProps) {
+  const insets = useEchoInsets();
+
   return (
     <View style={[styles.root, { backgroundColor: theme.color.textInk }]}>
       {background}
-      <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
+      <ReadabilityScrim />
+      <View style={[styles.safeArea, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
         {children}
-      </SafeAreaView>
+      </View>
     </View>
   );
 }
