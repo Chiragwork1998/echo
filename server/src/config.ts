@@ -4,7 +4,14 @@ const EnvironmentSchema = z.object({
   DATABASE_URL: z.string().url().startsWith('postgresql://'),
   SUPABASE_URL: z.string().url().startsWith('https://'),
   SUPABASE_AUTH_API_KEY: z.string().min(20),
-  OPENAI_API_KEY: z.string().min(20),
+  SARVAM_VOICE_API: z.string().min(20),
+  OPENAI_API_KEY: z.string().min(20).optional(),
+  ECHO_COMPANION_MODEL: z.string().min(1).optional(),
+  /** When set, the companion uses DeepSeek instead of OpenAI. */
+  DEEPSEEK_API_KEY: z.string().min(20).optional(),
+  DEEPSEEK_MODEL: z.string().min(1).optional(),
+  ECHO_COMPANION_LOCAL_GUEST: z.enum(['true', 'false']).optional(),
+  ECHO_COMPANION_ORIGINS: z.string().optional(),
   HOST: z.string().min(1).default('127.0.0.1'),
   PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
   LOG_LEVEL: z
@@ -35,5 +42,6 @@ export const publicConfiguration = {
 
 export const REFRESH_SESSION_LIFETIME_SECONDS = 30 * 24 * 60 * 60;
 export const TRANSCRIPTION_MAX_BYTES = 25 * 1024 * 1024;
-export const TRANSCRIPTION_TIMEOUT_MS = 60_000;
+// Covers Sarvam batch jobs for recordings over 30 s (~15 s observed for 30 s).
+export const TRANSCRIPTION_TIMEOUT_MS = 150_000;
 export const TRANSCRIPTION_RATE_LIMIT_PER_HOUR = 10;

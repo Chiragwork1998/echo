@@ -21,6 +21,11 @@ import {
   type ProviderSession,
 } from './auth.js';
 import { createBearerAuthentication } from './auth-middleware.js';
+import { registerCompanionRoutes } from './companion-routes.js';
+import {
+  unavailableCompanionProvider,
+  type CompanionProvider,
+} from './companion.js';
 import {
   publicConfiguration,
   REFRESH_SESSION_LIFETIME_SECONDS,
@@ -71,6 +76,10 @@ interface BuildAppOptions {
   authProvider?: AuthProvider;
   authStore?: AuthStore;
   transcriptionProvider?: TranscriptionProvider;
+  companionProvider?: CompanionProvider;
+  companionLocalGuest?: boolean;
+  companionAllowedOrigins?: readonly string[];
+  companionRateLimiter?: AccountRateLimiter;
   transcriptionRateLimiter?: AccountRateLimiter;
   transcriptionIdempotency?: TranscriptionIdempotencyStore;
   transcriptionMaxBytes?: number;
@@ -99,6 +108,10 @@ export async function buildApp({
   authProvider = unavailableAuthProvider,
   authStore = unavailableAuthStore,
   transcriptionProvider = unavailableTranscriptionProvider,
+  companionProvider = unavailableCompanionProvider,
+  companionLocalGuest = false,
+  companionAllowedOrigins = [],
+  companionRateLimiter,
   transcriptionRateLimiter = new AccountRateLimiter(
     TRANSCRIPTION_RATE_LIMIT_PER_HOUR,
     60 * 60 * 1000,
@@ -265,6 +278,14 @@ export async function buildApp({
     },
     () => publicConfiguration,
   );
+
+  registerCompanionRoutes(app, {
+    provider: companionProvider,
+    authenticate,
+    localGuest: companionLocalGuest,
+    allowedOrigins: companionAllowedOrigins,
+    ...(companionRateLimiter ? { rateLimiter: companionRateLimiter } : {}),
+  });
 
   function credentialResponse(
     session: ProviderSession,
@@ -450,14 +471,18 @@ export async function buildApp({
   app.post(
     '/v1/transcriptions',
     {
-      preHandler: authenticate,
+      // Voice-to-text works without signing in. A bearer token is still
+      // verified when sent; anonymous callers are limited per client IP.
+      preHandler: async (request, reply) => {
+        if (request.headers.authorization) await authenticate(request, reply);
+      },
       // Multipart streams are validated explicitly below. This compiler keeps
       // the binary request contract in OpenAPI without asking AJV to consume it.
       validatorCompiler: () => () => true,
       schema: {
         operationId: 'createTranscription',
         tags: ['Transcription'],
-        security: [{ bearerAuth: [] }],
+        security: [{ bearerAuth: [] }, {}],
         consumes: ['multipart/form-data'],
         headers: {
           type: 'object',
@@ -485,8 +510,9 @@ export async function buildApp({
       },
     },
     async (request, reply) => {
-      const authenticated = request.authenticatedAccount;
-      if (!authenticated) throw new AuthenticationError();
+      // ponytail: per-IP limit for anonymous callers; add device attestation if the API goes public.
+      const caller =
+        request.authenticatedAccount?.account.id ?? `ip:${request.ip}`;
       const idempotencyKey = request.headers['idempotency-key'];
       if (
         typeof idempotencyKey !== 'string' ||
@@ -588,14 +614,16 @@ export async function buildApp({
           .digest('hex');
         try {
           const result = await transcriptionIdempotency.run(
-            authenticated.account.id,
+            caller,
             idempotencyKey,
             requestHash,
             async () => {
-              if (!transcriptionRateLimiter.consume(authenticated.account.id))
+              if (!transcriptionRateLimiter.consume(caller))
                 throw new TranscriptionProviderError('rate_limited');
-              const transcription =
-                await transcriptionProvider.transcribe(temporaryPath);
+              const transcription = await transcriptionProvider.transcribe(
+                temporaryPath,
+                durationSeconds,
+              );
               return { ...transcription, durationSeconds };
             },
           );

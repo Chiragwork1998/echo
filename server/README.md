@@ -117,7 +117,7 @@ Configure these encrypted environment variables for Production and Preview:
 DATABASE_URL
 SUPABASE_URL
 SUPABASE_AUTH_API_KEY
-OPENAI_API_KEY
+SARVAM_VOICE_API
 LOG_LEVEL=info
 ```
 
@@ -129,7 +129,8 @@ Run `npm run migrate` as a separate, controlled release step before deploying
 code that depends on a new schema. Do not add migrations to the Vercel build
 command: concurrent preview builds must not mutate the shared database.
 
-`OPENAI_API_KEY` is a backend-only secret used by `POST /v1/transcriptions`.
+`SARVAM_VOICE_API` is the backend-only Sarvam key used by `POST /v1/transcriptions`
+(Saaras v4 speech-to-text; clips over 30 s use Sarvam's batch job API).
 Configure it directly in the deployment platform's encrypted secret manager.
 It is intentionally absent from `.env.example`, client configuration, logs,
 screenshots, and API responses.

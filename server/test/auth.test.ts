@@ -65,6 +65,41 @@ describe('authentication and account API', () => {
     expect(me.json<{ id: string }>().id).toBe(credentials.account.id);
   });
 
+  it('provisions an account for a verified token signed in outside the exchange', async () => {
+    // The mobile app signs in with Supabase directly, so the provider accepts
+    // the token while this store has never seen the identity.
+    const authProvider = new FakeAuthProvider();
+    const issuer = await buildApp({
+      database: database(),
+      authProvider,
+      authStore: new FakeAuthStore(),
+      logger: false,
+    });
+    apps.push(issuer);
+    const { accessToken } = (await exchange(issuer, 'alice')).json<{
+      accessToken: string;
+    }>();
+    const app = await buildApp({
+      database: database(),
+      authProvider,
+      authStore: new FakeAuthStore(),
+      logger: false,
+    });
+    apps.push(app);
+
+    const request = () =>
+      app.inject({
+        method: 'GET',
+        url: '/v1/me',
+        headers: { authorization: `Bearer ${accessToken}` },
+      });
+    const first = await request();
+    expect(first.statusCode).toBe(200);
+    expect((await request()).json<{ id: string }>().id).toBe(
+      first.json<{ id: string }>().id,
+    );
+  });
+
   it('returns a generic error for invalid credentials', async () => {
     const { app } = await testApp();
     const response = await app.inject({

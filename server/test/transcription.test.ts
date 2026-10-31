@@ -1,4 +1,6 @@
-import { access } from 'node:fs/promises';
+import { access, mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Writable } from 'node:stream';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -7,6 +9,7 @@ import { buildApp } from '../src/application.js';
 import type { DatabaseDependency } from '../src/database.js';
 import {
   AccountRateLimiter,
+  SarvamTranscriptionProvider,
   TranscriptionProviderError,
   type TranscriptionProvider,
 } from '../src/transcription.js';
@@ -111,13 +114,36 @@ afterEach(async () => {
 });
 
 describe('POST /v1/transcriptions', () => {
-  it('requires bearer authentication', async () => {
+  it('transcribes without sign-in but rejects an invalid bearer token', async () => {
     const { app } = await setup({
       transcribe: vi
         .fn()
         .mockResolvedValue({ transcript: 'private', language: 'en' }),
     });
-    expect((await request(app, undefined)).statusCode).toBe(401);
+    const anonymous = await request(app, undefined);
+    expect(anonymous.statusCode).toBe(200);
+    expect(anonymous.json<{ transcript: string }>().transcript).toBe('private');
+    expect(
+      (await request(app, 'not-a-token', undefined, 'transcription-2'))
+        .statusCode,
+    ).toBe(401);
+  });
+
+  it('rate limits anonymous callers per client address', async () => {
+    const { app } = await setup(
+      {
+        transcribe: vi
+          .fn()
+          .mockResolvedValue({ transcript: 'private', language: 'en' }),
+      },
+      { limiter: new AccountRateLimiter(1, 60_000) },
+    );
+    expect((await request(app, undefined, undefined, 'a')).statusCode).toBe(
+      200,
+    );
+    expect((await request(app, undefined, undefined, 'b')).statusCode).toBe(
+      429,
+    );
   });
 
   it('transcribes supported audio and removes its temporary file', async () => {
@@ -233,5 +259,64 @@ describe('POST /v1/transcriptions', () => {
     expect(logs).not.toContain(transcript);
     expect(logs).not.toContain(accessToken);
     expect(logs).not.toContain(wav().toString('base64'));
+  });
+});
+
+describe('SarvamTranscriptionProvider', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('uses sync up to 30 seconds and the batch job API beyond', async () => {
+    const api = 'https://api.sarvam.ai/speech-to-text';
+    const responses: Record<string, unknown> = {
+      [`POST ${api}`]: { transcript: ' short ', language_code: 'hi-IN' },
+      [`POST ${api}/job/v1`]: { job_id: 'job' },
+      [`POST ${api}/job/v1/upload-files`]: {
+        upload_urls: { 'upload.m4a': { file_url: 'https://storage/in' } },
+      },
+      'PUT https://storage/in': {},
+      [`POST ${api}/job/v1/job/start`]: {},
+      [`GET ${api}/job/v1/job/status`]: {
+        job_state: 'Completed',
+        job_details: [{ state: 'Success', outputs: [{ file_name: '0.json' }] }],
+      },
+      [`POST ${api}/job/v1/download-files`]: {
+        download_urls: { '0.json': { file_url: 'https://storage/out' } },
+      },
+      'GET https://storage/out': { transcript: 'long', language_code: null },
+    };
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      const key = `${init?.method ?? 'GET'} ${url}`;
+      return Promise.resolve(
+        Response.json(responses[key] ?? {}, {
+          status: key in responses ? 200 : 404,
+        }),
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const directory = await mkdtemp(join(tmpdir(), 'echo-sarvam-'));
+    const path = join(directory, 'upload.m4a');
+    await writeFile(path, wav());
+    const provider = new SarvamTranscriptionProvider('sarvam-key', 10_000);
+
+    await expect(provider.transcribe(path, 30)).resolves.toEqual({
+      transcript: 'short',
+      language: 'hi-IN',
+    });
+    await expect(provider.transcribe(path, 31)).resolves.toEqual({
+      transcript: 'long',
+      language: 'und',
+    });
+
+    const storageCalls = fetchMock.mock.calls.filter(([url]) =>
+      url.startsWith('https://storage/'),
+    );
+    expect(storageCalls).toHaveLength(2);
+    for (const [, init] of storageCalls)
+      expect(JSON.stringify(init?.headers ?? {})).not.toContain('sarvam-key');
+    expect(storageCalls[0]?.[1]?.headers).toMatchObject({
+      'content-type': 'audio/x-m4a',
+    });
   });
 });

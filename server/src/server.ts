@@ -1,11 +1,14 @@
 import 'dotenv/config';
+// Vercel's Fastify preset only accepts an entrypoint that imports fastify itself.
+import 'fastify';
 
 import { buildApp } from './application.js';
 import { readEnvironment, TRANSCRIPTION_TIMEOUT_MS } from './config.js';
 import { createPostgresDependency } from './database.js';
 import { createLoggerOptions } from './logger.js';
+import { companionProviderFor } from './companion.js';
 import { SupabaseAuthProvider } from './supabase-auth.js';
-import { OpenAITranscriptionProvider } from './transcription.js';
+import { SarvamTranscriptionProvider } from './transcription.js';
 
 const environment = readEnvironment();
 const database = createPostgresDependency(environment.DATABASE_URL);
@@ -13,8 +16,8 @@ const authProvider = new SupabaseAuthProvider(
   environment.SUPABASE_URL,
   environment.SUPABASE_AUTH_API_KEY,
 );
-const transcriptionProvider = new OpenAITranscriptionProvider(
-  environment.OPENAI_API_KEY,
+const transcriptionProvider = new SarvamTranscriptionProvider(
+  environment.SARVAM_VOICE_API,
   TRANSCRIPTION_TIMEOUT_MS,
 );
 const app = await buildApp({
@@ -22,6 +25,15 @@ const app = await buildApp({
   authProvider,
   authStore: database,
   transcriptionProvider,
+  companionProvider: companionProviderFor(environment),
+  companionLocalGuest:
+    environment.ECHO_COMPANION_LOCAL_GUEST === 'true' &&
+    process.env['NODE_ENV'] !== 'production' &&
+    process.env['VERCEL'] !== '1',
+  companionAllowedOrigins:
+    environment.ECHO_COMPANION_ORIGINS?.split(',')
+      .map((origin) => origin.trim())
+      .filter(Boolean) ?? [],
   logger: createLoggerOptions(environment.LOG_LEVEL),
 });
 

@@ -1,6 +1,6 @@
-import { createReadStream } from 'node:fs';
-
-import OpenAI from 'openai';
+import { readFile } from 'node:fs/promises';
+import { basename, extname } from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 
 export interface TranscriptionResult {
   transcript: string;
@@ -8,7 +8,10 @@ export interface TranscriptionResult {
 }
 
 export interface TranscriptionProvider {
-  transcribe(path: string): Promise<TranscriptionResult>;
+  transcribe(
+    path: string,
+    durationSeconds: number,
+  ): Promise<TranscriptionResult>;
 }
 
 export class TranscriptionProviderError extends Error {
@@ -18,53 +21,182 @@ export class TranscriptionProviderError extends Error {
   }
 }
 
-interface OpenAITranscriptionShape {
-  text?: unknown;
-  language?: unknown;
-  languages?: { code?: unknown }[];
+const SARVAM_STT_URL = 'https://api.sarvam.ai/speech-to-text';
+const SARVAM_MODEL = 'saaras:v4';
+// Sarvam's synchronous endpoint rejects audio over 30 seconds; longer
+// recordings go through the batch job API (up to 2 hours per file).
+export const SARVAM_SYNC_MAX_SECONDS = 30;
+const SARVAM_BATCH_POLL_MS = 2_000;
+// Batch jobs sniff the format from the stored content type and mis-decode
+// AAC uploaded as application/octet-stream into an empty transcript.
+const AUDIO_MIME_TYPES: Record<string, string> = {
+  '.m4a': 'audio/x-m4a',
+  '.mp4': 'audio/mp4',
+  '.wav': 'audio/wav',
+  '.webm': 'audio/webm',
+  '.mpeg': 'audio/mpeg',
+  '.mp3': 'audio/mpeg',
+};
+
+function audioMimeType(path: string): string {
+  return (
+    AUDIO_MIME_TYPES[extname(path).toLowerCase()] ?? 'application/octet-stream'
+  );
 }
 
-export class OpenAITranscriptionProvider implements TranscriptionProvider {
-  readonly #client: OpenAI;
+interface SarvamTranscriptShape {
+  transcript?: unknown;
+  language_code?: unknown;
+}
+
+interface SarvamJobShape {
+  job_id: string;
+  job_state: string;
+  job_details?: { state?: string; outputs?: { file_name: string }[] }[];
+  upload_urls?: Record<string, { file_url: string }>;
+  download_urls?: Record<string, { file_url: string }>;
+}
+
+/** Saaras v4 speech-to-text (https://docs.sarvam.ai/api/getting-started/models/saaras). */
+export class SarvamTranscriptionProvider implements TranscriptionProvider {
+  readonly #apiKey: string;
   readonly #timeoutMs: number;
 
   constructor(apiKey: string, timeoutMs: number) {
-    this.#client = new OpenAI({ apiKey });
+    this.#apiKey = apiKey;
     this.#timeoutMs = timeoutMs;
   }
 
-  async transcribe(path: string): Promise<TranscriptionResult> {
+  async transcribe(
+    path: string,
+    durationSeconds: number,
+  ): Promise<TranscriptionResult> {
+    const signal = AbortSignal.timeout(this.#timeoutMs);
     try {
-      const response = (await this.#client.audio.transcriptions.create(
-        {
-          file: createReadStream(path),
-          model: 'gpt-4o-transcribe',
-          response_format: 'json',
-        },
-        { timeout: this.#timeoutMs },
-      )) as OpenAITranscriptionShape;
-      if (typeof response.text !== 'string' || response.text.length === 0)
+      const response =
+        durationSeconds <= SARVAM_SYNC_MAX_SECONDS
+          ? await this.#transcribeSync(path, signal)
+          : await this.#transcribeBatch(path, signal);
+      const transcript =
+        typeof response.transcript === 'string'
+          ? response.transcript.trim()
+          : '';
+      if (transcript.length === 0)
         throw new TranscriptionProviderError('unusable');
-      const detected =
-        typeof response.language === 'string'
-          ? response.language
-          : response.languages?.find(
-              (language) => typeof language.code === 'string',
-            )?.code;
       return {
-        transcript: response.text,
-        language: typeof detected === 'string' ? detected : 'und',
+        transcript,
+        language:
+          typeof response.language_code === 'string'
+            ? response.language_code
+            : 'und',
       };
     } catch (error: unknown) {
       if (error instanceof TranscriptionProviderError) throw error;
-      if (error instanceof OpenAI.APIError) {
-        if (error.status === 429)
-          throw new TranscriptionProviderError('rate_limited');
-        if (error.status === 400 || error.status === 422)
-          throw new TranscriptionProviderError('unusable');
-      }
       throw new TranscriptionProviderError('temporary');
     }
+  }
+
+  async #transcribeSync(
+    path: string,
+    signal: AbortSignal,
+  ): Promise<SarvamTranscriptShape> {
+    const form = new FormData();
+    form.append(
+      'file',
+      new Blob([await readFile(path)], { type: audioMimeType(path) }),
+      basename(path),
+    );
+    form.append('model', SARVAM_MODEL);
+    return this.#sarvam<SarvamTranscriptShape>('', form, signal);
+  }
+
+  async #transcribeBatch(
+    path: string,
+    signal: AbortSignal,
+  ): Promise<SarvamTranscriptShape> {
+    const fileName = basename(path);
+    const { job_id } = await this.#sarvam<SarvamJobShape>(
+      '/job/v1',
+      { job_parameters: { model: SARVAM_MODEL } },
+      signal,
+    );
+    const { upload_urls } = await this.#sarvam<SarvamJobShape>(
+      '/job/v1/upload-files',
+      { job_id, files: [fileName] },
+      signal,
+    );
+    // Presigned storage URLs never receive the Sarvam key. Without a content
+    // type the object is stored as binary/octet-stream, which job start rejects.
+    await this.#storage(upload_urls?.[fileName]?.file_url, signal, {
+      method: 'PUT',
+      headers: {
+        'content-type': audioMimeType(path),
+        'x-ms-blob-type': 'BlockBlob',
+      },
+      body: await readFile(path),
+    });
+    await this.#sarvam(`/job/v1/${job_id}/start`, undefined, signal);
+
+    let job: SarvamJobShape;
+    do {
+      await sleep(SARVAM_BATCH_POLL_MS, undefined, { signal });
+      job = await this.#sarvam<SarvamJobShape>(
+        `/job/v1/${job_id}/status`,
+        null,
+        signal,
+      );
+    } while (job.job_state !== 'Completed' && job.job_state !== 'Failed');
+
+    const detail = job.job_details?.[0];
+    const output = detail?.outputs?.[0]?.file_name;
+    if (job.job_state === 'Failed' || detail?.state !== 'Success' || !output)
+      throw new TranscriptionProviderError('unusable');
+    const { download_urls } = await this.#sarvam<SarvamJobShape>(
+      '/job/v1/download-files',
+      { job_id, files: [output] },
+      signal,
+    );
+    const result = await this.#storage(
+      download_urls?.[output]?.file_url,
+      signal,
+    );
+    return (await result.json()) as SarvamTranscriptShape;
+  }
+
+  /** `null` body sends a GET, `undefined` an empty POST. */
+  async #sarvam<T>(
+    route: string,
+    body: FormData | object | null | undefined,
+    signal: AbortSignal,
+  ): Promise<T> {
+    const json =
+      body !== null && body !== undefined && !(body instanceof FormData);
+    const response = await fetch(`${SARVAM_STT_URL}${route}`, {
+      method: body === null ? 'GET' : 'POST',
+      headers: {
+        'api-subscription-key': this.#apiKey,
+        ...(json ? { 'content-type': 'application/json' } : {}),
+      },
+      ...(body ? { body: json ? JSON.stringify(body) : body } : {}),
+      signal,
+    });
+    if (response.status === 429)
+      throw new TranscriptionProviderError('rate_limited');
+    if (response.status === 400 || response.status === 422)
+      throw new TranscriptionProviderError('unusable');
+    if (!response.ok) throw new TranscriptionProviderError('temporary');
+    return (await response.json()) as T;
+  }
+
+  async #storage(
+    url: string | undefined,
+    signal: AbortSignal,
+    init: RequestInit = {},
+  ): Promise<Response> {
+    if (!url) throw new TranscriptionProviderError('temporary');
+    const response = await fetch(url, { ...init, signal });
+    if (!response.ok) throw new TranscriptionProviderError('temporary');
+    return response;
   }
 }
 

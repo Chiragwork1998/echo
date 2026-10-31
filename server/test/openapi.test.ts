@@ -20,6 +20,8 @@ describe('OpenAPI contract', () => {
       '/v1/auth/magic-link/request',
       '/v1/auth/magic-link/verify',
       '/v1/auth/refresh',
+      '/v1/companion/reply',
+      '/v1/companion/status',
       '/v1/configuration',
       '/v1/health',
       '/v1/me',
