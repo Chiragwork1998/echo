@@ -5,8 +5,8 @@ import { COLUMN, INTENT_MARKER } from '@/design/onboardingLayout';
 type ChoiceMarkerProps = {
   selected: boolean;
   /**
-   * `trail` is the Intent marker (ring that becomes a warm ring + white core);
-   * `column` is the Horizon/Voice marker (small ring that becomes a filled dot).
+   * `trail` is the Intent marker (muted disc that becomes warm with a white core);
+   * `column` is the Horizon/Voice marker (muted disc that gains a filled dot).
    */
   variant?: 'trail' | 'column';
   size?: number;
@@ -17,7 +17,6 @@ export function ChoiceMarker({
   selected,
   variant = 'trail',
   size,
-  strokeWidth,
 }: ChoiceMarkerProps) {
   if (variant === 'column') {
     const outer = size ?? COLUMN.markerSize;
@@ -32,8 +31,7 @@ export function ChoiceMarker({
             width: outer,
             height: outer,
             borderRadius: outer / 2,
-            borderWidth: strokeWidth ?? COLUMN.markerStroke,
-            borderColor: '#FFF9EF',
+            backgroundColor: selected ? 'rgba(255,249,239,0.30)' : 'rgba(255,249,239,0.20)',
             alignItems: 'center',
             justifyContent: 'center',
             shadowColor: '#03111F',
@@ -79,12 +77,11 @@ export function ChoiceMarker({
                   width: INTENT_MARKER.selectedRing,
                   height: INTENT_MARKER.selectedRing,
                   borderRadius: INTENT_MARKER.selectedRing / 2,
-                  borderWidth: INTENT_MARKER.selectedStroke,
                 },
               ]
             : [
                 styles.idle,
-                { width: ring, height: ring, borderRadius: ring / 2, borderWidth: strokeWidth ?? INTENT_MARKER.ringStroke },
+                { width: ring, height: ring, borderRadius: ring / 2 },
               ]
         }
       >
@@ -111,14 +108,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   idle: {
-    borderColor: '#FFF9EF',
+    backgroundColor: 'rgba(255,249,239,0.24)',
     shadowColor: '#03111F',
     shadowOpacity: 0.32,
     shadowRadius: 2,
     shadowOffset: { width: 0, height: 1 },
   },
   selected: {
-    borderColor: '#EDC77F',
+    backgroundColor: '#EDC77F',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#E7B65B',

@@ -10,6 +10,8 @@ import { HERO } from '@/design/onboardingLayout';
 import { tokens } from '@/design/tokens';
 
 type OnboardingScaffoldProps = {
+  /** Replaces the screen's plate, e.g. the step 7 shelf studio colour. */
+  background?: ReactNode;
   children: ReactNode;
   currentStep: number;
   /** Pinned above the safe-area inset; stays above the keyboard. */
@@ -17,7 +19,8 @@ type OnboardingScaffoldProps = {
   onBack?: () => void;
   screen: Exclude<ImplementedScreenId, 'landing' | 'home'>;
   subtitle?: string;
-  title: string;
+  /** Omitted when the screen carries its own heading (step 7 puts it in the book). */
+  title?: string;
 };
 
 /**
@@ -26,6 +29,7 @@ type OnboardingScaffoldProps = {
  * and a footer that keeps its place with the keyboard open.
  */
 export function OnboardingScaffold({
+  background,
   children,
   currentStep,
   footer,
@@ -40,11 +44,13 @@ export function OnboardingScaffold({
     <AppShell
       theme={theme}
       background={
-        <EchoBackground
-          fallbackColor={theme.color.textInk}
-          focalPoint={screenFocalPoints[screen]}
-          source={screenBackgrounds[name][screen]}
-        />
+        background ?? (
+          <EchoBackground
+            fallbackColor={theme.color.textInk}
+            focalPoint={screenFocalPoints[screen]}
+            source={screenBackgrounds[name][screen]}
+          />
+        )
       }
     >
       <KeyboardAvoidingView
@@ -61,14 +67,16 @@ export function OnboardingScaffold({
             onBack={onBack ?? (() => {})}
             showBack={onBack !== undefined}
           />
-          <View style={styles.hero}>
-            <Text accessibilityRole="header" style={[styles.title, { color: theme.color.textPrimary }]}>
-              {title}
-            </Text>
-            {subtitle ? (
-              <Text style={[styles.subtitle, { color: theme.color.textSecondary }]}>{subtitle}</Text>
-            ) : null}
-          </View>
+          {title ? (
+            <View style={styles.hero}>
+              <Text accessibilityRole="header" style={[styles.title, { color: theme.color.textPrimary }]}>
+                {title}
+              </Text>
+              {subtitle ? (
+                <Text style={[styles.subtitle, { color: theme.color.textSecondary }]}>{subtitle}</Text>
+              ) : null}
+            </View>
+          ) : null}
           <View style={styles.body}>{children}</View>
           {footer ? <View style={styles.footer}>{footer}</View> : null}
         </ScrollView>

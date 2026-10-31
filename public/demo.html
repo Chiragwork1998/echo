@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ECHO · Screen flow demo</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #10161b; color: #f0eee6; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    button, a { -webkit-tap-highlight-color: transparent; }
+    button { font: inherit; cursor: pointer; }
+    button:focus-visible, a:focus-visible { outline: 2px solid #ebc895; outline-offset: 4px; }
+    .layout { min-height: 100dvh; display: grid; grid-template-columns: 300px 1fr; }
+    aside { padding: 28px 22px; border-right: 1px solid #ffffff14; display: flex; flex-direction: column; }
+    .brand { font-family: Georgia, serif; letter-spacing: 6px; font-size: 25px; margin: 0; }
+    .eyebrow { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: #a6aaa9; }
+    h1 { font-family: Georgia, serif; font-weight: 400; font-size: 27px; margin: 22px 0 10px; }
+    .intro { color: #a6aaa9; font-size: 13px; line-height: 1.65; margin: 0 0 22px; }
+    .group-label { margin: 17px 10px 9px; color: #828c91; font-size: 10px; letter-spacing: 1.4px; text-transform: uppercase; }
+    .screen { width: 100%; border: 0; border-radius: 8px; padding: 9px 10px; text-align: left; display: flex; align-items: center; gap: 12px; background: transparent; color: #b3babb; font-size: 13px; }
+    .screen:hover { background: #ffffff08; color: #fff; }
+    .screen[aria-current="step"] { background: #e5c59914; color: #ebc895; }
+    .number { font-size: 10px; width: 21px; color: #75818a; font-variant-numeric: tabular-nums; }
+    .screen[aria-current="step"] .number { color: #ebc895; }
+    .restart { margin-top: 25px; border: 1px solid #ffffff28; border-radius: 8px; color: #e2e2da; background: transparent; padding: 12px; }
+    .note { font-size: 11px; color: #828c91; line-height: 1.6; margin: 15px 0 0; }
+    main { min-width: 0; display: flex; flex-direction: column; align-items: center; padding: 22px 24px; }
+    .topline { display: flex; justify-content: space-between; gap: 16px; width: 100%; max-width: 760px; align-items: center; margin-bottom: 16px; }
+    .badge { color: #b3c9b2; font-size: 11px; display: flex; align-items: center; gap: 7px; }
+    .badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #9bb996; }
+    .full { color: #bac1c2; font-size: 12px; text-decoration: none; }
+    .full:hover { color: #ebc895; }
+    .preview-area { flex: 1; width: 100%; display: flex; align-items: center; justify-content: center; min-height: 0; }
+    .device { position: relative; background: #0b1d35; overflow: hidden; border-radius: 30px; outline: 1px solid #ffffff28; box-shadow: 0 22px 70px #0005; }
+    iframe { position: absolute; top: 0; left: 0; width: 393px; height: 852px; border: 0; transform-origin: top left; background: #0b1d35; }
+    .caption { width: 100%; max-width: 520px; text-align: center; padding-top: 19px; }
+    h2 { font-size: 15px; font-weight: 500; margin: 0 0 7px; }
+    #hint { color: #9da8ae; font-size: 12px; line-height: 1.6; min-height: 38px; margin: 0; }
+    .route { color: #687780; font-size: 10px; margin: 9px 0 0; font-family: ui-monospace, monospace; }
+    @media (min-width: 761px) { .layout { height: 100dvh; overflow: hidden; } aside { overflow-y: auto; } }
+    @media (max-width: 760px) {
+      .layout { display: flex; flex-direction: column; }
+      aside { padding: 18px; border-right: 0; border-bottom: 1px solid #ffffff14; }
+      .brand { font-size: 20px; } h1 { font-size: 22px; margin-top: 15px; }
+      .intro { margin-bottom: 12px; }
+      nav { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 8px; }
+      .group-label { display: none; } .screen { width: auto; flex-shrink: 0; border: 1px solid #ffffff14; }
+      .restart { margin-top: 8px; padding: 9px; } .note { margin-top: 9px; }
+      main { padding: 20px 12px; } .preview-area { flex: none; }
+    }
+    @media (prefers-reduced-motion: no-preference) { .screen { transition: background 150ms; } }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside>
+      <p class="brand">ECHO</p>
+      <h1>A space that feels like yours.</h1>
+      <p class="intro">The earlier premium ECHO experience. Sign in or tap Skip to journal locally. Personalize your space through the optional eight-step onboarding journey.</p>
+      <nav aria-label="App screens" id="screens"></nav>
+      <button class="restart" id="restart" type="button">Return to welcome ↺</button>
+      <p class="note">Entries and drafts are encrypted in this browser and survive reloads. Keep using the same address and browser. Voice recording and device security run on your phone.</p>
+    </aside>
+    <main>
+      <div class="topline">
+        <span class="badge">Live React Native screens</span>
+        <a class="full" id="full" href="/" target="_blank" rel="noopener">Open full screen →</a>
+      </div>
+      <div class="preview-area" id="preview-area">
+        <div class="device" id="device"><iframe id="app" src="/?welcome=1" title="ECHO mobile app preview"></iframe></div>
+      </div>
+      <div class="caption" aria-live="polite">
+        <h2 id="current">Landing</h2>
+        <p id="hint">Begin opens all eight onboarding steps, followed by optional sign-in or Skip.</p>
+        <p class="route" id="route">app/index.tsx · 393 × 852</p>
+      </div>
+    </main>
+  </div>
+  <script>
+    const screens = [
+      { name: 'Welcome', path: '/', file: 'index', number: '00', group: 'Welcome', hint: 'Begin opens the eight onboarding screens from echo-mobile-foundation.' },
+      { name: 'Intent', path: '/onboarding/intent', file: 'onboarding/intent', number: '01', group: 'Personalize · 1–8', hint: 'Choose what brought you here, then tap Begin with this.' },
+      { name: 'Horizon', path: '/onboarding/horizon', file: 'onboarding/horizon', number: '02', hint: 'Choose Behind me, Where I am, or Ahead of me. Tap Start here.' },
+      { name: 'Voice', path: '/onboarding/voice', file: 'onboarding/voice', number: '03', hint: 'Choose how ECHO should meet you, then tap Walk this way. Guide me is the simplest browser demo path.' },
+      { name: 'Rhythm', path: '/onboarding/rhythm', file: 'onboarding/rhythm', number: '04', hint: 'Choose a time. Leave Gentle reminder off for this browser walkthrough, then tap Set my rhythm.' },
+      { name: 'Privacy', path: '/onboarding/privacy', file: 'onboarding/privacy', number: '05', hint: 'Review local journal privacy and continue. Signing in does not upload your words.' },
+      { name: 'Arrival', path: '/onboarding/arrival', file: 'onboarding/arrival', number: '06', hint: 'Choose a mood and tap That’s close, or tap Skip.' },
+      { name: 'First Echo', path: '/onboarding/first-echo', file: 'onboarding/first-echo', number: '07', hint: 'Write your first page or choose Speak, then tap Reflect to save it.' },
+      { name: 'Completion', path: '/onboarding/completion', file: 'onboarding/completion', number: '08', hint: 'Your first echo is saved. Enter your space continues to optional sign-up/sign-in or Skip.' },
+      { name: 'Sign in', path: '/sign-in', file: 'sign-in', number: '→', group: 'Your space', hint: 'After onboarding, continue with Google or email, or choose Skip for a local journal.' },
+      { name: 'Today', path: '/home', file: 'home', number: '09', group: 'Main app · four tabs', hint: 'Choose Guide me, Free write, or Speak and open your journal directly, or continue your draft. Four anchored tabs form the navigation base.' },
+      { name: 'Echoes', path: '/echoes', file: 'echoes', number: '10', hint: 'Your submitted demo entries appear here. Search, filter favorites, and open a saved entry to read or share.' },
+      { name: 'Patterns', path: '/patterns', file: 'patterns', number: '11', hint: 'Opt in to local summaries of writing days and the feelings you record.' },
+      { name: 'You', path: '/you', file: 'you', number: '12', hint: 'Personalize your atmosphere and writing style, manage privacy and reminders, or sign in later.' },
+      { name: 'Daily journal', path: '/journal', file: 'journal', number: '13', group: 'Daily ritual', hint: 'Write or speak. Leave with a draft, or Keep this echo to close your session.' },
+      { name: 'Closing moment', path: '/journal-complete', file: 'journal-complete', number: '14', hint: 'After saving, optionally record a feeling and a thought to keep. Return to Today.' },
+    ];
+    const frame = document.getElementById('app');
+    const nav = document.getElementById('screens');
+    let activePath = '';
+    let ready = false;
+    for (const screen of screens) {
+      if (screen.group) {
+        const label = document.createElement('p');
+        label.className = 'group-label';
+        label.textContent = screen.group;
+        nav.append(label);
+      }
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'screen';
+      button.dataset.path = screen.path;
+      const number = document.createElement('span');
+      number.className = 'number'; number.textContent = screen.number;
+      const name = document.createElement('span'); name.textContent = screen.name;
+      button.append(number, name);
+      button.addEventListener('click', () => {
+        if (activePath === screen.path) return;
+        // A same-origin browser deep link keeps the running app's in-memory
+        // selections and entries. Expo Router listens for popstate on web.
+        if (ready) {
+          const child = frame.contentWindow;
+          child.history.pushState(null, '', screen.path);
+          child.dispatchEvent(new child.PopStateEvent('popstate', { state: null }));
+        } else {
+          frame.src = screen.path;
+        }
+      });
+      nav.append(button);
+    }
+    function update(path) {
+      const screen = screens.find(screen => screen.path === path) ?? (path.startsWith('/entry/') ? { number: '15', name: 'Read your echo', file: 'entry/[id]', hint: 'Read, listen, favorite, or share this echo.' } : null);
+      if (!screen || path === activePath) return;
+      activePath = path;
+      for (const button of nav.querySelectorAll('button')) {
+        if (button.dataset.path === path) button.setAttribute('aria-current', 'step');
+        else button.removeAttribute('aria-current');
+      }
+      document.getElementById('current').textContent = screen.number + ' / ' + screen.name;
+      document.getElementById('hint').textContent = screen.hint;
+      document.getElementById('route').textContent = 'app/' + screen.file + '.tsx · 393 × 852';
+      document.getElementById('full').href = path;
+    }
+    function fit() {
+      const area = document.getElementById('preview-area');
+      const mobile = window.matchMedia('(max-width: 760px)').matches;
+      const availableHeight = mobile ? 852 : Math.max(320, area.clientHeight - 6);
+      const scale = Math.min(1, (area.clientWidth - 12) / 393, availableHeight / 852);
+      const device = document.getElementById('device');
+      device.style.width = 393 * scale + 'px';
+      device.style.height = 852 * scale + 'px';
+      frame.style.transform = 'scale(' + scale + ')';
+    }
+    frame.addEventListener('load', () => { ready = false; fit(); });
+    // Read only route metadata; never inspect, copy, or log journal content.
+    setInterval(() => {
+      try {
+        const child = frame.contentWindow;
+        ready = Boolean(child.document.querySelector('[role="button"], button, [role="tab"]'));
+        update(child.location.pathname.replace(/\/$/, '') || '/');
+      } catch { ready = false; }
+    }, 350);
+    document.getElementById('restart').addEventListener('click', () => {
+      ready = false;
+      frame.src = '/?welcome=1';
+      update('/');
+    });
+    window.addEventListener('resize', fit);
+    new ResizeObserver(fit).observe(document.getElementById('preview-area'));
+    update('/'); fit();
+  </script>
+</body>
+</html>

@@ -1,5 +1,6 @@
 import { useRouter, type Href } from 'expo-router';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { EchoIcon, type EchoIconName } from './EchoIcon';
 import { GlassCard } from './GlassCard';
@@ -9,7 +10,7 @@ import { tokens } from '@/design/tokens';
 
 export type MainTab = 'today' | 'echoes' | 'patterns' | 'you';
 
-export const TAB_BAR = { width: 345, height: 72, radius: 30 } as const;
+export const TAB_BAR = { height: 72 } as const;
 
 const TABS: readonly { icon: EchoIconName; id: MainTab; label: string; route: Href }[] = [
   { icon: 'sunrise', id: 'today', label: 'Today', route: '/home' },
@@ -18,12 +19,13 @@ const TABS: readonly { icon: EchoIconName; id: MainTab; label: string; route: Hr
   { icon: 'user', id: 'you', label: 'You', route: '/you' },
 ];
 
-/** 345 × 72 glass tab bar with four tabs (`specs/COMPONENTS.md` § TabBar). */
+/** Full-width navigation base. Its material extends through the bottom safe area. */
 export function TabBar({ active }: { active: MainTab }) {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   return (
-    <GlassCard padding={0} style={styles.bar} variant="strong">
+    <GlassCard padding={0} style={[styles.bar, { height: TAB_BAR.height + insets.bottom }]} variant="strong">
       <View accessibilityRole="tablist" style={styles.row}>
         {TABS.map((tab) => {
           const selected = tab.id === active;
@@ -66,6 +68,7 @@ function Tab({
         accessibilityLabel={label}
         accessibilityRole="tab"
         accessibilityState={{ selected }}
+        aria-selected={selected}
         onPress={onPress}
         onPressIn={onPressIn}
         onPressOut={onPressOut}
@@ -101,8 +104,8 @@ function Tab({
 }
 
 const styles = StyleSheet.create({
-  bar: { alignSelf: 'center', width: '100%', maxWidth: TAB_BAR.width, height: TAB_BAR.height, padding: 0 },
-  row: { flex: 1, flexDirection: 'row', alignItems: 'center', padding: tokens.space[8] },
+  bar: { alignSelf: 'stretch', width: '100%', borderRadius: 0, flexShrink: 0, padding: 0 },
+  row: { height: TAB_BAR.height, flexDirection: 'row', alignItems: 'center', padding: tokens.space[8] },
   tabWrap: { flex: 1, alignSelf: 'stretch', justifyContent: 'center' },
   tab: {
     flex: 1,

@@ -1,6 +1,8 @@
-import { useSyncExternalStore } from 'react';
+import { useSyncExternalStore } from "react";
 
-import type { JournalMode } from './journal';
+import type { JournalEntry, JournalMode } from "./journal";
+import type { MoodSelection } from "./onboardingSelections";
+import { FIRST_PROMPT, type JournalPrompt } from "@/features/journal/prompts";
 
 /**
  * In-progress writing session state for First Echo.
@@ -12,6 +14,10 @@ import type { JournalMode } from './journal';
 
 export type SessionState = {
   active: boolean;
+  prompt: JournalPrompt;
+  mood: MoodSelection | null;
+  audioPath: string | null;
+  baseSeconds: number;
   mode: JournalMode;
   text: string;
   audioSeconds: number;
@@ -23,8 +29,12 @@ export type SessionState = {
 
 const INITIAL: SessionState = {
   active: false,
-  mode: 'text',
-  text: '',
+  prompt: FIRST_PROMPT,
+  mood: null,
+  audioPath: null,
+  baseSeconds: 0,
+  mode: "text",
+  text: "",
   audioSeconds: 0,
   recording: false,
   startedAt: null,
@@ -36,14 +46,15 @@ export const REFLECT_CHARACTER_THRESHOLD = 10;
 export const REFLECT_AUDIO_SECONDS_THRESHOLD = 3;
 
 export function nonSpaceLength(value: string): number {
-  return value.replace(/\s/g, '').length;
+  return value.replace(/\s/g, "").length;
 }
 
 export function canReflect(state: SessionState): boolean {
-  return (
-    nonSpaceLength(state.text) >= REFLECT_CHARACTER_THRESHOLD ||
-    state.audioSeconds >= REFLECT_AUDIO_SECONDS_THRESHOLD
-  );
+  if (state.recording) return false;
+  return state.mode === "text"
+    ? nonSpaceLength(state.text) >= REFLECT_CHARACTER_THRESHOLD
+    : state.audioSeconds >= REFLECT_AUDIO_SECONDS_THRESHOLD &&
+        Boolean(state.audioPath);
 }
 
 type Listener = () => void;
@@ -63,8 +74,34 @@ function publish(next: Partial<SessionState>) {
   listeners.forEach((listener) => listener());
 }
 
-export function startSession(mode: JournalMode): void {
-  publish({ ...INITIAL, active: true, mode });
+export function startSession(
+  mode: JournalMode,
+  prompt: JournalPrompt = FIRST_PROMPT,
+  mood: MoodSelection | null = null,
+  draft?: JournalEntry | null,
+): void {
+  publish({
+    ...INITIAL,
+    active: true,
+    mode: draft?.mode ?? mode,
+    prompt: draft
+      ? {
+          id: draft.promptId,
+          text: draft.promptTextSnapshot,
+          opening: prompt.opening,
+        }
+      : prompt,
+    mood: draft?.moodBefore ?? mood,
+    text: draft?.body ?? "",
+    audioPath: draft?.audioPath ?? null,
+    audioSeconds: draft?.audioPath ? draft.durationSeconds : 0,
+    baseSeconds: draft?.durationSeconds ?? 0,
+    elapsedSeconds: draft?.durationSeconds ?? 0,
+  });
+}
+
+export function setSessionAudio(audioPath: string, audioSeconds: number): void {
+  publish({ audioPath, audioSeconds, recording: false });
 }
 
 export function endSession(): void {
@@ -73,10 +110,7 @@ export function endSession(): void {
 }
 
 export function setSessionMode(mode: JournalMode): void {
-  if (session.recording && mode === 'text') {
-    publish({ mode, recording: false });
-    return;
-  }
+  if (session.recording) return;
   publish({ mode });
 }
 
@@ -90,7 +124,11 @@ export function startRecordingSession(): void {
 }
 
 export function stopRecordingSession(audioSeconds: number): void {
-  publish({ recording: false, audioSeconds, elapsedSeconds: session.elapsedSeconds });
+  publish({
+    recording: false,
+    audioSeconds,
+    elapsedSeconds: session.elapsedSeconds,
+  });
 }
 
 /** Advances the session timer; called once per second while a session is live. */
@@ -98,7 +136,10 @@ export function tickSession(): void {
   if (session.startedAt === null) {
     return;
   }
-  publish({ elapsedSeconds: Math.floor((Date.now() - session.startedAt) / 1000) });
+  publish({
+    elapsedSeconds:
+      session.baseSeconds + Math.floor((Date.now() - session.startedAt) / 1000),
+  });
 }
 
 export function getSession(): SessionState {

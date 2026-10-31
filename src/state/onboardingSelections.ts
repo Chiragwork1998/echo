@@ -1,4 +1,5 @@
 import { useEffect, useSyncExternalStore } from 'react';
+import { AVATARS, type AvatarId } from '@/features/avatar/catalog';
 
 import {
   defaultOnboardingPersistence,
@@ -40,7 +41,14 @@ export type PrivacyState = {
 };
 
 export type OnboardingSnapshot = {
+  /** Idempotent handoff receipt; originals remain in the guest workspace. */
+  guestTransfer?: { accountId: string; completed: boolean };
   step: OnboardingStep;
+  themeSetting: 'day' | 'night' | 'automatic';
+  avatarId: AvatarId;
+  /** Where the companion was last dropped (top-left, points); null keeps its default spot. */
+  companionPosition: { x: number; y: number } | null;
+  patternsEnabled: boolean;
   intent: IntentSelection | null;
   horizon: HorizonSelection;
   mode: VoiceSelection;
@@ -66,6 +74,10 @@ export const REMINDER_GRANULARITY_MINUTES = 5;
 
 const initialState: OnboardingSnapshot = {
   step: 0,
+  themeSetting: 'night',
+  avatarId: 'codex',
+  companionPosition: null,
+  patternsEnabled: false,
   intent: null,
   horizon: 'where_i_am',
   mode: 'guide_me',
@@ -92,6 +104,7 @@ const listeners = new Set<Listener>();
 
 let persistence: OnboardingPersistence = defaultOnboardingPersistence;
 let restoreStarted: Promise<void> | null = null;
+let restoreGeneration = 0;
 
 function publish(next: Partial<OnboardingSnapshot>) {
   snapshot = { ...snapshot, ...next, updatedAt: new Date().toISOString() };
@@ -113,6 +126,10 @@ function subscribe(listener: Listener): () => void {
  */
 export function configureOnboardingPersistence(port: OnboardingPersistence): void {
   persistence = port;
+  restoreGeneration += 1;
+  snapshot = initialState;
+  restoreStarted = null;
+  listeners.forEach(listener => listener());
 }
 
 /** Whether progress survives an app restart on this platform. */
@@ -130,18 +147,28 @@ export function flushOnboardingPersistence(): Promise<void> {
  * step. Safe to call from any screen; the work runs once per app launch.
  */
 export function restoreOnboardingState(): Promise<void> {
+  const generation = restoreGeneration;
+  const source = persistence;
   restoreStarted ??= (async () => {
-    try {
-      const stored = await persistence.load();
-      if (stored) {
-        snapshot = { ...initialState, ...stored };
-        listeners.forEach((listener) => listener());
-      }
-    } catch {
-      // A failed read must not block onboarding: the user starts fresh and
-      // the next write recreates the row.
+    const stored = await source.load();
+    if (generation !== restoreGeneration) return;
+    if (stored) {
+      snapshot = {
+        ...initialState,
+        ...stored,
+        avatarId: AVATARS.some(avatar => avatar.id === stored.avatarId) ? stored.avatarId : initialState.avatarId,
+        companionPosition: Number.isFinite(stored.companionPosition?.x) && Number.isFinite(stored.companionPosition?.y) ? stored.companionPosition : null,
+        privacy: { ...initialState.privacy, ...stored.privacy },
+        reminder: { ...initialState.reminder, ...stored.reminder },
+      };
+      listeners.forEach((listener) => listener());
     }
-  })();
+  })().catch((error: unknown) => {
+    // The root gate offers retry. Never open default settings after a failed
+    // read: that could disable a saved lock or overwrite resumable progress.
+    if (generation === restoreGeneration) restoreStarted = null;
+    throw error;
+  });
   return restoreStarted;
 }
 
@@ -156,7 +183,8 @@ export function useOnboardingState<T>(selector: (state: OnboardingSnapshot) => T
 /** Restores stored progress on mount; no-op once the launch restore settles. */
 export function useOnboardingRestore(): void {
   useEffect(() => {
-    void restoreOnboardingState();
+    // The root gate reports restoration errors before mounting route screens.
+    void restoreOnboardingState().catch(() => undefined);
   }, []);
 }
 
@@ -166,6 +194,13 @@ export function setCurrentStep(step: OnboardingStep): void {
   }
   publish({ step });
 }
+
+export function setThemeSetting(themeSetting: OnboardingSnapshot['themeSetting']): void { publish({ themeSetting }); }
+export function setAvatarSelection(avatarId: AvatarId): void {
+  if (AVATARS.some(avatar => avatar.id === avatarId)) publish({ avatarId });
+}
+export function setCompanionPosition(companionPosition: { x: number; y: number }): void { publish({ companionPosition }); }
+export function setPatternsEnabled(patternsEnabled: boolean): void { publish({ patternsEnabled }); }
 
 export function setIntentSelection(value: IntentSelection): void {
   publish({ intent: value });

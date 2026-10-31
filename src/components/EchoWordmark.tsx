@@ -1,5 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native';
 
+import { ThemeToggle } from './ThemeToggle';
+
 import { HEADER } from '@/design/onboardingLayout';
 import { useEchoTheme } from '@/design/ThemeProvider';
 import { tokens } from '@/design/tokens';
@@ -9,20 +11,19 @@ const RULE_MARGIN_TOP =
 
 /**
  * ECHO is always letterspaced type, never a logo image. 28 pt with 12 pt
- * tracking from `design/tokens.json` § typography.wordmark.
+ * tracking from `design/tokens.json` § typography.wordmark. Double-tapping it switches
+ * the saved app appearance between Day and Night.
  */
 export function EchoWordmark({ align = 'center' }: { align?: 'center' | 'start' }) {
   const { theme } = useEchoTheme();
 
   return (
-    <View
-      accessibilityLabel="ECHO"
-      accessibilityRole="header"
+    <ThemeToggle
       style={[styles.wrap, align === 'center' ? styles.centered : styles.start]}
     >
       <Text style={[styles.wordmark, { color: theme.color.textPrimary }]}>ECHO</Text>
       <View style={[styles.rule, { backgroundColor: theme.color.textPrimary }]} />
-    </View>
+    </ThemeToggle>
   );
 }
 
@@ -40,6 +41,6 @@ const styles = StyleSheet.create({
     width: HEADER.rule.width,
     height: HEADER.rule.height,
     marginTop: RULE_MARGIN_TOP,
-    opacity: HEADER.rule.opacity,
+    opacity: 0,
   },
 });

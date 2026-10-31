@@ -10,6 +10,7 @@ export const tokens = {
   color: {
     day: {
       textPrimary: '#F8F5EE', textInk: '#13263A', textSecondary: '#E5E8E8', surfacePrimary: '#F6F1E8',
+      surfaceContent: 'rgba(246,241,232,0.64)', textContent: '#13263A', textContentSecondary: 'rgba(19,38,58,0.76)',
       surfaceGlass: 'rgba(11,25,42,0.54)', surfaceGlassStrong: 'rgba(8,19,33,0.72)',
       borderGlass: 'rgba(255,255,255,0.58)', accentWarm: '#D9BE91', accentRiver: '#5BC7D9',
       focus: '#FFF4DF', danger: '#C96B5E',
@@ -21,6 +22,7 @@ export const tokens = {
     },
     night: {
       textPrimary: '#F7F3EB', textInk: '#0B1D35', textSecondary: '#D9E0EA', surfacePrimary: '#F3EDE3',
+      surfaceContent: 'rgba(243,237,227,0.66)', textContent: '#0B1D35', textContentSecondary: 'rgba(11,29,53,0.76)',
       surfaceGlass: 'rgba(7,18,35,0.66)', surfaceGlassStrong: 'rgba(5,14,29,0.82)',
       borderGlass: 'rgba(244,239,229,0.54)', accentWarm: '#E8CCA0', accentRiver: '#41BBD4',
       focus: '#FFF0D6', danger: '#D98273',

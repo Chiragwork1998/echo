@@ -13,7 +13,7 @@ import { useEchoTheme } from '@/design/ThemeProvider';
 import { FRAME, HERO, INTENT_CHOICES, INTENT_TRAIL } from '@/design/onboardingLayout';
 import { REFERENCE_INSETS } from '@/design/safeArea';
 import { tokens } from '@/design/tokens';
-import { setIntentSelection, type IntentSelection } from '@/state/onboardingSelections';
+import { setIntentSelection, useOnboardingState, type IntentSelection } from '@/state/onboardingSelections';
 
 type IntentChoiceId = IntentSelection;
 
@@ -26,7 +26,8 @@ const LABEL_GAP = 4.5;
 
 export default function IntentScreen() {
   const router = useRouter();
-  const [selection, setSelection] = useState<IntentChoiceId | null>(null);
+  const savedIntent = useOnboardingState(state => state.intent);
+  const [selection, setSelection] = useState<IntentChoiceId | null>(savedIntent);
   const { width } = useWindowDimensions();
   const { fontScale } = useWindowDimensions();
   const { name, theme } = useEchoTheme();
@@ -71,7 +72,6 @@ export default function IntentScreen() {
                     styles.accessibleChoice,
                     {
                       backgroundColor: theme.color.surfaceGlassStrong,
-                      borderColor: selected ? theme.color.focus : theme.color.borderGlass,
                     },
                     pressed && styles.pressed,
                   ]}
@@ -101,10 +101,10 @@ export default function IntentScreen() {
           </Text>
 
           <Svg
-            height="100%"
+            height={FRAME.height}
             pointerEvents="none"
             preserveAspectRatio="none"
-            style={[StyleSheet.absoluteFill, { left: xOffset }]}
+            style={[StyleSheet.absoluteFill, { left: xOffset, top: -STAGE_OFFSET }]}
             viewBox={`0 0 ${FRAME.width} ${FRAME.height}`}
             width={FRAME.width}
           >
@@ -232,7 +232,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 14,
     borderRadius: tokens.radius.card,
-    borderWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,

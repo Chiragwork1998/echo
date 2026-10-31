@@ -2,6 +2,8 @@ import type { MoodSelection } from '@/state/onboardingSelections';
 import type { JournalEntry, JournalMode, ReflectionSummary, SyncState } from '@/state/journal';
 
 import { getDatabase, isDatabaseSupported } from './database';
+import { getWorkspaceScope, type WorkspaceScope } from './workspace';
+import { createBrowserJournalRepository, isBrowserClient } from './browserJournalRepository';
 import {
   CONTENT_ALGORITHM,
   contentCipher,
@@ -20,7 +22,7 @@ import {
  * user sees a recoverable state instead of silent data loss.
  */
 
-export type JournalStorageKind = 'sqlite' | 'memory';
+export type JournalStorageKind = 'sqlite' | 'browser' | 'memory';
 
 export interface JournalRepository {
   readonly kind: JournalStorageKind;
@@ -38,10 +40,14 @@ type ContentState = 'available' | 'unavailable';
 type SecretContent = {
   body: string | null;
   moodBefore: MoodSelection | null;
+  moodAfter?: MoodSelection | null;
+  takeaway?: string | null;
+  favorite?: boolean;
 };
 
 type EntryRow = {
   id: string;
+  entry_id?: string;
   created_at: string;
   updated_at: string;
   prompt_id: string;
@@ -83,11 +89,8 @@ function asSyncState(value: string): SyncState {
   return value === 'pending' || value === 'synced' || value === 'error' ? value : 'local';
 }
 
-async function encryptContent(entry: {
-  body: string | null;
-  moodBefore: MoodSelection | null;
-}): Promise<EncryptedPayload> {
-  const secret: SecretContent = { body: entry.body, moodBefore: entry.moodBefore };
+async function encryptContent(entry: SecretContent): Promise<EncryptedPayload> {
+  const secret: SecretContent = { body: entry.body, moodBefore: entry.moodBefore, moodAfter: entry.moodAfter, takeaway: entry.takeaway, favorite: entry.favorite };
   return contentCipher.encrypt(JSON.stringify(secret));
 }
 
@@ -98,7 +101,7 @@ async function decryptContent(payload: EncryptedPayload): Promise<{
   try {
     const parsed = JSON.parse(await contentCipher.decrypt(payload)) as Partial<SecretContent>;
     return {
-      content: { body: parsed.body ?? null, moodBefore: parsed.moodBefore ?? null },
+      content: { body: parsed.body ?? null, moodBefore: parsed.moodBefore ?? null, moodAfter: parsed.moodAfter ?? null, takeaway: parsed.takeaway ?? null, favorite: parsed.favorite === true },
       contentState: 'available',
     };
   } catch (error) {
@@ -139,7 +142,7 @@ async function toEntry(row: EntryRow): Promise<JournalEntry> {
     payloadFrom(row.cipher, row.nonce, row.content_hash),
   );
   return {
-    id: row.id,
+    id: row.entry_id ?? row.id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     promptId: row.prompt_id,
@@ -149,6 +152,9 @@ async function toEntry(row: EntryRow): Promise<JournalEntry> {
     audioPath: row.audio_path,
     durationSeconds: row.duration_seconds,
     moodBefore: content.moodBefore,
+    moodAfter: content.moodAfter,
+    takeaway: content.takeaway,
+    favorite: content.favorite,
     reflection: await reflectionFrom(row),
     syncState: asSyncState(row.sync_state),
     deletedAt: row.deleted_at,
@@ -156,21 +162,21 @@ async function toEntry(row: EntryRow): Promise<JournalEntry> {
   };
 }
 
-function createSqliteJournalRepository(): JournalRepository {
+function createSqliteJournalRepository(scope: WorkspaceScope = getWorkspaceScope()): JournalRepository {
   let draftQueue: Promise<void> = Promise.resolve();
 
   return {
     kind: 'sqlite',
     persistent: true,
     async loadEntries() {
-      const db = await getDatabase();
+      const db = await getDatabase(scope);
       const rows = await db.getAllAsync<EntryRow>(
         'SELECT * FROM journal_entries ORDER BY created_at DESC',
       );
       return Promise.all(rows.map((row) => toEntry(row)));
     },
     async loadDraft() {
-      const db = await getDatabase();
+      const db = await getDatabase(scope);
       const row = await db.getFirstAsync<EntryRow>(
         'SELECT * FROM journal_drafts WHERE id = ?',
         DRAFT_ROW_ID,
@@ -179,11 +185,12 @@ function createSqliteJournalRepository(): JournalRepository {
     },
     saveDraft(draft) {
       const run = async () => {
-        const db = await getDatabase();
+        const db = await getDatabase(scope);
         if (!draft) {
           await db.runAsync('DELETE FROM journal_drafts WHERE id = ?', DRAFT_ROW_ID);
           return;
         }
+        if (draft.contentState !== 'available') throw new DecryptionFailedError();
         const payload = await encryptContent(draft);
         await db.runAsync(
           `INSERT INTO journal_drafts
@@ -227,7 +234,8 @@ function createSqliteJournalRepository(): JournalRepository {
       return write;
     },
     async saveEntry(entry) {
-      const db = await getDatabase();
+      if (entry.contentState !== 'available') throw new DecryptionFailedError();
+      const db = await getDatabase(scope);
       const payload = await encryptContent(entry);
       const reflection = entry.reflection;
       const reflectionPayload =
@@ -287,15 +295,15 @@ function createSqliteJournalRepository(): JournalRepository {
       );
     },
     async deleteEntry(id) {
-      const db = await getDatabase();
+      const db = await getDatabase(scope);
       await db.runAsync('DELETE FROM journal_entries WHERE id = ?', id);
     },
   };
 }
 
 /**
- * Session-memory repository. Used on web preview builds (no Keychain, so no
- * encrypted store) and in tests. It never writes plaintext anywhere.
+ * Session-memory repository for server rendering and tests. Real browser
+ * clients use the encrypted IndexedDB repository. No plaintext is persisted.
  */
 function createMemoryJournalRepository(): JournalRepository {
   let entries: JournalEntry[] = [];
@@ -324,8 +332,11 @@ function createMemoryJournalRepository(): JournalRepository {
   };
 }
 
-export function createDefaultJournalRepository(): JournalRepository {
-  return isDatabaseSupported() ? createSqliteJournalRepository() : createMemoryJournalRepository();
+export function createDefaultJournalRepository(scope: WorkspaceScope = getWorkspaceScope()): JournalRepository {
+  if (isDatabaseSupported()) return createSqliteJournalRepository(scope);
+  // Select by runtime, not capability: blocked storage must produce a visible
+  // save error instead of silently falling back to a disposable journal.
+  return isBrowserClient() ? createBrowserJournalRepository(scope) : createMemoryJournalRepository();
 }
 
 export { createMemoryJournalRepository, createSqliteJournalRepository };

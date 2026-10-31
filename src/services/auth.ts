@@ -1,6 +1,7 @@
 /**
- * Authentication boundary. Sign-in is deferred until private backup is enabled
- * or the user asks for it from You; local-only use never depends on it.
+ * Authentication boundary. Every journal route requires a restored, verified
+ * Supabase session. Sign-in creates an account when needed; it does not upload
+ * local journal content or enable a cloud backup.
  *
  * Identity comes from Supabase Auth (docs/API_CONTRACT.md): Google through the
  * system browser with PKCE, and email through a six-digit one-time code. A new
@@ -9,6 +10,7 @@
 
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
+import { Platform } from 'react-native';
 
 import { supabase } from './supabase';
 
@@ -16,6 +18,7 @@ export type AuthProvider = 'google' | 'email';
 
 export type AuthResult =
   | { status: 'authenticated'; userId: string }
+  | { status: 'redirecting' }
   | { status: 'cancelled' }
   | { status: 'unavailable' }
   | { status: 'failed' };
@@ -43,6 +46,38 @@ function firstParam(value: string | string[] | undefined): string | null {
   return typeof first === 'string' && first.length > 0 ? first : null;
 }
 
+
+export function authRedirectUrl(): string {
+  return Platform.OS === 'web' && typeof window !== 'undefined'
+    ? `${window.location.origin}/${AUTH_CALLBACK_PATH}`
+    : Linking.createURL(AUTH_CALLBACK_PATH);
+}
+
+let callbackUrl: string | null = null;
+let callbackResult: Promise<AuthResult> | null = null;
+/** One code exchange, even when development effects mount twice. */
+export function finishAuthCallback(url: string): Promise<AuthResult> {
+  if (callbackUrl === url && callbackResult) return callbackResult;
+  callbackUrl = url;
+  callbackResult = (async (): Promise<AuthResult> => {
+    if (!supabase) return { status: 'unavailable' };
+    try {
+      const { queryParams } = Linking.parse(url);
+      if (firstParam(queryParams?.error)) return { status: 'failed' };
+      const code = firstParam(queryParams?.code);
+      const hash = firstParam(queryParams?.token_hash);
+      const result = code
+        ? await supabase.auth.exchangeCodeForSession(code)
+        : hash
+          ? await supabase.auth.verifyOtp({ token_hash: hash, type: 'email' })
+          : null;
+      if (!result || result.error || !result.data.user || !result.data.session) return { status: 'failed' };
+      return { status: 'authenticated', userId: result.data.user.id };
+    } catch { return { status: 'failed' }; }
+  })();
+  return callbackResult;
+}
+
 export interface AuthPort {
   signInWithGoogle(): Promise<AuthResult>;
   requestEmailCode(email: string): Promise<EmailCodeRequest>;
@@ -56,7 +91,7 @@ export const authService: AuthPort = {
       return { status: 'unavailable' };
     }
     try {
-      const redirectTo = Linking.createURL(AUTH_CALLBACK_PATH);
+      const redirectTo = authRedirectUrl();
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: { redirectTo, skipBrowserRedirect: true },
@@ -64,23 +99,15 @@ export const authService: AuthPort = {
       if (error || !data.url) {
         return { status: 'failed' };
       }
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.location.assign(data.url);
+        return { status: 'redirecting' };
+      }
       const browser = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
       if (browser.type !== 'success') {
         return { status: 'cancelled' };
       }
-      const { queryParams } = Linking.parse(browser.url);
-      if (firstParam(queryParams?.error) === 'access_denied') {
-        return { status: 'cancelled' };
-      }
-      const code = firstParam(queryParams?.code);
-      if (!code) {
-        return { status: 'failed' };
-      }
-      const exchanged = await supabase.auth.exchangeCodeForSession(code);
-      if (exchanged.error) {
-        return { status: 'failed' };
-      }
-      return { status: 'authenticated', userId: exchanged.data.user.id };
+      return finishAuthCallback(browser.url);
     } catch {
       return { status: 'failed' };
     }
@@ -93,7 +120,7 @@ export const authService: AuthPort = {
     try {
       const { error } = await supabase.auth.signInWithOtp({
         email,
-        options: { shouldCreateUser: true },
+        options: { shouldCreateUser: true, emailRedirectTo: authRedirectUrl() },
       });
       if (!error) {
         return 'sent';
@@ -120,7 +147,9 @@ export const authService: AuthPort = {
   },
 
   async signOut() {
-    await supabase?.auth.signOut();
+    if (!supabase) return;
+    const { error } = await supabase.auth.signOut({ scope: 'local' });
+    if (error) throw error;
   },
 };
 

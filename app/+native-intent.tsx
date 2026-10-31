@@ -6,7 +6,7 @@ import { AUTH_CALLBACK_PATH } from '@/services/auth';
  */
 export function redirectSystemPath({ path, initial }: { path: string; initial: boolean }): string | null {
   if (path.includes(AUTH_CALLBACK_PATH)) {
-    return initial ? '/' : null;
+    return initial ? path : null;
   }
   return path;
 }

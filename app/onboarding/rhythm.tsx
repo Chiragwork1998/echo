@@ -61,8 +61,9 @@ export default function RhythmScreen() {
         setNotificationPermission(status);
         // Only a granted permission may schedule; denial keeps the chosen time.
         if (status === 'granted') {
-          await scheduleDailyReminder(reminder.localTime);
-        }
+          const result = await scheduleDailyReminder(reminder.localTime);
+          setReminderEnabled(result.status === 'scheduled');
+        } else setReminderEnabled(false);
       } else {
         await cancelDailyReminder();
       }

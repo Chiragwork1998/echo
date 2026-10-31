@@ -8,7 +8,7 @@ import { tokens } from '@/design/tokens';
 type SecondaryButtonProps = {
   accessibilityHint?: string;
   disabled?: boolean;
-  /** `outline` is a glass pill with a hairline edge; `ghost` is text-only. */
+  /** Legacy `outline` variant uses a borderless glass pill; `ghost` is text-only. */
   icon?: EchoIconName;
   label: string;
   onPress: () => void;
@@ -55,7 +55,6 @@ export function SecondaryButton({
             styles.outline,
             {
               backgroundColor: theme.color.surfaceGlass,
-              borderColor: theme.color.borderGlass,
             },
           ],
           pressed && styles.pressed,
@@ -82,7 +81,6 @@ const styles = StyleSheet.create({
   },
   outline: {
     borderRadius: tokens.control.pillRadius,
-    borderWidth: StyleSheet.hairlineWidth,
   },
   pressed: { opacity: 0.9 },
   disabled: { opacity: 0.6 },

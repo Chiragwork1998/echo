@@ -20,8 +20,9 @@ import type { VoiceDraft } from './voice';
 /**
  * Server-side speech-to-text (`docs/API_CONTRACT.md`, reflection service).
  *
- * Transcription runs behind the authenticated Fastify API: the audio is
- * decrypted to a cache file for exactly one multipart upload, then deleted.
+ * Transcription runs behind the Fastify API (Sarvam Saaras v4, no sign-in
+ * required): the audio is decrypted to a cache file for exactly one multipart
+ * upload, then deleted.
  * The client holds no provider credential and never sends plaintext anywhere
  * except this consented, TLS-protected endpoint.
  *
@@ -70,9 +71,9 @@ export const transcriptionService: TranscriptionPort = {
     if (!baseUrl || !draft.localPath) {
       return { status: 'unavailable' };
     }
-    if (!(await getAccessToken())) {
-      return { status: 'unauthenticated' };
-    }
+    // Voice-to-text works without signing in; a session token is sent when
+    // one exists so signed-in use is limited per account rather than per IP.
+    const signedIn = (await getAccessToken()) !== null;
 
     let uploadUri = draft.localPath;
     let temporary = false;
@@ -81,28 +82,31 @@ export const transcriptionService: TranscriptionPort = {
         uploadUri = await decryptAudioToCache(draft.localPath, Crypto.randomUUID());
         temporary = true;
       }
+      // The server accepts exactly one part and checks the filename extension;
+      // it measures duration itself, so nothing else is appended.
+      const type = mimeTypeFor(uploadUri);
       const formData = new FormData();
       formData.append('audio', {
         uri: uploadUri,
-        name: 'echo-recording',
-        type: mimeTypeFor(uploadUri),
+        name: `echo-recording.${type === 'audio/mp4' ? 'm4a' : type.split('/')[1]}`,
+        type,
       } as unknown as Blob);
-      formData.append('durationSeconds', `${draft.durationSeconds}`);
 
-      const response = await request<{ text?: string }>(
+      const response = await request<{ transcript?: string }>(
         { baseUrl, accessToken: getAccessToken },
         {
           method: 'POST',
           path: TRANSCRIPTION_PATH,
           formData,
+          authenticated: signedIn,
           idempotencyKey: Crypto.randomUUID(),
           timeoutMs: UPLOAD_REQUEST_TIMEOUT_MS,
         },
       );
-      if (typeof response.text !== 'string' || response.text.length === 0) {
+      if (typeof response.transcript !== 'string' || response.transcript.length === 0) {
         return { status: 'error', retryable: true };
       }
-      return { status: 'complete', text: response.text };
+      return { status: 'complete', text: response.transcript };
     } catch (error) {
       if (error instanceof ApiUnauthenticatedError) {
         return { status: 'unauthenticated' };

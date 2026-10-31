@@ -28,7 +28,7 @@ export function SegmentedMode({ disabled = false, onChange, value }: SegmentedMo
       accessibilityRole="radiogroup"
       style={[
         styles.track,
-        { backgroundColor: theme.color.surfaceGlass, borderColor: theme.color.borderGlass },
+        { backgroundColor: theme.color.surfaceGlass },
         disabled && styles.disabled,
       ]}
     >
@@ -77,7 +77,6 @@ function Segment({
           styles.segment,
           selected && {
             backgroundColor: theme.color.surfacePrimary,
-            borderColor: theme.color.hairlineStrong,
           },
         ]}
       >
@@ -96,7 +95,6 @@ const styles = StyleSheet.create({
     maxWidth: SEGMENTED.width,
     height: SEGMENTED.height,
     borderRadius: SEGMENTED.radius,
-    borderWidth: StyleSheet.hairlineWidth,
     padding: SEGMENTED.padding,
     flexDirection: 'row',
   },
@@ -106,8 +104,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: tokens.space[8],
     borderRadius: SEGMENTED.radius - SEGMENTED.padding,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
   },

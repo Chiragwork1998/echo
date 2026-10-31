@@ -4,6 +4,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { AppShell } from '@/components/AppShell';
 import { EchoBackground } from '@/components/EchoBackground';
 import { PrimaryCTA } from '@/components/PrimaryCTA';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import { screenBackgrounds, screenFocalPoints } from '@/design/backgrounds';
 import { useEchoTheme } from '@/design/ThemeProvider';
 import { tokens } from '@/design/tokens';
@@ -25,7 +26,7 @@ export default function LandingPreview() {
     >
       <View style={styles.content}>
         <View style={styles.hero}>
-          <Text accessibilityRole="header" style={[styles.wordmark, { color: theme.color.textPrimary }]}>ECHO</Text>
+          <ThemeToggle><Text accessibilityRole="header" style={[styles.wordmark, { color: theme.color.textPrimary }]}>ECHO</Text></ThemeToggle>
           <View style={[styles.rule, { backgroundColor: theme.color.textPrimary }]} />
           <Text style={[styles.tagline, { color: theme.color.textSecondary }]}>Meet the hidden parts of you.</Text>
         </View>
@@ -59,7 +60,7 @@ const styles = StyleSheet.create({
     letterSpacing: 7.5,
     lineHeight: 60,
   },
-  rule: { width: 21, height: 1.6, marginTop: 16, opacity: 0.78 },
+  rule: { width: 21, height: 1.6, marginTop: 16, opacity: 0 },
   tagline: {
     marginTop: 12,
     ...tokens.type.displayItalic,

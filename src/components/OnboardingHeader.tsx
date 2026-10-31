@@ -1,8 +1,9 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
+import { ThemeToggle } from './ThemeToggle';
+
 import { HEADER } from '@/design/onboardingLayout';
-import { useEchoTheme } from '@/design/ThemeProvider';
 import { tokens } from '@/design/tokens';
 
 type OnboardingHeaderProps = {
@@ -21,8 +22,6 @@ const RULE_MARGIN_TOP =
 const BACK_TOP = WORDMARK_TOP + HEADER.wordmark.lineHeight / 2 - tokens.size.tapTarget / 2;
 
 export function OnboardingHeader({ currentStep, onBack, showBack = true }: OnboardingHeaderProps) {
-  const { name, setSetting } = useEchoTheme();
-
   return (
     <View style={[styles.header, { marginTop: HEADER.topOffset }]}>
       {showBack ? (
@@ -49,17 +48,13 @@ export function OnboardingHeader({ currentStep, onBack, showBack = true }: Onboa
           </Svg>
         </Pressable>
       ) : null}
-      <Pressable
-        accessibilityLabel={__DEV__ ? `ECHO. Previewing ${name} theme` : 'ECHO'}
-        accessibilityRole="text"
-        delayLongPress={350}
-        onLongPress={__DEV__ ? () => setSetting(name === 'day' ? 'night' : 'day') : undefined}
-        style={styles.wordmarkWrap}
-      >
-        <Text style={styles.wordmark}>ECHO</Text>
-        <View style={styles.rule} />
-      </Pressable>
-      <View
+      <View pointerEvents="box-none" style={styles.wordmarkWrap}>
+        <ThemeToggle style={styles.wordmarkTarget}>
+          <Text style={styles.wordmark}>ECHO</Text>
+          <View style={styles.rule} />
+        </ThemeToggle>
+      </View>
+      {currentStep > 0 ? <View
         accessibilityLabel={`Step ${currentStep} of ${TOTAL_STEPS}`}
         accessibilityRole="progressbar"
         accessibilityValue={{ max: TOTAL_STEPS, min: 1, now: currentStep }}
@@ -79,7 +74,7 @@ export function OnboardingHeader({ currentStep, onBack, showBack = true }: Onboa
             />
           ))}
         </View>
-      </View>
+      </View> : null}
     </View>
   );
 }
@@ -107,6 +102,7 @@ const styles = StyleSheet.create({
     top: WORDMARK_TOP,
     alignItems: 'center',
   },
+  wordmarkTarget: { alignItems: 'center' },
   wordmark: {
     color: '#FFF9EF',
     ...tokens.type.display,
@@ -119,7 +115,7 @@ const styles = StyleSheet.create({
     height: HEADER.rule.height,
     marginTop: RULE_MARGIN_TOP,
     backgroundColor: '#FFF9EF',
-    opacity: HEADER.rule.opacity,
+    opacity: 0,
   },
   progressWrap: {
     position: 'absolute',

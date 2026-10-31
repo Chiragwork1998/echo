@@ -1,5 +1,7 @@
 import { getDatabase, isDatabaseSupported } from './database';
+import { getWorkspaceScope, type WorkspaceScope } from './workspace';
 import type { OnboardingSnapshot } from '@/state/onboardingSelections';
+import { deleteBrowserValue, isBrowserClient, loadBrowserValue, saveBrowserValue } from './browserJournalRepository';
 
 /**
  * Resumable onboarding progress (`OnboardingState` in
@@ -10,8 +12,8 @@ import type { OnboardingSnapshot } from '@/state/onboardingSelections';
  * require `src/storage/encryption.ts` first.
  *
  * On native platforms progress is written to SQLite on every change, so a
- * terminated session resumes at the last completed step. Web preview builds
- * have no encrypted store and keep progress for the running session only.
+ * terminated session resumes at the last completed step. Browser progress and
+ * settings are encrypted in the same IndexedDB store as the local journal.
  */
 
 export type PersistedOnboardingState = OnboardingSnapshot & { version: 1 };
@@ -28,12 +30,22 @@ export interface OnboardingPersistence {
 
 const ROW_ID = 1;
 
+class OnboardingStateUnavailableError extends Error {
+  constructor() {
+    super('Saved settings could not be read.');
+    this.name = 'OnboardingStateUnavailableError';
+  }
+}
+
 function toSnapshot(payload: string): OnboardingSnapshot | null {
   try {
     const parsed = JSON.parse(payload) as OnboardingSnapshot;
-    return parsed && typeof parsed === 'object' ? parsed : null;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new OnboardingStateUnavailableError();
+    }
+    return parsed;
   } catch {
-    return null;
+    throw new OnboardingStateUnavailableError();
   }
 }
 
@@ -42,13 +54,14 @@ function toSnapshot(payload: string): OnboardingSnapshot | null {
  * and queues the write; `flush()` awaits the queued writes when a caller wants
  * to guarantee durability (for example before navigating to Home).
  */
-export function createSqliteOnboardingPersistence(): OnboardingPersistence {
+export function createSqliteOnboardingPersistence(scope: WorkspaceScope = getWorkspaceScope()): OnboardingPersistence {
   let queue: Promise<void> = Promise.resolve();
   let lastError: unknown = null;
 
   const write = (state: OnboardingSnapshot | null): Promise<void> => {
     const run = async () => {
-      const db = await getDatabase();
+      const db = await getDatabase(scope);
+      lastError = null;
       if (state === null) {
         await db.runAsync('DELETE FROM onboarding_state WHERE id = ?', ROW_ID);
         return;
@@ -76,7 +89,7 @@ export function createSqliteOnboardingPersistence(): OnboardingPersistence {
       if (lastError) {
         throw lastError;
       }
-      const db = await getDatabase();
+      const db = await getDatabase(scope);
       const row = await db.getFirstAsync<{ payload: string }>(
         'SELECT payload FROM onboarding_state WHERE id = ?',
         ROW_ID,
@@ -91,6 +104,7 @@ export function createSqliteOnboardingPersistence(): OnboardingPersistence {
     },
     async flush() {
       await queue;
+      if (lastError) throw lastError;
     },
   };
 }
@@ -116,11 +130,42 @@ export function createInMemoryOnboardingPersistence(): OnboardingPersistence {
   };
 }
 
-/** SQLite on native targets; session memory only on web preview builds. */
-export function createDefaultOnboardingPersistence(): OnboardingPersistence {
-  return isDatabaseSupported()
-    ? createSqliteOnboardingPersistence()
-    : createInMemoryOnboardingPersistence();
+export function createBrowserOnboardingPersistence(scope: WorkspaceScope = getWorkspaceScope()): OnboardingPersistence {
+  let queue: Promise<void> = Promise.resolve();
+  let lastError: unknown = null;
+  const enqueue = (work: () => Promise<void>) => {
+    const next = queue.then(work);
+    queue = next.then(() => { lastError = null; }, (error: unknown) => { lastError = error; });
+    return next;
+  };
+  return {
+    persistent: true,
+    async load() {
+      await queue;
+      if (lastError) throw lastError;
+      const stored = await loadBrowserValue<PersistedOnboardingState>('onboarding', scope);
+      if (stored === null) return null;
+      if (stored.version !== 1) throw new OnboardingStateUnavailableError();
+      return stored;
+    },
+    save(state) {
+      const snapshot = { ...state, version: 1 } satisfies PersistedOnboardingState;
+      void enqueue(() => saveBrowserValue('onboarding', snapshot, scope)).catch(() => undefined);
+    },
+    async clear() {
+      await enqueue(() => deleteBrowserValue('onboarding', scope));
+    },
+    async flush() {
+      await queue;
+      if (lastError) throw lastError;
+    },
+  };
+}
+
+/** SQLite on native; encrypted IndexedDB on web; memory for SSR/tests. */
+export function createDefaultOnboardingPersistence(scope: WorkspaceScope = getWorkspaceScope()): OnboardingPersistence {
+  if (isDatabaseSupported()) return createSqliteOnboardingPersistence(scope);
+  return isBrowserClient() ? createBrowserOnboardingPersistence(scope) : createInMemoryOnboardingPersistence();
 }
 
 export const defaultOnboardingPersistence = createDefaultOnboardingPersistence();

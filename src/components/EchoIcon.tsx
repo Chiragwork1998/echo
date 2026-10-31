@@ -7,6 +7,7 @@ import Svg, { Circle, Ellipse, Path, Rect } from 'react-native-svg';
  */
 
 export type EchoIconName =
+  | 'arrow-right'
   | 'bell'
   | 'book'
   | 'cairn-filled'
@@ -65,6 +66,17 @@ export function EchoIcon({ color, name, opacity = 1, size = 24 }: EchoIconProps)
 
 function renderGlyph(name: Exclude<EchoIconName, 'cairn-filled' | 'cairn-outline'>, color: string) {
   switch (name) {
+    case 'arrow-right':
+      return (
+        <Path
+          d="M4 12h15M13 6l6 6-6 6"
+          fill="none"
+          stroke={color}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={1.5}
+        />
+      );
     case 'bell':
       return (
         <Path

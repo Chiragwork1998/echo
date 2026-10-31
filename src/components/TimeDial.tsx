@@ -174,7 +174,7 @@ export function TimeDial({ localTime, onChange }: TimeDialProps) {
         visible={pickerOpen}
       >
         <View style={styles.backdrop}>
-          <GlassCard padding={tokens.space[24]} style={styles.picker} variant="strong">
+          <GlassCard inModal padding={tokens.space[24]} style={styles.picker} variant="strong">
             <Text style={[styles.pickerTitle, { color: theme.color.textPrimary }]}>Set your time</Text>
             <View style={styles.stepperRow}>
               <Text style={[styles.stepperLabel, { color: theme.color.textSecondary }]}>Hour</Text>
@@ -239,7 +239,6 @@ function Stepper({
       onPress={onPress}
       style={({ pressed }) => [
         styles.stepperButton,
-        { borderColor: theme.color.borderGlass },
         pressed && styles.pressed,
       ]}
     >
@@ -288,7 +287,6 @@ const styles = StyleSheet.create({
     width: tokens.size.tapTarget,
     height: tokens.size.tapTarget,
     borderRadius: tokens.size.tapTarget / 2,
-    borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
   },

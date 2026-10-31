@@ -15,7 +15,7 @@ type ChipProps = {
 /**
  * Small single-select chip used for reminder presets and theme choice. Shares
  * the segmented-control material: cream capsule with ink text when selected,
- * glass with a hairline edge when not.
+ * borderless glass when not.
  */
 export function Chip({ disabled = false, label, onPress, selected, style }: ChipProps) {
   const { theme } = useEchoTheme();
@@ -36,11 +36,9 @@ export function Chip({ disabled = false, label, onPress, selected, style }: Chip
           selected
             ? {
                 backgroundColor: theme.color.surfacePrimary,
-                borderColor: theme.color.hairlineStrong,
               }
             : {
                 backgroundColor: 'transparent',
-                borderColor: theme.color.hairlineSoft,
               },
         ]}
       >
@@ -65,7 +63,6 @@ const styles = StyleSheet.create({
   chip: {
     minHeight: tokens.size.tapTarget,
     borderRadius: tokens.control.pillRadius,
-    borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: tokens.space[16],

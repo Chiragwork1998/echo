@@ -1,11 +1,11 @@
-import { useSyncExternalStore } from 'react';
+import { useSyncExternalStore } from "react";
 
 import {
   createDefaultJournalRepository,
   type JournalRepository,
-} from '@/storage/journalRepository';
+} from "@/storage/journalRepository";
 
-import type { MoodSelection } from './onboardingSelections';
+import type { MoodSelection } from "./onboardingSelections";
 
 /**
  * Local journal domain (`JournalEntry` in
@@ -20,14 +20,14 @@ import type { MoodSelection } from './onboardingSelections';
  * No journal content is ever logged.
  */
 
-export type JournalMode = 'text' | 'voice';
-export type SyncState = 'local' | 'pending' | 'synced' | 'error';
+export type JournalMode = "text" | "voice";
+export type SyncState = "local" | "pending" | "synced" | "error";
 /** `unavailable` marks a stored entry whose content failed authentication. */
-export type ContentState = 'available' | 'unavailable';
+export type ContentState = "available" | "unavailable";
 
 export type ReflectionSummary =
-  | { status: 'complete'; text: string }
-  | { status: 'pending' | 'unavailable' | 'offline' | 'error'; text: null };
+  | { status: "complete"; text: string }
+  | { status: "pending" | "unavailable" | "offline" | "error"; text: null };
 
 export type JournalEntry = {
   id: string;
@@ -44,6 +44,9 @@ export type JournalEntry = {
   syncState: SyncState;
   deletedAt: string | null;
   contentState: ContentState;
+  moodAfter?: MoodSelection | null;
+  takeaway?: string | null;
+  favorite?: boolean;
 };
 
 export type RhythmDay = {
@@ -54,18 +57,22 @@ export type RhythmDay = {
   isToday: boolean;
 };
 
-export type JournalStatus = 'idle' | 'loading' | 'ready' | 'error';
+export type JournalStatus = "idle" | "loading" | "ready" | "error";
 
 type Listener = () => void;
 
 let entries: readonly JournalEntry[] = [];
 let draft: JournalEntry | null = null;
-let status: JournalStatus = 'idle';
+let status: JournalStatus = "idle";
 let storageError: string | null = null;
 let hydrated: Promise<void> | null = null;
+let repositoryGeneration = 0;
 let repository: JournalRepository = createDefaultJournalRepository();
 
 const listeners = new Set<Listener>();
+let writeQueue: Promise<void> = Promise.resolve();
+let committing: Promise<JournalEntry> | null = null;
+let draftSaveState: "idle" | "saving" | "saved" | "error" = "idle";
 
 function emit(): void {
   listeners.forEach((listener) => listener());
@@ -80,28 +87,61 @@ function subscribe(listener: Listener): () => void {
 
 function createId(): string {
   const random = globalThis.crypto?.randomUUID?.();
-  return random ?? `local-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  return (
+    random ??
+    `local-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+  );
 }
 
 /** Records a storage failure without ever echoing journal content. */
 function recordStorageError(error: unknown, operation: string): void {
-  const name = error instanceof Error ? error.name : 'Error';
+  const name = error instanceof Error ? error.name : "Error";
   storageError = `${operation}:${name}`;
-  status = 'error';
+  status = "error";
   emit();
 }
 
-function persist(operation: string, work: () => Promise<void>): void {
-  void work().catch((error: unknown) => recordStorageError(error, operation));
+function enqueue(operation: string, work: (port: JournalRepository) => Promise<void>): Promise<void> {
+  const target = repository;
+  const next = writeQueue.then(() => work(target));
+  writeQueue = next.catch(() => undefined);
+  return next.catch((error: unknown) => {
+    recordStorageError(error, operation);
+    throw error;
+  });
+}
+
+function persist(operation: string, work: (port: JournalRepository) => Promise<void>): void {
+  void enqueue(operation, work).catch(() => undefined);
+}
+
+export async function flushJournalWrites(): Promise<void> {
+  await writeQueue;
+  if (draftSaveState === "error") throw new Error("DraftWriteFailed");
+}
+
+export function useDraftSaveState() {
+  return useSyncExternalStore(
+    subscribe,
+    () => draftSaveState,
+    () => draftSaveState,
+  );
 }
 
 /** Swaps the persistence port; used by tests and by web preview builds. */
 export function configureJournalRepository(port: JournalRepository): void {
   repository = port;
+  repositoryGeneration += 1;
+  entries = [];
+  draft = null;
+  status = "idle";
+  storageError = null;
+  draftSaveState = "idle";
   hydrated = null;
+  emit();
 }
 
-export function getJournalStorageKind(): JournalRepository['kind'] {
+export function getJournalStorageKind(): JournalRepository["kind"] {
   return repository.kind;
 }
 
@@ -113,22 +153,34 @@ export function getJournalStorageError(): string | null {
  * Loads persisted entries and the draft exactly once per app launch. Safe to
  * call from any screen; later calls reuse the same promise.
  */
+export function retryJournalHydration(): Promise<void> {
+  if (status === "error") hydrated = null;
+  return hydrateJournal();
+}
+
 export function hydrateJournal(): Promise<void> {
   hydrated ??= (async () => {
-    status = 'loading';
+    const generation = repositoryGeneration;
+    const source = repository;
+    status = "loading";
     emit();
     try {
       const [storedEntries, storedDraft] = await Promise.all([
-        repository.loadEntries(),
-        repository.loadDraft(),
+        source.loadEntries(),
+        source.loadDraft(),
       ]);
-      entries = storedEntries;
-      draft = storedDraft;
+      if (generation !== repositoryGeneration) return;
+      entries = storedEntries.filter((entry) => !entry.deletedAt);
+      draft =
+        storedDraft && !entries.some((entry) => entry.id === storedDraft.id)
+          ? storedDraft
+          : null;
       storageError = null;
-      status = 'ready';
+      status = "ready";
     } catch (error) {
-      storageError = error instanceof Error ? error.name : 'Error';
-      status = 'error';
+      if (generation !== repositoryGeneration) return;
+      storageError = error instanceof Error ? error.name : "Error";
+      status = "error";
     }
     emit();
   })();
@@ -159,38 +211,87 @@ function makeEntry(input: {
     moodBefore: input.moodBefore,
     reflection: input.reflection ?? null,
     // Backup stays local until the user authenticates and consent is recorded.
-    syncState: 'local',
+    syncState: "local",
     deletedAt: null,
-    contentState: 'available',
+    contentState: "available",
   };
 }
 
-export function commitEntry(input: {
-  promptId: string;
-  promptTextSnapshot: string;
-  mode: JournalMode;
-  body: string | null;
-  audioPath?: string | null;
-  durationSeconds: number;
-  moodBefore: MoodSelection | null;
-  reflection?: ReflectionSummary | null;
-}): JournalEntry {
-  const entry = makeEntry(input);
-  entries = [entry, ...entries.filter((item) => item.id !== entry.id)];
-  draft = null;
-  emit();
-  if (repository.persistent) {
-    persist('saveEntry', async () => {
-      await repository.saveEntry(entry);
-      await repository.saveDraft(null);
-    });
-  } else {
-    storageError = 'storage-unavailable';
-  }
-  return entry;
+export function commitEntry(
+  input: Parameters<typeof makeEntry>[0],
+): Promise<JournalEntry> {
+  if (committing) return committing;
+  const entry = { ...makeEntry(input), id: draft?.id ?? createId() };
+  committing = (async () => {
+    try {
+      await enqueue("saveEntry", async (port) => {
+        await port.saveEntry(entry);
+        await port.saveDraft(null);
+      });
+      entries = [entry, ...entries.filter((item) => item.id !== entry.id)];
+      draft = null;
+      storageError = null;
+      draftSaveState = "idle";
+      status = "ready";
+      emit();
+      return entry;
+    } finally {
+      committing = null;
+    }
+  })();
+  return committing;
 }
 
-export function attachReflection(entryId: string, reflection: ReflectionSummary): void {
+export async function updateJournalEntry(
+  id: string,
+  patch: Pick<
+    Partial<JournalEntry>,
+    "moodAfter" | "takeaway" | "favorite" | "body"
+  >,
+): Promise<void> {
+  await enqueue("updateEntry", async (port) => {
+    if (port !== repository) throw new Error("WorkspaceChanged");
+    const current = entries.find((entry) => entry.id === id);
+    if (!current || current.contentState !== "available")
+      throw new Error("EntryUnavailable");
+    const updated = {
+      ...current,
+      ...patch,
+      updatedAt: new Date().toISOString(),
+    };
+    await port.saveEntry(updated);
+    entries = entries.map((entry) => (entry.id === id ? updated : entry));
+    storageError = null;
+    status = "ready";
+    emit();
+  });
+}
+
+export async function deleteJournalEntry(id: string): Promise<void> {
+  await enqueue("deleteEntry", async (port) => {
+    if (port !== repository) throw new Error("WorkspaceChanged");
+    const entry = entries.find((item) => item.id === id);
+    if (!entry) return;
+    await port.deleteEntry(id);
+    entries = entries.filter((item) => item.id !== id);
+    storageError = null;
+    status = "ready";
+    emit();
+    if (
+      entry.audioPath &&
+      !entries.some((item) => item.audioPath === entry.audioPath) &&
+      draft?.audioPath !== entry.audioPath
+    ) {
+      const { deleteFileIfPresent } = await import("@/storage/audioStore");
+      deleteFileIfPresent(entry.audioPath);
+    }
+  });
+}
+
+export function attachReflection(
+  entryId: string,
+  reflection: ReflectionSummary,
+): void {
   let updated: JournalEntry | null = null;
   entries = entries.map((entry) => {
     if (entry.id !== entryId) {
@@ -203,9 +304,10 @@ export function attachReflection(entryId: string, reflection: ReflectionSummary)
     draft = { ...draft, reflection, updatedAt: new Date().toISOString() };
   }
   emit();
-  const snapshot = updated ?? entries.find((entry) => entry.id === entryId) ?? null;
+  const snapshot =
+    updated ?? entries.find((entry) => entry.id === entryId) ?? null;
   if (snapshot && repository.persistent) {
-    persist('saveReflection', () => repository.saveEntry(snapshot));
+    persist("saveReflection", (port) => port.saveEntry(snapshot));
   }
 }
 
@@ -218,6 +320,7 @@ export function saveDraft(input: {
   durationSeconds: number;
   moodBefore: MoodSelection | null;
 }): void {
+  if (committing) return;
   const existing = draft;
   const now = new Date().toISOString();
   draft = existing
@@ -229,11 +332,21 @@ export function saveDraft(input: {
         updatedAt: now,
       }
     : { ...makeEntry(input), updatedAt: now };
+  draftSaveState = "saving";
   emit();
-  if (repository.persistent) {
-    const snapshot = draft;
-    persist('saveDraft', () => repository.saveDraft(snapshot));
-  }
+  const snapshot = draft;
+  void enqueue("saveDraft", (port) => port.saveDraft(snapshot))
+    .then(() => {
+      if (draft === snapshot) {
+        draftSaveState = "saved";
+        storageError = null;
+        emit();
+      }
+    })
+    .catch(() => {
+      draftSaveState = "error";
+      emit();
+    });
 }
 
 /**
@@ -251,16 +364,19 @@ export function restoreRecordingDraft(input: {
   if (existing) {
     draft = {
       ...existing,
-      mode: 'voice',
+      mode: "voice",
       audioPath: input.audioPath,
-      durationSeconds: Math.max(existing.durationSeconds, input.durationSeconds),
+      durationSeconds: Math.max(
+        existing.durationSeconds,
+        input.durationSeconds,
+      ),
       updatedAt: now,
     };
   } else {
     draft = makeEntry({
       promptId: input.promptId,
       promptTextSnapshot: input.promptTextSnapshot,
-      mode: 'voice',
+      mode: "voice",
       body: null,
       audioPath: input.audioPath,
       durationSeconds: input.durationSeconds,
@@ -270,19 +386,15 @@ export function restoreRecordingDraft(input: {
   emit();
   if (repository.persistent) {
     const snapshot = draft;
-    persist('saveDraft', () => repository.saveDraft(snapshot));
+    persist("saveDraft", (port) => port.saveDraft(snapshot));
   }
 }
 
-export function discardDraft(): void {
-  if (!draft) {
-    return;
-  }
+export async function discardDraft(): Promise<void> {
+  await enqueue("discardDraft", (port) => port.saveDraft(null));
   draft = null;
+  draftSaveState = "idle";
   emit();
-  if (repository.persistent) {
-    persist('discardDraft', () => repository.saveDraft(null));
-  }
 }
 
 export function getEntries(): readonly JournalEntry[] {
@@ -314,16 +426,19 @@ export function useJournalStatus(): JournalStatus {
 }
 
 const COMPLETED_DAYS = 7;
-const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'] as const;
+const WEEKDAY_LABELS = ["S", "M", "T", "W", "T", "F", "S"] as const;
 
 function localDateKey(date: Date): string {
-  const month = `${date.getMonth() + 1}`.padStart(2, '0');
-  const day = `${date.getDate()}`.padStart(2, '0');
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
   return `${date.getFullYear()}-${month}-${day}`;
 }
 
 /** Rhythm is derived from completed entries by local calendar day. */
-export function deriveRhythmWeek(all: readonly JournalEntry[], now = new Date()): RhythmDay[] {
+export function deriveRhythmWeek(
+  all: readonly JournalEntry[],
+  now = new Date(),
+): RhythmDay[] {
   const completedDays = new Set(
     all
       .filter((entry) => entry.deletedAt === null)
@@ -337,7 +452,7 @@ export function deriveRhythmWeek(all: readonly JournalEntry[], now = new Date())
     const key = localDateKey(date);
     return {
       date: key,
-      weekdayLabel: WEEKDAY_LABELS[date.getDay()] ?? '',
+      weekdayLabel: WEEKDAY_LABELS[date.getDay()] ?? "",
       completed: completedDays.has(key),
       isToday: key === todayKey,
     };

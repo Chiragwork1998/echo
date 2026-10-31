@@ -20,6 +20,7 @@ import {
   updateRecordingSession,
 } from '@/storage/recordingSessionStore';
 import { isEncryptionAvailable } from '@/storage/encryption';
+import { getWorkspaceScope, type WorkspaceScope } from '@/storage/workspace';
 
 /**
  * Voice capture boundary (`specs/PRODUCT_REQUIREMENTS.md` § Speak).
@@ -34,6 +35,7 @@ import { isEncryptionAvailable } from '@/storage/encryption';
  */
 
 export type VoiceDraft = {
+  workspace?: WorkspaceScope;
   durationSeconds: number;
   /** Local encrypted file reference; null when capture failed. */
   localPath: string | null;
@@ -63,6 +65,7 @@ export interface VoiceCapturePort {
 
 type ActiveRecording = {
   id: string;
+  workspace: WorkspaceScope;
   recorder: RecorderWithEvents;
   startedAt: number;
   subscription: { remove: () => void };
@@ -139,7 +142,7 @@ async function handleUnexpectedStop(current: ActiveRecording): Promise<void> {
     durationSeconds: durationSecondsOf(current.recorder),
     path,
     status: path ? 'pending-encryption' : 'interrupted-missing',
-  });
+  }, current.workspace);
 }
 
 export const voiceCapture: VoiceCapturePort = {
@@ -154,8 +157,9 @@ export const voiceCapture: VoiceCapturePort = {
 
   async start(meta) {
     if (active) {
-      return 'available';
+      return active.workspace === getWorkspaceScope() ? 'available' : 'unavailable';
     }
+    const workspace = getWorkspaceScope();
     try {
       await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
       const options = recordingOptions();
@@ -165,7 +169,7 @@ export const voiceCapture: VoiceCapturePort = {
       const recorder = new Recorder(platformOptions(options));
       await recorder.prepareToRecordAsync(options);
       const id = newId();
-      await beginRecordingSession(id, recorder.uri ?? null, meta);
+      await beginRecordingSession(id, recorder.uri ?? null, meta, workspace);
       const subscription = recorder.addListener('recordingStatusUpdate', (status: RecordingStatus) => {
         const ongoing = active;
         if ((status.isFinished || status.mediaServicesDidReset) && ongoing?.id === id) {
@@ -173,7 +177,7 @@ export const voiceCapture: VoiceCapturePort = {
         }
       });
       recorder.record();
-      active = { id, recorder, startedAt: Date.now(), subscription };
+      active = { id, workspace, recorder, startedAt: Date.now(), subscription };
       failure = null;
       return 'available';
     } catch {
@@ -192,9 +196,9 @@ export const voiceCapture: VoiceCapturePort = {
       await current.recorder.stop();
       const uri = current.recorder.uri;
       const durationSeconds = durationSecondsOf(current.recorder);
-      await updateRecordingSession(current.id, { durationSeconds });
+      await updateRecordingSession(current.id, { durationSeconds }, current.workspace);
       if (!uri || !audioFileExists(uri)) {
-        await updateRecordingSession(current.id, { status: 'interrupted-missing' });
+        await updateRecordingSession(current.id, { status: 'interrupted-missing' }, current.workspace);
         failure = 'recorder';
         return null;
       }
@@ -203,7 +207,7 @@ export const voiceCapture: VoiceCapturePort = {
           durationSeconds,
           path: uri,
           status: 'pending-encryption',
-        });
+        }, current.workspace);
         failure = 'encryption';
         return null;
       }
@@ -213,17 +217,22 @@ export const voiceCapture: VoiceCapturePort = {
           durationSeconds,
           path: uri,
           status: 'pending-encryption',
-        });
+        }, current.workspace);
         failure = 'encryption';
         return null;
       }
+      const sameWorkspace = getWorkspaceScope() === current.workspace;
       await updateRecordingSession(current.id, {
         durationSeconds,
         encryptedPath: encrypted.path,
-        status: 'encrypted',
-      });
+        status: sameWorkspace ? 'encrypted' : 'pending-encryption',
+      }, current.workspace);
       failure = null;
-      return { durationSeconds, localPath: encrypted.path };
+      if (getWorkspaceScope() !== current.workspace) {
+        await updateRecordingSession(current.id, { status: 'pending-encryption' }, current.workspace);
+        return null;
+      }
+      return sameWorkspace ? { workspace: current.workspace, durationSeconds, localPath: encrypted.path } : null;
     } catch {
       failure = 'storage';
       return null;
@@ -251,7 +260,7 @@ export const voiceCapture: VoiceCapturePort = {
         // Already stopped by the interruption handler.
       }
       deleteFileIfPresent(current.recorder.uri);
-      await updateRecordingSession(current.id, { status: 'discarded' });
+      await updateRecordingSession(current.id, { status: 'discarded' }, current.workspace);
       stopping = false;
     })();
   },
@@ -265,16 +274,23 @@ export const voiceCapture: VoiceCapturePort = {
   },
 
   async recoverInterrupted() {
+    const workspace = getWorkspaceScope();
     let sessions: Awaited<ReturnType<typeof listRecoverableRecordingSessions>> = [];
     try {
-      sessions = await listRecoverableRecordingSessions();
+      sessions = await listRecoverableRecordingSessions(workspace);
     } catch {
       return null;
     }
     for (const session of sessions) {
+      if (getWorkspaceScope() !== workspace) return null;
       if (session.encryptedPath && audioFileExists(session.encryptedPath)) {
-        await updateRecordingSession(session.id, { status: 'encrypted' });
+        await updateRecordingSession(session.id, { status: 'encrypted' }, workspace);
+        if (getWorkspaceScope() !== workspace) {
+          await updateRecordingSession(session.id, { status: 'pending-encryption' }, workspace);
+          return null;
+        }
         return {
+          workspace,
           durationSeconds: session.durationSeconds,
           localPath: session.encryptedPath,
           promptId: session.promptId,
@@ -283,7 +299,7 @@ export const voiceCapture: VoiceCapturePort = {
       }
       const path = session.path;
       if (!path || !audioFileExists(path)) {
-        await updateRecordingSession(session.id, { status: 'interrupted-missing' });
+        await updateRecordingSession(session.id, { status: 'interrupted-missing' }, workspace);
         continue;
       }
       if (!(await isEncryptionAvailable())) {
@@ -294,11 +310,17 @@ export const voiceCapture: VoiceCapturePort = {
         if (!encrypted) {
           return null;
         }
+        const sameWorkspace = getWorkspaceScope() === workspace;
         await updateRecordingSession(session.id, {
           encryptedPath: encrypted.path,
-          status: 'encrypted',
-        });
+          status: sameWorkspace ? 'encrypted' : 'pending-encryption',
+        }, workspace);
+        if (!sameWorkspace || getWorkspaceScope() !== workspace) {
+          await updateRecordingSession(session.id, { status: 'pending-encryption' }, workspace);
+          return null;
+        }
         return {
+          workspace,
           durationSeconds: session.durationSeconds,
           localPath: encrypted.path,
           promptId: session.promptId,

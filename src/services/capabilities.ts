@@ -3,10 +3,9 @@ import {
   requestRecordingPermissionsAsync as requestMicrophonePermission,
 } from 'expo-audio';
 import * as LocalAuthentication from 'expo-local-authentication';
-import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
-import { initializeNotifications } from './notifications';
+import { Notifications, initializeNotifications } from './notifications';
 
 /**
  * Device capability boundary for permissions that must degrade gracefully
@@ -136,7 +135,7 @@ export const deviceCapabilities: EchoCapabilities = {
   },
   notifications: {
     async status() {
-      if (Platform.OS === 'web') {
+      if (Platform.OS === 'web' || !Notifications) {
         return 'unavailable';
       }
       try {
@@ -146,7 +145,7 @@ export const deviceCapabilities: EchoCapabilities = {
       }
     },
     async request() {
-      if (Platform.OS === 'web') {
+      if (Platform.OS === 'web' || !Notifications) {
         return 'unavailable';
       }
       try {

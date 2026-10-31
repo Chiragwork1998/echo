@@ -99,8 +99,7 @@ export function ThreeChoiceScreen<T extends string>({
                   style={({ pressed }) => [
                     styles.accessibleChoice,
                     {
-                      backgroundColor: theme.color.surfaceGlassStrong,
-                      borderColor: selected ? theme.color.focus : theme.color.borderGlass,
+                      backgroundColor: selected ? theme.color.surfaceSelected : theme.color.surfaceGlassStrong,
                     },
                     pressed && styles.pressed,
                   ]}
@@ -157,7 +156,7 @@ export function ThreeChoiceScreen<T extends string>({
                   ]}
                 >
                   <ChoiceMarker selected={selected} variant="column" />
-                  <View style={styles.connector} />
+                  <View pointerEvents="none" style={styles.markerGap} />
                   <Text style={styles.choiceLabel}>{choice.label}</Text>
                   <Text style={styles.choiceSubtitle}>{choice.subtitle}</Text>
                 </Pressable>
@@ -206,11 +205,9 @@ const styles = StyleSheet.create({
   },
   choice: { position: 'absolute', alignItems: 'center' },
   pressed: { opacity: 0.72 },
-  connector: {
-    width: COLUMN.connector.width,
+  markerGap: {
     height: COLUMN.connector.height,
     marginTop: COLUMN.connector.gap,
-    backgroundColor: COLUMN.connector.color,
   },
   choiceLabel: {
     marginTop: COLUMN.label.topOffset,
@@ -250,7 +247,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 14,
     borderRadius: tokens.radius.card,
-    borderWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,

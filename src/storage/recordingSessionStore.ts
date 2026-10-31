@@ -1,4 +1,5 @@
 import { getDatabase, isDatabaseSupported } from './database';
+import { getWorkspaceScope, type WorkspaceScope } from './workspace';
 
 /**
  * Recording-session ledger.
@@ -18,6 +19,7 @@ export type RecordingSessionStatus =
 
 export type RecordingSession = {
   id: string;
+  workspace: WorkspaceScope;
   entryId: string | null;
   startedAt: string;
   updatedAt: string;
@@ -48,9 +50,10 @@ type Row = {
 
 const RECOVERABLE: readonly RecordingSessionStatus[] = ['recording', 'pending-encryption'];
 
-function toSession(row: Row): RecordingSession {
+function toSession(row: Row, workspace: WorkspaceScope): RecordingSession {
   return {
     id: row.id,
+    workspace,
     entryId: row.entry_id,
     startedAt: row.started_at,
     updatedAt: row.updated_at,
@@ -69,11 +72,13 @@ export async function beginRecordingSession(
   id: string,
   path: string | null,
   prompt?: { promptId: string; promptText: string },
+  workspace: WorkspaceScope = getWorkspaceScope(),
 ): Promise<void> {
   const now = new Date().toISOString();
   if (!isDatabaseSupported()) {
     memorySessions.set(id, {
       id,
+      workspace,
       entryId: null,
       startedAt: now,
       updatedAt: now,
@@ -86,7 +91,7 @@ export async function beginRecordingSession(
     });
     return;
   }
-  const db = await getDatabase();
+  const db = await getDatabase(workspace);
   await db.runAsync(
     `INSERT INTO recording_sessions (id, started_at, updated_at, path, status, prompt_id, prompt_text)
      VALUES (?, ?, ?, ?, 'recording', ?, ?)
@@ -108,16 +113,17 @@ export async function beginRecordingSession(
 export async function updateRecordingSession(
   id: string,
   patch: RecordingSessionPatch,
+  workspace: WorkspaceScope = getWorkspaceScope(),
 ): Promise<void> {
   const now = new Date().toISOString();
   if (!isDatabaseSupported()) {
     const existing = memorySessions.get(id);
-    if (existing) {
+    if (existing?.workspace === workspace) {
       memorySessions.set(id, { ...existing, ...patch, updatedAt: now });
     }
     return;
   }
-  const db = await getDatabase();
+  const db = await getDatabase(workspace);
   await db.runAsync(
     `UPDATE recording_sessions SET
        updated_at = ?,
@@ -138,17 +144,17 @@ export async function updateRecordingSession(
 }
 
 /** Sessions that may still hold a recoverable recording on disk. */
-export async function listRecoverableRecordingSessions(): Promise<RecordingSession[]> {
+export async function listRecoverableRecordingSessions(workspace: WorkspaceScope = getWorkspaceScope()): Promise<RecordingSession[]> {
   if (!isDatabaseSupported()) {
-    return [...memorySessions.values()].filter((session) => RECOVERABLE.includes(session.status));
+    return [...memorySessions.values()].filter((session) => session.workspace === workspace && RECOVERABLE.includes(session.status));
   }
-  const db = await getDatabase();
+  const db = await getDatabase(workspace);
   const rows = await db.getAllAsync<Row>(
     `SELECT * FROM recording_sessions
       WHERE status IN ('recording', 'pending-encryption')
       ORDER BY started_at DESC`,
   );
-  return rows.map(toSession);
+  return rows.map(row => toSession(row, workspace));
 }
 
 /** Test/reset hook for the memory-backed fallback. */

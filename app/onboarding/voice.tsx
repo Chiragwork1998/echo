@@ -1,7 +1,7 @@
 import { useRouter, type Href } from 'expo-router';
 
 import { ThreeChoiceScreen, type ThreeChoiceOption } from '@/components/ThreeChoiceScreen';
-import { setVoiceSelection, type VoiceSelection } from '@/state/onboardingSelections';
+import { setVoiceSelection, useOnboardingState, type VoiceSelection } from '@/state/onboardingSelections';
 
 const CHOICES: readonly ThreeChoiceOption<VoiceSelection>[] = [
   {
@@ -26,6 +26,7 @@ const CHOICES: readonly ThreeChoiceOption<VoiceSelection>[] = [
 
 export default function VoiceScreen() {
   const router = useRouter();
+  const mode = useOnboardingState(state => state.mode);
 
   return (
     <ThreeChoiceScreen
@@ -33,7 +34,7 @@ export default function VoiceScreen() {
       columnWidth={132}
       ctaLabel="Walk this way"
       currentStep={3}
-      defaultSelection="guide_me"
+      defaultSelection={mode}
       onBack={() => router.back()}
       onContinue={(selection) => {
         setVoiceSelection(selection);

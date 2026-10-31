@@ -10,15 +10,19 @@ type MoodStoneProps = {
   label: string;
   onPress: () => void;
   selected: boolean;
+  /** On the frosted content surface: ink stones and labels, with the warm glow behind the selected stone. */
+  onContent?: boolean;
 };
 
 /**
  * Single-select arrival stone. Selection is shown by a warm ripple: the stone
- * brightens, a rim ring fades in and a soft glow sits behind it.
+ * brightens and a soft filled glow sits behind it.
  */
-export function MoodStone({ label, onPress, selected }: MoodStoneProps) {
+export function MoodStone({ label, onPress, selected, onContent = false }: MoodStoneProps) {
   const { theme } = useEchoTheme();
-  const stoneColor = selected ? theme.color.accentWarm : theme.color.textSecondary;
+  const stoneColor = onContent
+    ? selected ? theme.color.textContent : theme.color.textContentSecondary
+    : selected ? theme.color.accentWarm : theme.color.textSecondary;
 
   return (
     <Pressable
@@ -32,7 +36,7 @@ export function MoodStone({ label, onPress, selected }: MoodStoneProps) {
         {selected ? (
           <View
             pointerEvents="none"
-            style={[styles.ripple, { borderColor: theme.color.focus }]}
+            style={[styles.ripple, { backgroundColor: onContent ? theme.color.accentWarm : theme.color.surfaceSelected }]}
           />
         ) : null}
         <View style={styles.stack}>
@@ -50,7 +54,7 @@ export function MoodStone({ label, onPress, selected }: MoodStoneProps) {
       <Text
         style={[
           styles.label,
-          { color: theme.color.textPrimary },
+          { color: onContent ? theme.color.textContent : theme.color.textPrimary },
           selected && { ...tokens.type.uiMedium },
         ]}
       >
@@ -75,7 +79,6 @@ const styles = StyleSheet.create({
     width: MOOD_STONE_SIZE + 12,
     height: MOOD_STONE_SIZE + 12,
     borderRadius: (MOOD_STONE_SIZE + 12) / 2,
-    borderWidth: 1,
     opacity: 0.6,
   },
   stack: { width: MOOD_STONE_SIZE, height: MOOD_STONE_SIZE, alignItems: 'center', justifyContent: 'flex-end' },

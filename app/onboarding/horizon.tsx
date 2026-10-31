@@ -1,7 +1,7 @@
 import { useRouter } from 'expo-router';
 
 import { ThreeChoiceScreen, type ThreeChoiceOption } from '@/components/ThreeChoiceScreen';
-import { setHorizonSelection, type HorizonSelection } from '@/state/onboardingSelections';
+import { setHorizonSelection, useOnboardingState, type HorizonSelection } from '@/state/onboardingSelections';
 
 const CHOICES: readonly ThreeChoiceOption<HorizonSelection>[] = [
   {
@@ -26,6 +26,7 @@ const CHOICES: readonly ThreeChoiceOption<HorizonSelection>[] = [
 
 export default function HorizonScreen() {
   const router = useRouter();
+  const horizon = useOnboardingState(state => state.horizon);
 
   return (
     <ThreeChoiceScreen
@@ -33,7 +34,7 @@ export default function HorizonScreen() {
       columnWidth={138}
       ctaLabel="Start here"
       currentStep={2}
-      defaultSelection="where_i_am"
+      defaultSelection={horizon}
       onBack={() => router.back()}
       onContinue={(selection) => {
         setHorizonSelection(selection);

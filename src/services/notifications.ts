@@ -1,4 +1,5 @@
-import * as Notifications from 'expo-notifications';
+import { isRunningInExpoGo } from 'expo';
+import type * as ExpoNotifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
 /**
@@ -8,6 +9,19 @@ import { Platform } from 'react-native';
  * reminder. Notification copy is fixed product copy: it never contains journal
  * text, moods, prompts answered by the user, or reflection content.
  */
+
+/**
+ * `expo-notifications`, or `null` in Expo Go on Android: that client lacks
+ * `ExpoTopicSubscriptionModule`, which the package requires on import, so a
+ * static import crashes every route there. Callers treat `null` as
+ * notifications being unavailable.
+ * ponytail: no reminders in Expo Go on Android; test them in a development
+ * build and drop this guard once the package imports cleanly in Expo Go.
+ */
+export const Notifications: typeof ExpoNotifications | null =
+  Platform.OS === 'android' && isRunningInExpoGo()
+    ? null
+    : require('expo-notifications'); // eslint-disable-line @typescript-eslint/no-require-imports
 
 export const REMINDER_CHANNEL_ID = 'gentle-reminder';
 
@@ -43,7 +57,7 @@ export function parseLocalTime(localTime: string): { hour: number; minute: numbe
 }
 
 async function ensureAndroidChannel(): Promise<void> {
-  if (Platform.OS !== 'android') {
+  if (Platform.OS !== 'android' || !Notifications) {
     return;
   }
   await Notifications.setNotificationChannelAsync(REMINDER_CHANNEL_ID, {
@@ -54,7 +68,7 @@ async function ensureAndroidChannel(): Promise<void> {
 
 /** Presents reminders while the app is foregrounded. Safe to call once. */
 export function configureNotificationHandler(): void {
-  if (Platform.OS === 'web') {
+  if (Platform.OS === 'web' || !Notifications) {
     return;
   }
   Notifications.setNotificationHandler({
@@ -69,6 +83,9 @@ export function configureNotificationHandler(): void {
 
 /** Registers the Android channel; harmless elsewhere. */
 export async function initializeNotifications(): Promise<boolean> {
+  if (!Notifications) {
+    return false;
+  }
   configureNotificationHandler();
   try {
     await ensureAndroidChannel();
@@ -86,7 +103,7 @@ export async function scheduleDailyReminder(
   if (!time) {
     return { status: 'invalid-time' };
   }
-  if (Platform.OS === 'web') {
+  if (Platform.OS === 'web' || !Notifications) {
     return { status: 'unavailable' };
   }
   try {
@@ -113,7 +130,7 @@ export async function scheduleDailyReminder(
 
 /** Removes every reminder scheduled by ECHO for this device. */
 export async function cancelDailyReminder(): Promise<boolean> {
-  if (Platform.OS === 'web') {
+  if (Platform.OS === 'web' || !Notifications) {
     return false;
   }
   try {
@@ -131,7 +148,7 @@ export async function cancelDailyReminder(): Promise<boolean> {
 }
 
 export async function scheduledReminderCount(): Promise<number> {
-  if (Platform.OS === 'web') {
+  if (Platform.OS === 'web' || !Notifications) {
     return 0;
   }
   try {

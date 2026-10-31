@@ -3,10 +3,10 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useState,
   type PropsWithChildren,
 } from 'react';
 import { useColorScheme } from 'react-native';
+import { setThemeSetting, useOnboardingState } from '@/state/onboardingSelections';
 
 import { themes, type EchoTheme, type EchoThemeName } from './themes';
 
@@ -19,7 +19,7 @@ export type EchoThemeContextValue = {
   /** Concrete theme applied to the current screen. */
   name: EchoThemeName;
   theme: EchoTheme;
-  /** Development-only entry point; see `setEchoTheme`. */
+  /** Saved user preference, shared by the wordmark and appearance settings. */
   setSetting: (setting: EchoThemeSetting) => void;
 };
 
@@ -56,7 +56,8 @@ function resolveThemeName(
 
 export function EchoThemeProvider({ children }: PropsWithChildren) {
   const systemScheme = useColorScheme();
-  const [setting, setSetting] = useState<EchoThemeSetting>('night');
+  const setting = useOnboardingState(state => state.themeSetting);
+  const setSetting = setThemeSetting;
 
   useEffect(() => {
     if (!__DEV__) {

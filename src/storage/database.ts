@@ -2,6 +2,7 @@ import * as SQLite from 'expo-sqlite';
 import { Platform } from 'react-native';
 
 import { MIGRATIONS, SCHEMA_VERSION } from './migrations';
+import { getWorkspaceScope, type WorkspaceScope } from './workspace';
 
 /**
  * Local-first SQLite store (`docs/ARCHITECTURE.md` § Local-first rules).
@@ -41,10 +42,10 @@ export function isDatabaseSupported(): boolean {
   return Platform.OS !== 'web';
 }
 
-let database: Promise<SQLite.SQLiteDatabase> | null = null;
+const databases: Partial<Record<WorkspaceScope, Promise<SQLite.SQLiteDatabase>>> = {};
 
-async function open(): Promise<SQLite.SQLiteDatabase> {
-  const db = await SQLite.openDatabaseAsync(DATABASE_NAME);
+async function open(scope: WorkspaceScope): Promise<SQLite.SQLiteDatabase> {
+  const db = await SQLite.openDatabaseAsync(scope === 'guest' ? 'echo-guest.db' : DATABASE_NAME);
   await db.execAsync('PRAGMA journal_mode = WAL;');
   await db.execAsync('PRAGMA foreign_keys = ON;');
   await migrate(db);
@@ -72,29 +73,22 @@ async function migrate(db: SQLite.SQLiteDatabase): Promise<void> {
 }
 
 /** Opens (once per process) and migrates the encrypted local database. */
-export function getDatabase(): Promise<SQLite.SQLiteDatabase> {
+export function getDatabase(scope: WorkspaceScope = getWorkspaceScope()): Promise<SQLite.SQLiteDatabase> {
   if (!isDatabaseSupported()) {
     return Promise.reject(new StorageUnavailableError('unsupported platform'));
   }
-  database ??= open().catch((error: unknown) => {
+  databases[scope] ??= open(scope).catch((error: unknown) => {
     // Do not cache a failed open; the next call retries.
-    database = null;
+    delete databases[scope];
     throw error instanceof StorageUnavailableError ? error : new StorageUnavailableError(error);
   });
-  return database;
+  return databases[scope];
 }
 
 /** Test/reset hook: closes and reopens the database handle. */
 export async function closeDatabase(): Promise<void> {
-  if (!database) {
-    return;
-  }
-  const pending = database;
-  database = null;
-  try {
-    const db = await pending;
-    await db.closeAsync();
-  } catch {
-    // A database that failed to open has nothing to close.
-  }
+  await Promise.all(Object.entries(databases).map(async ([scope, pending]) => {
+    delete databases[scope as WorkspaceScope];
+    try { await (await pending).closeAsync(); } catch { /* A failed open has no handle. */ }
+  }));
 }

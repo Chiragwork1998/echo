@@ -87,14 +87,24 @@ export async function readEncryptedAudioPayload(uri: string): Promise<EncryptedP
   return payload;
 }
 
+/** Copies a recording between workspaces without writing a plaintext file. */
+export async function duplicateEncryptedAudio(uri: string, id: string): Promise<string> {
+  const payload = await readEncryptedAudioPayload(uri);
+  const bytes = await contentCipher.decryptBytes(payload);
+  const copy = await contentCipher.encryptBytes(bytes);
+  const target = encryptedAudioFile(id);
+  target.write(textEncoder(copy));
+  return target.uri;
+}
+
 /**
  * Decrypts an encrypted recording into the cache directory for a single
  * authenticated upload. Callers must delete the returned file in a `finally`.
  */
-export async function decryptAudioToCache(uri: string, id: string): Promise<string> {
+export async function decryptAudioToCache(uri: string, id: string, extension: 'upload' | 'm4a' = 'upload'): Promise<string> {
   const payload = await readEncryptedAudioPayload(uri);
   const bytes = await contentCipher.decryptBytes(payload);
-  const temp = new File(Paths.cache, `${id}.upload`);
+  const temp = new File(Paths.cache, `${id}.${extension}`);
   temp.write(bytes);
   return temp.uri;
 }

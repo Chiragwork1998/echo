@@ -3,7 +3,7 @@
  * bundled; the session lives in SecureStore and never reaches logs.
  */
 
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { createClient, processLock, type SupabaseClient } from '@supabase/supabase-js';
 import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 import { AppState, Platform } from 'react-native';
@@ -99,11 +99,12 @@ function createSupabaseClient(): SupabaseClient | null {
       persistSession: true,
       detectSessionInUrl: false,
       flowType: 'pkce',
+      ...(Platform.OS === 'web' ? {} : { lock: processLock }),
     },
   });
 }
 
-/** `null` when this build has no Supabase configuration; the app stays local-only. */
+/** `null` when this build has no Supabase configuration; sign-in stays gated. */
 export const supabase = createSupabaseClient();
 
 if (supabase && Platform.OS !== 'web') {

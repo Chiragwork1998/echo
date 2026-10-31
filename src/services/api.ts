@@ -11,7 +11,8 @@ import { getAccessToken } from './auth';
 
 export const ECHO_API_BASE_PATH = '/v1' as const;
 export const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
-export const UPLOAD_REQUEST_TIMEOUT_MS = 60_000;
+// Outlasts the server's 150 s transcription budget so its error envelope arrives.
+export const UPLOAD_REQUEST_TIMEOUT_MS = 180_000;
 
 export type ApiError = {
   code: string;
