@@ -1,4 +1,5 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
+import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { Alert } from 'react-native';
 
@@ -158,6 +159,24 @@ describe('JournalSession layout and states', () => {
     const input = await open();
     await write(input);
     expect(await screen.findByText(sessionCopy.saved, {}, { timeout: 2500 })).toBeTruthy();
+  });
+
+  it('gives one gentle haptic when the first save lands, and none for the saves after it', async () => {
+    const input = await open();
+    expect(Haptics.impactAsync).not.toHaveBeenCalled();
+    await write(input);
+    await screen.findByText(sessionCopy.saved, {}, { timeout: 2500 });
+    await waitFor(() => expect(Haptics.impactAsync).toHaveBeenCalledTimes(1));
+    expect(Haptics.impactAsync).toHaveBeenCalledWith('light');
+
+    await write(input, `${BODY}, and more`);
+    await waitFor(async () =>
+      expect(await journal.latestDraft()).toMatchObject({
+        ok: true,
+        value: { body: `${BODY}, and more` },
+      }),
+    );
+    expect(Haptics.impactAsync).toHaveBeenCalledTimes(1);
   });
 
   it('offers a retry when the draft cannot be opened, and none when it is unreadable', async () => {

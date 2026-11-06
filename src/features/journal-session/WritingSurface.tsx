@@ -1,16 +1,20 @@
+import * as Haptics from 'expo-haptics';
 import { useEffect, useState, type PropsWithChildren } from 'react';
 import { StyleSheet, TextInput } from 'react-native';
 import Animated, {
+  Easing,
   ReduceMotion,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
+import Svg, { Path } from 'react-native-svg';
 
 import { EchoText } from '@/components/EchoText';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 import { textStyle } from '@/design/typography';
+import { useReduceMotion } from '@/design/useReduceMotion';
 
 import {
   SURFACE_INSET,
@@ -25,6 +29,8 @@ import { sessionCopy } from './sessionCopy';
 const INPUT = { size: 14.5, line: 21 };
 const PADDING = { top: 18, side: 26, bottom: 40 };
 const NOTE = { left: 26, bottom: 12 };
+// The tick after "Saved on this device". It starts a little smaller and settles to full size.
+const CHECK = { size: 12, gap: 5, from: 0.6 };
 
 type Props = PropsWithChildren<{
   /** Draft text, shown in Write. Speak puts its own panel in `children` instead. */
@@ -40,10 +46,31 @@ type Props = PropsWithChildren<{
   squeezed?: boolean;
 }>;
 
-/** "Saved on this device": appears after the first save and stays, so autosaving never flickers. */
-function SavedNote({ visible }: { visible: boolean }) {
+/** The tick beside the note. Decorative: the words say it. */
+function SavedCheck({ color }: { color: string }) {
+  return (
+    <Svg width={CHECK.size} height={CHECK.size} viewBox="0 0 24 24" fill="none" accessible={false}>
+      <Path
+        d="M5 12.8l4.4 4.4L19 7.4"
+        stroke={color}
+        strokeWidth={2.2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+/**
+ * "Saved on this device": appears after the first save and stays, so autosaving never flickers. The
+ * tick beside it draws in over 180 ms each time a save lands, and the first one comes with a gentle
+ * haptic. Reduce Motion keeps the fade and drops the scale.
+ */
+function SavedNote({ visible, saved }: { visible: boolean; saved: boolean }) {
   const { text } = useSurfaceInk();
+  const reduced = useReduceMotion();
   const opacity = useSharedValue(0);
+  const check = useSharedValue(0);
   useEffect(() => {
     opacity.set(
       withTiming(visible ? 1 : 0, {
@@ -52,7 +79,20 @@ function SavedNote({ visible }: { visible: boolean }) {
       }),
     );
   }, [opacity, visible]);
+  useEffect(() => {
+    check.set(
+      withTiming(saved ? 1 : 0, {
+        duration: tokens.motion.fast,
+        easing: Easing.out(Easing.cubic),
+        reduceMotion: ReduceMotion.Never,
+      }),
+    );
+  }, [check, saved]);
   const animated = useAnimatedStyle(() => ({ opacity: opacity.get() }));
+  const tick = useAnimatedStyle(() => ({
+    opacity: check.get(),
+    transform: reduced ? [] : [{ scale: CHECK.from + (1 - CHECK.from) * check.get() }],
+  }));
   return (
     <Animated.View pointerEvents="none" style={[styles.note, animated]}>
       <EchoText
@@ -62,6 +102,9 @@ function SavedNote({ visible }: { visible: boolean }) {
       >
         {visible ? sessionCopy.saved : ' '}
       </EchoText>
+      <Animated.View style={[styles.tick, tick]}>
+        <SavedCheck color={text} />
+      </Animated.View>
     </Animated.View>
   );
 }
@@ -83,6 +126,11 @@ export function WritingSurface({
   const [everSaved, setEverSaved] = useState(false);
   if (saveState === 'saved' && !everSaved) setEverSaved(true);
   const noteVisible = saveState === 'saved' || (saveState === 'saving' && everSaved);
+  // Once, when the note first appears. Later autosaves are only the tick, so that writing is never
+  // buzzed through.
+  useEffect(() => {
+    if (everSaved) void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, [everSaved]);
   const minHeight = squeezed ? SURFACE_KEYBOARD_MIN_HEIGHT : SURFACE_MIN_HEIGHT;
 
   return (
@@ -109,7 +157,7 @@ export function WritingSurface({
             selectionColor={text}
             style={[styles.input, textStyle('bodyM'), styles.size, { color: text }, shadow]}
           />
-          <SavedNote visible={noteVisible} />
+          <SavedNote visible={noteVisible} saved={saveState === 'saved'} />
         </>
       )}
     </GlassPanel>
@@ -130,5 +178,13 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   size: { fontSize: INPUT.size, lineHeight: INPUT.line },
-  note: { position: 'absolute', left: NOTE.left, bottom: NOTE.bottom },
+  note: {
+    position: 'absolute',
+    left: NOTE.left,
+    bottom: NOTE.bottom,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: CHECK.gap,
+  },
+  tick: { width: CHECK.size, height: CHECK.size, opacity: 0.7 },
 });
