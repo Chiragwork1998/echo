@@ -129,6 +129,7 @@ export type TranscribeDeps = {
   status: () => VoiceStatus;
   /** The recording's size in bytes, or null if it cannot be read. */
   sizeOf: (uri: string) => number | null;
+  filePart: (uri: string) => Blob;
 };
 
 function sizeOnDisk(uri: string): number | null {
@@ -144,8 +145,15 @@ function sizeOnDisk(uri: string): number | null {
   }
 }
 
+function expoFilePart(uri: string): Blob {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { File } = require('expo-file-system') as typeof import('expo-file-system');
+  return new File(uri) as unknown as Blob;
+}
+
 const defaults = (): TranscribeDeps => ({
   fetch: (input, init) => fetch(input, init),
+  filePart: expoFilePart,
   url: env.EXPO_PUBLIC_VOICE_URL,
   token: env.EXPO_PUBLIC_VOICE_TOKEN,
   timeoutMs: TRANSCRIBE_TIMEOUT_MS,
@@ -206,9 +214,10 @@ async function upload(
   const bytes = deps.sizeOf(uri);
   if (bytes !== null && bytes > MAX_UPLOAD_BYTES) return fail('too_long');
 
-  // React Native streams a { uri, name, type } part from the file itself.
+  // Expo's fetch streams a File from disk. It rejects React Native's { uri, name, type } parts, as
+  // "Unsupported FormDataPart implementation", which only shows on a device.
   const form = new FormData();
-  form.append('file', { uri, name: `speech.${extension}`, type } as unknown as Blob);
+  form.append('file', deps.filePart(uri), `speech.${extension}`);
 
   const controller = new AbortController();
   let timedOut = false;

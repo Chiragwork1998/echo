@@ -27,11 +27,12 @@ const reply = (status: number, body: unknown) =>
   }) as Response;
 const good = { text: SPOKEN, raw: 'um honestly', polished: true, languages: ['en'], seconds: 4.2 };
 
-// Jest's FormData is not React Native's, which takes { uri, name, type } parts. This keeps them.
+// Expo's fetch needs a part with bytes(), such as an expo-file-system File, and rejects React
+// Native's { uri, name, type } on a device. Jest cannot show that, so this records what was sent.
 class RecordedForm {
-  parts: [string, unknown][] = [];
-  append(name: string, value: unknown) {
-    this.parts.push([name, value]);
+  parts: [string, unknown, string?][] = [];
+  append(name: string, value: unknown, filename?: string) {
+    this.parts.push([name, value, filename]);
   }
 }
 const sentParts = (init: RequestInit) => (init.body as unknown as RecordedForm).parts;
@@ -118,20 +119,21 @@ describe('request building', () => {
     // No Content-Type: React Native adds the multipart boundary itself.
     expect(init.headers).toEqual({ [TOKEN_HEADER]: TOKEN, Accept: 'application/json' });
     expect(init.signal).toBeInstanceOf(AbortSignal);
-    expect(sentParts(init)).toEqual([
-      ['file', { uri: 'file:///cache/echo/take.aac', name: 'speech.aac', type: 'audio/aac' }],
-    ]);
+    const [part] = sentParts(init);
+    expect(part?.[0]).toBe('file');
+    expect(part?.[1]).toHaveProperty('bytes');
+    expect(part?.[2]).toBe('speech.aac');
   });
 
   it.each([
-    ['file:///cache/take.m4a', 'speech.m4a', 'audio/mp4'],
-    ['file:///cache/take.AAC', 'speech.aac', 'audio/aac'],
-    ['file:///cache/take.wav', 'speech.wav', 'audio/wav'],
-  ])('names %s as %s, an extension the server accepts', async (uri, name, type) => {
+    ['file:///cache/take.m4a', 'speech.m4a'],
+    ['file:///cache/take.AAC', 'speech.aac'],
+    ['file:///cache/take.wav', 'speech.wav'],
+  ])('names %s as %s, an extension the server accepts', async (uri, name) => {
     open.mockResolvedValue(audioAt(uri));
     await run();
     const [, init] = send.mock.calls[0] as [string, RequestInit];
-    expect(sentParts(init)[0]?.[1]).toMatchObject({ name, type });
+    expect(sentParts(init)[0]?.[2]).toBe(name);
     // The server's own rule: voice-api/api/transcribe.ts.
     expect(name).toMatch(/\.(m4a|mp4|aac|mp3|wav|webm)$/i);
   });
@@ -147,7 +149,13 @@ describe('request building', () => {
 
 describe('a recording too long for the server', () => {
   it('is refused before anything is sent, and the recording stays', async () => {
-    expect(await failedWith(run({ sizeOf: () => MAX_UPLOAD_BYTES + 1 }))).toEqual({
+    expect(
+      await failedWith(
+        run({
+          sizeOf: () => MAX_UPLOAD_BYTES + 1,
+        }),
+      ),
+    ).toEqual({
       code: 'too_long',
       retryable: false,
     });
