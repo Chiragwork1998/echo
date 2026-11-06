@@ -8,6 +8,8 @@ the length of the request, and nothing about their content is logged.
 Returns `{ text, raw, polished, languages, seconds }`. If cleanup fails, `text` is the unpolished
 transcript and `polished` is false, so a person's words are never lost to a cleanup failure.
 
+Production: https://echo-voice-roan.vercel.app, in the `chiragtalwar-finzarccoms-projects` Vercel team. Run locally with `npm run dev`.
+
 Environment: `OPENAI_API_KEY`, `ECHO_VOICE_TOKEN`. Optional: `ECHO_TRANSCRIBE_MODEL`,
 `ECHO_POLISH_MODEL`.
 

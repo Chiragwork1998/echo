@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { plausible, polish, run, transcribe, VoiceError, type Config } from './pipeline.ts';
+import { plausible, polish, run, transcribe, VoiceError, type Config } from './pipeline.js';
 
 const audio = { bytes: new Uint8Array([1, 2, 3]), filename: 'a.m4a', type: 'audio/mp4' };
 const reply = (status: number, body: unknown) => new Response(JSON.stringify(body), { status });

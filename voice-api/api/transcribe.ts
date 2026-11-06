@@ -1,7 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 
-import { normalise } from '../src/audio.ts';
-import { run, VoiceError, type Config } from '../src/pipeline.ts';
+import { normalise } from '../src/audio.js';
+import { run, VoiceError, type Config } from '../src/pipeline.js';
 
 const MAX_BYTES = 4_400_000;
 const ALLOWED = /\.(m4a|mp4|aac|mp3|wav|webm)$/i;
