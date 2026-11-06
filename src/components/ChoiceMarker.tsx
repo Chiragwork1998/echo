@@ -15,8 +15,9 @@ const STROKE = 2;
 const SELECTED_DOT = 14;
 
 /**
- * The 22 pt ring used by Intent, Horizon and Voice. Selection shows through shape as well as
- * colour: a filled dot and a warm rim. It is decorative, so the parent control carries the role.
+ * The token-sized 22 pt ring, for list layouts such as the large-text fallback. Selection shows
+ * through shape as well as colour. It is decorative, so the parent control carries the role.
+ * Markers drawn on scenery follow their golden and are private to that screen.
  */
 export function ChoiceMarker({ selected, disabled }: { selected: boolean; disabled?: boolean }) {
   const { colors } = useTheme();

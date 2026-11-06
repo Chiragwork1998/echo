@@ -11,6 +11,10 @@ You own one screen of ECHO. The bar is a thing of beauty: your screen should be 
 5. `src/features/onboarding/screens/LandingScreen.tsx`, the reference screen
 6. Your goldens: open `product-handoff/golden/day/` and `night/` and look at them closely
 
+## Budget
+
+Finish in about 15 minutes of work, with about 400 lines of non-test code. Make the screen beautiful, then stop. Do not chase sub-point precision after the overlay stops showing ghosting, and do not build for tablets: the lead handles those in the final pass.
+
 ## Files
 
 You may edit only:
@@ -26,7 +30,7 @@ You may edit only:
 ## Rules
 
 - Text comes from `copy` in `src/content/copy.ts`, or `goldenCopy` if it is not in the deck. Never retype a string.
-- Use shared components first: `ScreenShell`, `OnboardingHeader`, `PrimaryCTA`, `GlassCard`, `EchoText`, `TrackedText`, `ChoiceMarker`, `ToggleRow`, `Icon`.
+- Use shared components first: `ScreenShell`, `OnboardingHeader`, `OnboardingHeading`, `PrimaryCTA`, `GlassCard`, `EchoText`, `TrackedText`, `ChoiceMarker`, `ToggleRow`, `SoftScrim`, `Icon`.
 - Night is the default theme and the first impression (D-001), so perfect Night first, then confirm Day.
 - Controls that sit on scenery go in `ScreenShell`'s `plateOverlay` prop and are positioned with `usePlatePoint` from `@/design/usePlatePoint`, so they stay on their rock or river bend on every phone.
 - Android and iOS space letters differently. Use `TrackedText` for short, widely tracked words, not `letterSpacing`.
@@ -37,6 +41,16 @@ You may edit only:
 - Honour Reduce Motion through Reanimated's `ReduceMotion.System`.
 - No journal content in logs. No `console.log` left behind.
 - Do not invent anything absent from the goldens and specs.
+
+## Practical notes
+
+- `src/features/onboarding/screens/IntentScreen.tsx` and `src/features/onboarding/intent/` are the best example of a finished screen, including plate pinning and the large-text fallback.
+- The harness renders only 393 x 852, with insets of 59 and 34, and cannot set text scale. For other sizes, cover the layout logic in Jest: drive `useWindowDimensions` with `Dimensions.set({ window, screen })`.
+- When a golden cannot be matched by a token, use a named constant measured from the golden and mention it in your report.
+- To measure from a golden, normalise the screen crop in `scripts/visual/crops.json` to 786 x 1704, the harness's scale. Threshold detection gives sub-point positions.
+- `noUncheckedIndexedAccess` is on, so indexed access returns `T | undefined`.
+- Large text (125% or more) and landscape scroll automatically through `ScreenShell`. Scenery controls need a list fallback then, because the portrait photograph no longer fits. Intent shows how.
+- If a disabled CTA needs a hint and the copy deck has none, reuse the screen's subtitle.
 
 ## Salvage
 

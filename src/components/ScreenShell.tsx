@@ -20,7 +20,8 @@ type Props = PropsWithChildren<{
   footer?: ReactNode;
   /**
    * Full-screen layer pinned to the photograph, for controls that sit on scenery such as the river
-   * points on Intent or the stones on Arrival. Position children with usePlatePoint.
+   * points on Intent or the stones on Arrival. Position children with usePlatePoint. It renders after
+   * the header and content, so screen readers reach the title before the controls.
    */
   plateOverlay?: ReactNode;
 }>;
@@ -31,7 +32,7 @@ type Props = PropsWithChildren<{
  */
 export function ScreenShell({ screen, header, footer, plateOverlay, children }: Props) {
   const insets = useSafeAreaInsets();
-  const { gutter, width, accessibleLayout } = useLayout();
+  const { gutter, width, accessibleLayout, landscape } = useLayout();
 
   const body = (
     <View style={[styles.column, { width, paddingHorizontal: gutter }]} pointerEvents="box-none">
@@ -45,11 +46,6 @@ export function ScreenShell({ screen, header, footer, plateOverlay, children }: 
   return (
     <View style={styles.root}>
       <BlurSurface backdrop={<EchoBackground screen={screen} />}>
-        {plateOverlay && (
-          <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-            {plateOverlay}
-          </View>
-        )}
         <View
           pointerEvents="box-none"
           style={[
@@ -60,7 +56,7 @@ export function ScreenShell({ screen, header, footer, plateOverlay, children }: 
             },
           ]}
         >
-          {accessibleLayout ? (
+          {accessibleLayout || landscape ? (
             <ScrollView style={styles.fill} contentContainerStyle={styles.scroll}>
               {body}
             </ScrollView>
@@ -71,6 +67,11 @@ export function ScreenShell({ screen, header, footer, plateOverlay, children }: 
             <View style={[styles.footer, { width, paddingHorizontal: gutter }]}>{footer}</View>
           )}
         </View>
+        {plateOverlay && (
+          <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+            {plateOverlay}
+          </View>
+        )}
       </BlurSurface>
     </View>
   );

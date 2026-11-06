@@ -17,6 +17,7 @@ export function useLayout() {
     compact,
     large,
     ctaWidth: Math.min(width - gutter * 2, CTA_MAX_WIDTH),
+    landscape: screenWidth > height,
     /** 125-200% text: screens switch to the scrolling accessible layout. */
     accessibleLayout: fontScale >= 1.25,
   };

@@ -21,7 +21,7 @@ import {
   type Point,
 } from './geometry';
 import { RiverMarker } from './RiverMarker';
-import { SoftScrim } from './SoftScrim';
+import { SoftScrim } from '@/components/SoftScrim';
 
 const SELECTED_LABEL_SHIFT = (MARKER.selectedDiameter - MARKER.idleDiameter) / 2;
 // The label starts a fixed gap from the resting ring, so it overlaps the marker's 44 pt slot.
