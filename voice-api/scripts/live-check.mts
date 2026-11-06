@@ -52,7 +52,8 @@ const take = createLiveTake(
             handlers.onClose();
           },
         },
-        { api: { url: base, token } },
+        // The person running this has agreed: it streams only the test file they gave it.
+        { api: { url: base, token }, allowed: () => true },
       ),
   },
   () => {

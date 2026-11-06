@@ -1,5 +1,3 @@
-import { liveAllowed, usePreferences } from '@/state/preferences';
-
 import { VOICE_TOKEN_HEADER, voiceApi, type VoiceApi } from './voiceApi';
 
 // Live words (docs/OWNER_DECISIONS.md, D-007, D-008): a take streamed to OpenAI's realtime
@@ -83,12 +81,19 @@ export type LiveDeps = {
   allowed: () => boolean;
 };
 
+type Preferences = typeof import('@/state/preferences');
+
 const defaults = (): LiveDeps => ({
   fetch: (input, init) => fetch(input, init),
   api: voiceApi(),
   WebSocket: WebSocket as unknown as SocketConstructor,
   timeoutMs: 12_000,
-  allowed: () => liveAllowed(usePreferences.getState().voiceConsent),
+  allowed: () => {
+    // Loaded here so voice-api/scripts/live-check.mts can run this file under Node.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { liveAllowed, usePreferences } = require('@/state/preferences') as Preferences;
+    return liveAllowed(usePreferences.getState().voiceConsent);
+  },
 });
 
 export const LIVE_SESSION_PATH = '/api/live-session';
