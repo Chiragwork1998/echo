@@ -8,7 +8,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { EchoText } from '@/components/EchoText';
+import { OneLineLabel } from '@/components/OneLineLabel';
 import { copy } from '@/content/copy';
 import { tokens } from '@/design/tokens';
 import { useReduceMotion } from '@/design/useReduceMotion';
@@ -63,14 +63,14 @@ function Word(props: {
       testID={testID}
       style={({ pressed }) => [styles.word, { opacity: disabled ? 0.45 : pressed ? 0.6 : 1 }]}
     >
-      <EchoText
+      <OneLineLabel
         variant="bodyL"
         serif
         maxFontSizeMultiplier={1.4}
         style={[styles.label, { color: strong ? text : quiet }, shadow]}
       >
         {label}
-      </EchoText>
+      </OneLineLabel>
     </Pressable>
   );
 }

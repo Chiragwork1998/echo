@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { EchoText } from '@/components/EchoText';
+import { OneLineLabel } from '@/components/OneLineLabel';
 
 import { sessionCopy } from './sessionCopy';
 import { useSkyInk } from './sky';
@@ -41,14 +42,14 @@ function Action({ label, onPress }: { label: string; onPress: () => void }) {
       hitSlop={6}
       style={styles.action}
     >
-      <EchoText
+      <OneLineLabel
         variant="bodyL"
         serif
         maxFontSizeMultiplier={1.4}
         style={[styles.actionLabel, { color: text }, shadow]}
       >
         {label}
-      </EchoText>
+      </OneLineLabel>
     </Pressable>
   );
 }

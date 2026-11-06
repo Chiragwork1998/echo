@@ -3,6 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { EchoText } from '@/components/EchoText';
+import { OneLineLabel } from '@/components/OneLineLabel';
 import { EchoWordmark } from '@/components/EchoWordmark';
 import { GlassCard } from '@/components/GlassCard';
 import { Icon } from '@/components/Icon';
@@ -128,9 +129,9 @@ function WriteInstead() {
       hitSlop={{ top: 10, bottom: 10, left: 24, right: 24 }}
       style={({ pressed }) => [styles.writeInstead, pressed && styles.ctaPressed]}
     >
-      <EchoText variant="caption" color="textSecondary" style={styles.writeInsteadLabel}>
+      <OneLineLabel variant="caption" color="textSecondary" style={styles.writeInsteadLabel}>
         {goldenCopy.dayWriteInstead}
-      </EchoText>
+      </OneLineLabel>
     </Pressable>
   );
 }

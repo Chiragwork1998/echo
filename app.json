@@ -85,7 +85,13 @@
           "faceIDPermission": "Use Face ID or your device biometric to keep your journal private."
         }
       ],
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/app/notification-icon.png",
+          "color": "#13263A"
+        }
+      ],
       "expo-asset",
       "expo-video"
     ],

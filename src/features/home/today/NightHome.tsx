@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { SvgXml } from 'react-native-svg';
 
 import { EchoText } from '@/components/EchoText';
+import { OneLineLabel } from '@/components/OneLineLabel';
 import { EchoWordmark } from '@/components/EchoWordmark';
 import { GlassCard } from '@/components/GlassCard';
 import { Icon } from '@/components/Icon';
@@ -92,9 +93,9 @@ function WriteInstead() {
       <GlassCard radius={PILL_HEIGHT / 2}>
         <View style={styles.pill}>
           <Icon name="pen" size={16} color="#F7F3EB" />
-          <EchoText variant="bodyM" serif style={styles.pillText} maxFontSizeMultiplier={1.3}>
+          <OneLineLabel variant="bodyM" serif style={styles.pillText} maxFontSizeMultiplier={1.3}>
             {goldenCopy.nightWriteInstead}
-          </EchoText>
+          </OneLineLabel>
         </View>
       </GlassCard>
     </Pressable>
