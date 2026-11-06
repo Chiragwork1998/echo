@@ -116,6 +116,13 @@ type Props = {
 };
 
 /**
+ * Lines of spare field below the words, clipped by the window. Words can land faster than the field
+ * is measured, and Android scrolls a field whose text overflows it, which shifts the page by a part
+ * of a line. A live take can add several lines at once.
+ */
+const ROOM_BELOW = 12;
+
+/**
  * The open page. The entry is one string, always, and it lives in one text field. A page is a window
  * of `per` whole lines over that field, slid up by whole pages, so a page turn only changes which
  * lines are in view: no word can be lost, split, duplicated or reordered by it, and the field never
@@ -400,7 +407,7 @@ export function Pages({
                         {
                           color: look.ink,
                           paddingTop: leadLines * line,
-                          height: (lines + leadLines + 2) * line,
+                          height: (lines + leadLines + ROOM_BELOW) * line,
                         },
                       ]}
                     />
