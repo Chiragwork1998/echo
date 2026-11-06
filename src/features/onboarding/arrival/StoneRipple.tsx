@@ -1,0 +1,316 @@
+import { useEffect, useId, useState } from 'react';
+import { AccessibilityInfo, StyleSheet } from 'react-native';
+import Animated, {
+  Easing,
+  ReduceMotion,
+  cancelAnimation,
+  interpolate,
+  useAnimatedProps,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withDelay,
+  withRepeat,
+  withTiming,
+} from 'react-native-reanimated';
+import Svg, {
+  Circle,
+  Defs,
+  Ellipse,
+  G,
+  LinearGradient,
+  Path,
+  RadialGradient,
+  Stop,
+} from 'react-native-svg';
+
+import { useTheme } from '@/design/theme';
+import { tokens } from '@/design/tokens';
+
+import { FLATTEN, type Point } from './geometry';
+
+const AnimatedEllipse = Animated.createAnimatedComponent(Ellipse);
+const AnimatedG = Animated.createAnimatedComponent(G);
+
+// A ring leaves the stone's edge, spreads and thins, and is gone before it reaches REACH. Three
+// rings share one slow cycle, so one is always on its way out while the next is being born.
+const RING_COUNT = 3;
+const CYCLE = 5600;
+const REACH = 44;
+const RING_OPACITY = 0.95;
+const RING_STROKE = { from: 1.7, to: 0.9 };
+// Reduced Motion keeps the same three rings, still, as in the golden.
+const STILL_RINGS = [
+  { offset: 10, opacity: 0.9 },
+  { offset: 23, opacity: 0.62 },
+  { offset: 36, opacity: 0.38 },
+];
+// A warm halo that hugs the stone's rim, clear in the middle so the stone's own texture still reads.
+const GLOW = { colour: '#FFE8BE', reach: 32, peak: 0.5 };
+// Light catches the stone's lower rim, as in the golden: a thin warm line over a wider soft one.
+const RIM = { colour: '#FFE2A8', core: 1.6, soft: 6, coreOpacity: 0.8, softOpacity: 0.2 };
+const BREATH = 3800;
+// Glints sit on the water around the stone: angle (degrees), distance from the rim, radius, group.
+const GLINTS = [
+  { angle: 196, offset: 10, size: 2.2, group: 0 },
+  { angle: 232, offset: 23, size: 1.7, group: 1 },
+  { angle: 268, offset: 36, size: 2.4, group: 0 },
+  { angle: 312, offset: 23, size: 1.8, group: 1 },
+  { angle: 349, offset: 10, size: 2.3, group: 0 },
+  { angle: 20, offset: 36, size: 1.8, group: 1 },
+  { angle: 58, offset: 23, size: 2.4, group: 0 },
+  { angle: 101, offset: 10, size: 1.9, group: 1 },
+  { angle: 143, offset: 36, size: 2.2, group: 0 },
+] as const;
+// The core is a pale warm white; the halo is the amber the golden's glints bloom into.
+const GLINT = {
+  core: '#FFF6E2',
+  halo: '#FFC978',
+  haloOpacity: 0.42,
+  haloReach: 2.7,
+  coreScale: 0.9,
+};
+const PAD = 8;
+const TWINKLE = 2600;
+
+/**
+ * Reduce Motion, live. Reanimated's own hook reads the setting once at launch, so a change made in
+ * Settings while this screen is open would be missed.
+ */
+function useReduceMotion() {
+  const [reduced, setReduced] = useState(useReducedMotion());
+  useEffect(() => {
+    AccessibilityInfo.isReduceMotionEnabled().then(setReduced);
+    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduced);
+    return () => subscription.remove();
+  }, []);
+  return reduced;
+}
+
+type Props = {
+  /** Centre of the stone on screen. */
+  at: Point;
+  /** Half-width and half-height of the stone's outline on screen. */
+  rx: number;
+  ry: number;
+  active: boolean;
+};
+
+type RingProps = { cx: number; cy: number; rx: number; ry: number; index: number; run: boolean };
+
+/** One expanding ring. Its radius, opacity and weight all follow the same slow progress value. */
+function Ring({ cx, cy, rx, ry, index, run }: RingProps) {
+  const { colors } = useTheme();
+  const progress = useSharedValue(0);
+  useEffect(() => {
+    if (!run) return;
+    progress.set(0);
+    progress.set(
+      withDelay(
+        (index * CYCLE) / RING_COUNT,
+        withRepeat(
+          withTiming(1, {
+            duration: CYCLE,
+            easing: Easing.out(Easing.quad),
+            reduceMotion: ReduceMotion.System,
+          }),
+          -1,
+          false,
+        ),
+      ),
+    );
+    // Cancel only: rings left mid-spread fade out with their group rather than vanishing.
+    return () => cancelAnimation(progress);
+  }, [run, index, progress]);
+
+  const animatedProps = useAnimatedProps(() => {
+    const p = progress.get();
+    return {
+      rx: rx + REACH * p,
+      ry: ry + REACH * FLATTEN * p,
+      strokeOpacity: interpolate(p, [0, 0.12, 0.6, 1], [0, RING_OPACITY, RING_OPACITY * 0.5, 0]),
+      strokeWidth: interpolate(p, [0, 1], [RING_STROKE.from, RING_STROKE.to]),
+    };
+  });
+  return (
+    <AnimatedEllipse
+      cx={cx}
+      cy={cy}
+      rx={rx}
+      ry={ry}
+      fill="none"
+      stroke={colors.textPrimary}
+      strokeOpacity={0}
+      animatedProps={animatedProps}
+    />
+  );
+}
+
+/** Two glint groups that brighten in turn, so the water seems to catch the light, never flash. */
+function Glints({ cx, cy, rx, ry, run, glow }: Omit<RingProps, 'index'> & { glow: string }) {
+  const twinkle = useSharedValue(0);
+  useEffect(() => {
+    if (!run) return;
+    twinkle.set(
+      withRepeat(
+        withTiming(1, {
+          duration: TWINKLE,
+          easing: Easing.inOut(Easing.sin),
+          reduceMotion: ReduceMotion.System,
+        }),
+        -1,
+        true,
+      ),
+    );
+    return () => cancelAnimation(twinkle);
+  }, [run, twinkle]);
+  const first = useAnimatedProps(() => ({ opacity: 0.55 + 0.45 * twinkle.get() }));
+  const second = useAnimatedProps(() => ({ opacity: 1 - 0.45 * twinkle.get() }));
+  return (
+    <>
+      {[first, second].map((animatedProps, group) => (
+        <AnimatedG
+          key={group}
+          opacity={run ? undefined : 0.8}
+          animatedProps={run ? animatedProps : undefined}
+        >
+          {GLINTS.filter((glint) => glint.group === group).map(({ angle, offset, size }) => {
+            const radians = (angle * Math.PI) / 180;
+            const x = cx + (rx + offset) * Math.cos(radians);
+            const y = cy + (ry + offset * FLATTEN) * Math.sin(radians);
+            return (
+              <G key={angle}>
+                <Circle
+                  cx={x}
+                  cy={y}
+                  r={size * 3.6}
+                  fill={GLINT.halo}
+                  opacity={GLINT.haloOpacity}
+                />
+                <Circle cx={x} cy={y} r={size * GLINT.coreScale} fill={GLINT.core} />
+              </G>
+            );
+          })}
+        </AnimatedG>
+      ))}
+    </>
+  );
+}
+
+/**
+ * The heart of the screen: the chosen stone's glow, and rings of water spreading slowly from it.
+ * Decorative, so it is hidden from screen readers and from touches. With Reduce Motion on, the rings
+ * and glints stay still.
+ */
+export function StoneRipple({ at, rx, ry, active }: Props) {
+  const { colors } = useTheme();
+  const reduced = useReduceMotion();
+  const id = `glow${useId().replaceAll(':', '')}`;
+  const presence = useSharedValue(active ? 1 : 0);
+  useEffect(() => {
+    presence.set(
+      withTiming(active ? 1 : 0, {
+        duration: tokens.motion.screen,
+        reduceMotion: ReduceMotion.System,
+      }),
+    );
+  }, [active, presence]);
+  const breath = useSharedValue(1);
+  useEffect(() => {
+    if (!active || reduced) return;
+    breath.set(
+      withRepeat(
+        withTiming(0.72, {
+          duration: BREATH,
+          easing: Easing.inOut(Easing.sin),
+          reduceMotion: ReduceMotion.System,
+        }),
+        -1,
+        true,
+      ),
+    );
+    return () => cancelAnimation(breath);
+  }, [active, reduced, breath]);
+
+  const group = useAnimatedStyle(() => ({ opacity: presence.get() }));
+  const halo = useAnimatedProps(() => ({ opacity: breath.get() }));
+
+  const spreadX = REACH + PAD;
+  const spreadY = REACH * FLATTEN + PAD;
+  const width = (rx + spreadX) * 2;
+  const height = (ry + spreadY) * 2;
+  const cx = width / 2;
+  const cy = height / 2;
+  const run = active && !reduced;
+
+  return (
+    <Animated.View
+      testID="stone-ripple"
+      pointerEvents="none"
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={[styles.layer, { left: at.x - cx, top: at.y - cy, width, height }, group]}
+    >
+      <Svg width={width} height={height}>
+        <Defs>
+          <RadialGradient id={id} cx="50%" cy="50%" rx="50%" ry="50%">
+            <Stop offset="0.5" stopColor={GLOW.colour} stopOpacity={0} />
+            <Stop offset="0.74" stopColor={GLOW.colour} stopOpacity={GLOW.peak} />
+            <Stop offset="1" stopColor={GLOW.colour} stopOpacity={0} />
+          </RadialGradient>
+          <RadialGradient id={`${id}glint`} cx="50%" cy="50%" rx="50%" ry="50%">
+            <Stop offset="0" stopColor={GLINT.halo} stopOpacity={GLINT.haloOpacity} />
+            <Stop offset="0.35" stopColor={GLINT.halo} stopOpacity={GLINT.haloOpacity * 0.4} />
+            <Stop offset="1" stopColor={GLINT.halo} stopOpacity={0} />
+          </RadialGradient>
+          <LinearGradient id={`${id}rim`} x1="0" y1="0" x2="1" y2="0">
+            <Stop offset="0" stopColor={RIM.colour} stopOpacity={0} />
+            <Stop offset="0.3" stopColor={RIM.colour} stopOpacity={1} />
+            <Stop offset="0.7" stopColor={RIM.colour} stopOpacity={1} />
+            <Stop offset="1" stopColor={RIM.colour} stopOpacity={0} />
+          </LinearGradient>
+        </Defs>
+        <AnimatedG animatedProps={halo}>
+          <Ellipse
+            cx={cx}
+            cy={cy}
+            rx={rx + GLOW.reach}
+            ry={ry + GLOW.reach * FLATTEN}
+            fill={`url(#${id})`}
+          />
+          {[RIM.soft, RIM.core].map((strokeWidth, layer) => (
+            <Path
+              key={strokeWidth}
+              d={`M ${cx - rx} ${cy} A ${rx} ${ry} 0 0 0 ${cx + rx} ${cy}`}
+              fill="none"
+              stroke={`url(#${id}rim)`}
+              strokeWidth={strokeWidth}
+              strokeLinecap="round"
+              opacity={layer === 0 ? RIM.softOpacity : RIM.coreOpacity}
+            />
+          ))}
+        </AnimatedG>
+        {reduced
+          ? STILL_RINGS.map(({ offset, opacity }) => (
+              <Ellipse
+                key={offset}
+                cx={cx}
+                cy={cy}
+                rx={rx + offset}
+                ry={ry + offset * FLATTEN}
+                fill="none"
+                stroke={colors.textPrimary}
+                strokeWidth={1}
+                strokeOpacity={opacity}
+              />
+            ))
+          : Array.from({ length: RING_COUNT }, (_, index) => (
+              <Ring key={index} cx={cx} cy={cy} rx={rx} ry={ry} index={index} run={run} />
+            ))}
+        <Glints cx={cx} cy={cy} rx={rx} ry={ry} run={run} glow={id} />
+      </Svg>
+    </Animated.View>
+  );
+}
+
+const styles = StyleSheet.create({ layer: { position: 'absolute' } });
