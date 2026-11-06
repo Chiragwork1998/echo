@@ -1,7 +1,13 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { createTestRuntime, everyStoredByte, type TestRuntime } from '@/storage/testing/nodePorts';
+import type { FilePort } from '@/storage/ports';
+import {
+  createTestRuntime,
+  everyStoredByte,
+  nodeFiles,
+  type TestRuntime,
+} from '@/storage/testing/nodePorts';
 
 import { emptyContent, matchesQuery, toSummary } from './content';
 import { deviceClock } from './localDay';
@@ -660,20 +666,30 @@ describe('sql journal', () => {
     });
 
     it('keeps the plaintext when the ciphertext does not verify', async () => {
-      const { recordingId } = unwrap(await journal.beginRecording('a'));
-      const directory = rt.paths.recordingDirs[0] ?? '';
+      // The sealed file reads back different from what was written to it.
+      const corrupting: FilePort = {
+        ...nodeFiles,
+        openReader: (path) => {
+          const reader = nodeFiles.openReader(path);
+          if (!path.endsWith('.enc.tmp')) return reader;
+          return {
+            size: reader.size,
+            close: reader.close,
+            read: async (offset, length) => {
+              const bytes = await reader.read(offset, length);
+              if (offset > 0 && bytes.length > 0) bytes[0] = (bytes[0] ?? 0) ^ 0x01;
+              return bytes;
+            },
+          };
+        },
+      };
+      const failing = await createTestRuntime({ files: corrupting });
+      const broken = createSqlJournal(failing);
+      const { recordingId } = unwrap(await broken.beginRecording('a'));
+      const directory = failing.paths.recordingDirs[0] ?? '';
       mkdirSync(directory, { recursive: true });
       const uri = join(directory, `${recordingId}.m4a`);
       writeFileSync(uri, SECRET_AUDIO);
-      const broken = createSqlJournal({
-        ...rt,
-        files: {
-          ...rt.files,
-          // The file reads back different from what was written.
-          read: async (path) =>
-            path.endsWith('.enc') ? new Uint8Array([1, 2, 3]) : rt.files.read(path),
-        },
-      });
 
       const result = await broken.attachRecording({
         recordingId,
@@ -683,11 +699,14 @@ describe('sql journal', () => {
         content: text(''),
       });
 
-      expect(result.ok).toBe(false);
+      expect(result).toEqual({ ok: false, error: { code: 'audio_failed', retryable: true } });
       expect(existsSync(uri)).toBe(true);
-      expect(fileCount()).toBe(0);
-      expect(await rowCount('audio')).toBe(0);
-      expect(await rowCount('recordings')).toBe(1);
+      expect(failing.files.list(failing.paths.audioDir)).toEqual([]);
+      const count = async (table: string) =>
+        (await failing.db.first<{ total: number }>(`SELECT COUNT(*) AS total FROM ${table}`))
+          ?.total;
+      expect(await count('audio')).toBe(0);
+      expect(await count('recordings')).toBe(1);
     });
 
     it('cancelling removes the file and the ledger row', async () => {

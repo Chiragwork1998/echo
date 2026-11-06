@@ -148,7 +148,7 @@ The request carries `style`: `exact` (the default: every filler and self-correct
 | `audio_unavailable` | The sealed recording would not open                          | Recording is safe, Try again                 |
 
 - The service reads the person's choice itself (`voiceStatus` in `@/state/preferences`), so no caller can upload without consent. A choice made under an older `VOICE_POLICY_VERSION` counts as unset.
-- It opens the recording with `openEntryAudio` and calls `release()` on every path.
+- It opens the recording with `openEntryAudio` and calls `release()` on every path. The decrypted copy is written a frame at a time, so a one-hour take needs a few megabytes of memory to open, not the whole take.
 - Only `127.0.0.1` and `localhost` may use plain http. Any other address must be https.
 - Nothing is logged: not the audio, not the words, not the address.
 - `content.transcribedAudioId` names the recording whose words are already in `body`. A draft whose `audio.id` is something else has a recording with no words yet, and a reopened session offers to turn it into words.
@@ -268,17 +268,51 @@ Sealed with AES-256-GCM, each object bound to its kind and id: entry title, body
 
 Readable without the key: ids, timestamps, status, the local day of each entry, and the theme. These say when someone wrote, never what.
 
+### Sealed audio
+
+A live take is a 24 kHz mono WAV, about 2.9 MB a minute (double if the device gives 48 kHz), so a one-hour take is about 175 MB. Audio is therefore sealed in **frames of 4 MiB of plaintext, each its own AES-256-GCM object**, and sealing, checking, and opening hold a few frames at a time however long the take is. Measured in Jest with the collector forced at every AES and file call, the buffers alive at once peaked at 28 MiB for a 175 MB take and for a 700 MB one. Nothing about the key changes: it is the vault's content key, and no other key material exists.
+
+`<audio id>.enc` in `files/echo/audio`:
+
+| Offset | Size | Field                                                                                         |
+| ------ | ---- | --------------------------------------------------------------------------------------------- |
+| 0      | 1    | Format version. `2` is framed. `1` is the earlier format: one envelope for the whole file    |
+| 1      | 4    | Frame size in bytes, big endian. `00 40 00 00` for 4 MiB. A header asking for over 16 MiB is refused unread |
+| 5      | ...  | Frames in order. Each is nonce (12) + ciphertext + tag (16), 28 bytes longer than its plaintext |
+
+Every frame but the last holds exactly the frame size. The last holds 1 to frame-size bytes, and there is no empty frame. The number of frames and the plaintext length come from the file's length, so nothing else is stored.
+
+- **Nonce.** Every frame is encrypted by its own call, which draws a fresh random 96-bit nonce. No two frames of any file share one, and a frame count in the tens of thousands per key is far inside AES-GCM's limits.
+- **AAD.** `echo/v2 NUL audio NUL <audio id> NUL`, then the frame size (u32 BE), the frame's index (u32 BE), and one byte, 1 for the last frame. The id is the file's identity, so a frame cannot move to another file or kind. The index stops reordering, repeating, and dropping from the middle. The last-frame byte means a file cut at a frame boundary ends in a frame that was not sealed as the last one, so it fails to open. Appended bytes or frames fail the same way. The frame size is in the header, which no tag covers alone, so it is in every AAD too.
+- **One id, one sealing.** As with every object here, the id is the only binding to a particular write. `sealRecording` takes a new id for every sealing, including a re-recording and a sweep rescue, so frames of an older take under a recycled id cannot exist.
+- **Opening** of a framed file is all or nothing. Frames are decrypted into the destination in order and the copy is returned only after the last one has opened. Any failure removes the partial copy, and the error is `unreadable`, carrying nothing from the file.
+- **The earlier format** (version byte `1`, one envelope) still opens and is never rewritten. It is the one case that reads a whole file at once, because a single GCM object cannot be checked in pieces. Nothing writes it any more. A recording in it needs memory in proportion to its length to open, as it always did.
+
+How a recording becomes sealed, and what a stop at each step leaves. The plaintext is `cache/Audio/<ledger id>.<ext>`; it is deleted only at step 5.
+
+1. Frames are written to `<id>.enc.tmp`. Stop here: a half `.tmp`, the plaintext untouched. The launch sweep removes the `.tmp` (no row names it) and seals the plaintext again.
+2. Every frame of the `.tmp` is read back from disk, authenticated, and compared byte for byte with the same range of the plaintext. Stop here: the same.
+3. `<id>.enc.tmp` is renamed to `<id>.enc`. A file with that name is therefore always whole and verified. Stop here: a complete `.enc` that no row names. The sweep removes it as an orphan and seals the plaintext again.
+4. The audio row, the draft, and the ledger's `sealed_at` are committed in one transaction. Stop before: as step 3. Stop after: a sealed take with its row, and the plaintext still present.
+5. The plaintext is deleted. Stop before: the sweep sees `sealed_at` and deletes it without making a second draft.
+
+The `.tmp`, the `.enc`, and the plaintext are never all missing, so a stop at any step loses nothing. A failure at any step other than a stop (a full disk, a fault in the crypto layer) takes the same path and reports an error, with the plaintext kept and the `.tmp` removed. The sweep also removes any `.tmp` or `.enc` that no row names before it seals a stranded take again, so a half file from a killed run never competes for room with the new one.
+
+Playback and transcription open the same way, into `cache/echo-temp/<uuid><ext>` (the folder every launch clears), and `release()` removes the copy. A copy that fails to open, or is stopped half way, is removed, or is left for the launch sweep.
+
+Export is the exception to bounded memory. `exportJournal` builds a zip that needs each file's whole bytes first, so it holds one recording at a time in memory, at about the recording's length, plus a frame.
+
 **Plaintext does touch disk in three places.** All three are in the OS cache, outside device backups.
 
 - Recording: until `stop()` finishes. If that fails, until the next launch encrypts it, or the draft is discarded.
-- Playback: until `release()`, or the next launch.
+- Playback and transcription: until `release()`, or the next launch. Written a frame at a time, and only handed out once every frame has opened.
 - Export: on iOS, until the share completes. On Android, for at least a minute after the share sheet closes, because the receiving app may still be reading. Android pauses timers in the background and nothing runs while the app is away, so if ECHO leaves the foreground inside that minute, the zip stays until the app next returns to the foreground or launches. That can be days. This is a limit of the platform, and the app cannot shorten it.
 
 Every launch removes leftover export and playback files, whatever else happens. Leftover recordings wait for the key, so they can be rescued.
 
 **Deleted content does not leave the disk at once in every case.** It leaves the database and its write-ahead log when a delete or discard finishes, and if that step fails, on the next launch. A draft's earlier revisions stay in the log as ciphertext until that draft is committed, discarded, or deleted, or until the next launch, because emptying the log on every autosave would be too slow.
 
-**A sudden power loss can cost a recording.** Text cannot be lost once a save or commit reports ok: SQLite syncs it to disk first. Audio has no such guarantee, because `expo-file-system` offers no fsync on either platform. When `stop()` resolves, the `.enc` may still be in the OS cache with its plaintext already deleted. An app crash does not touch it, but if the phone loses power in the next few seconds, that recording can be gone. `openEntryAudio` then fails, and the entry itself is intact. Closing this needs a native change.
+**A sudden power loss can cost a recording.** Text cannot be lost once a save or commit reports ok: SQLite syncs it to disk first. Audio has no such guarantee, because `expo-file-system` offers no fsync on either platform. When `stop()` resolves, the `.enc` may still be in the OS cache with its plaintext already deleted. An app crash does not touch it, but if the phone loses power in the next few seconds, that recording can be gone. Framing does not change this: the rename and the frames can still be in the cache, and a file that came back short or empty fails to open. `openEntryAudio` then fails, and the entry itself is intact. Closing this needs a native change.
 
 **Turn off lock appears only when the device has no passcode or biometrics left.** No failed prompt earns it. If the OS prompt stays broken, the journal stays shut and intact, and Unlock keeps retrying.
 
@@ -327,3 +361,11 @@ Native behaviour cannot be proved in Jest. Each of these needs a real device.
 25. Export to Files and to an email app. The zip opens with `entries.json`, `entries.md`, and `audio/`. On Android, check `cache/echo-temp` three ways. Stay in the app: empty a minute later. Background the app inside that minute and return after it: empty on return, and not before. Background it, then force stop: empty after the next launch.
 26. Delete all. The app returns to Landing, and `files/echo` is gone.
 27. Change the timezone, and confirm past days in the week strip do not move.
+
+**Long takes**
+
+28. Record a live take of 10 minutes or more with words hidden, and stop. Pull `files/echo/audio` with `run-as`. There is one `.enc` and no `.tmp`. `xxd -l 8` of it starts `02 00 40 00 00`, and its length is `5 + wav length + 28 * ceil(wav length / 4194304)`. `strings` finds nothing readable in it.
+29. Play it from the start, then seek near the end. It plays to the end. Then check `cache/echo-temp` is empty after playback stops, after leaving the page mid-playback, and after backgrounding.
+30. Let it go to words. The words match what was said, and `cache/echo-temp` is empty afterwards. Do this once with the phone in airplane mode too: the take stays, the temp copy is released, and Try again works.
+31. With a 30-minute or longer take, watch the app's memory in Android Studio's profiler (or Xcode's memory gauge) while it stops, seals, plays, and goes to words. It should not climb with the length of the take. A take from an earlier build, in the single-envelope format, still plays.
+32. Force stop during the seal of a long take (the moment after Stop), relaunch, and the draft appears with the whole take. `files/echo/audio` holds one `.enc`, with no `.tmp`, and `cache/Audio` is empty.

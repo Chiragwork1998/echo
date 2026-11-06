@@ -1,8 +1,10 @@
 import { decodeJson, encodeJson, open, seal, type ObjectKind } from './envelope';
+import { openSealedAudio, sealAudioFile } from './sealedAudio';
 import type {
   AesKey,
   AesPort,
   FilePort,
+  FileWriter,
   SecretStore,
   SqlDb,
   StoragePaths,
@@ -48,6 +50,20 @@ export type Vault = {
   openBytes(kind: ObjectKind, id: string, envelope: Uint8Array): Promise<Uint8Array>;
   sealJson(kind: ObjectKind, id: string, value: unknown): Promise<Uint8Array>;
   openJson<T>(kind: ObjectKind, id: string, envelope: Uint8Array): Promise<T>;
+  /**
+   * Seals the plaintext file at `source` into `target`, in frames, and resolves only once `target`
+   * has been opened again frame by frame and matched the plaintext. `target` is absent or whole,
+   * and `source` is never touched. Memory is a few frames however long the file is.
+   */
+  sealAudioFile(id: string, source: string, target: string): Promise<void>;
+  /**
+   * Decrypts sealed audio into a new file at `destination`, a frame at a time. Resolves only once
+   * every frame has opened. On any failure `destination` is removed, so a partial plaintext is never
+   * left for anything to play.
+   */
+  openAudioFile(id: string, sealed: string, destination: string): Promise<void>;
+  /** The whole recording in memory, for export. Prefer openAudioFile. */
+  openAudioBytes(id: string, sealed: string): Promise<Uint8Array>;
   /** Removes the key, then every sealed record. Only delete-all, after the data has gone. */
   destroyKey(): Promise<void>;
 };
@@ -205,6 +221,50 @@ export function createVault({ aes, secrets, db, files, paths, now, serial }: Dep
     sealJson: async (kind, id, value) => seal(aes, requireKey(), kind, id, encodeJson(value)),
     openJson: async <T>(kind: ObjectKind, id: string, envelope: Uint8Array) =>
       decodeJson<T>(await open(aes, requireKey(), kind, id, envelope)),
+    sealAudioFile: async (id, source, target) =>
+      sealAudioFile(aes, requireKey(), files, { id, source, target }),
+    async openAudioFile(id, sealed, destination) {
+      const active = requireKey();
+      const output: { writer: FileWriter | null } = { writer: null };
+      try {
+        await openSealedAudio(aes, active, files, id, sealed, {
+          begin: () => {
+            output.writer = files.openWriter(destination);
+          },
+          chunk: async (bytes) => {
+            await output.writer?.write(bytes);
+          },
+        });
+        output.writer?.close();
+      } catch (error) {
+        // Each on its own: a handle that will not close must not keep the plaintext on disk.
+        try {
+          output.writer?.close();
+        } catch {
+          // Closed or not, the file goes next.
+        }
+        try {
+          files.remove(destination);
+        } catch {
+          // The launch sweep clears the folder this lives in.
+        }
+        throw error;
+      }
+    },
+    async openAudioBytes(id, sealed) {
+      let out = new Uint8Array(0);
+      let at = 0;
+      await openSealedAudio(aes, requireKey(), files, id, sealed, {
+        begin: (total) => {
+          out = new Uint8Array(total);
+        },
+        chunk: async (bytes) => {
+          out.set(bytes, at);
+          at += bytes.length;
+        },
+      });
+      return out;
+    },
     async destroyKey() {
       // Key first, so that a failure here changes nothing. The sealed records go after it rather than
       // with the journal's data, because they have to outlive every step that can fail: the app

@@ -207,16 +207,16 @@ export function createSqlJournal(rt: Runtime, clock: Clock = deviceClock): SqlJo
     loadRows("e.status = 'committed' AND e.deleted_at IS NULL", 'e.committed_at DESC');
 
   /**
-   * The one path that turns plaintext into stored audio. The plaintext is deleted only after the
-   * ciphertext has been read back from disk and authenticated and the database row is committed, so
-   * any failure before that point leaves the recording intact for the launch sweep.
+   * The one path that turns plaintext into stored audio. The plaintext is deleted only after every
+   * frame of the ciphertext has been read back from disk, authenticated, and matched against it, and
+   * the database row is committed, so any failure before that point leaves the recording intact for
+   * the launch sweep. Nothing here holds a recording in memory: the vault works a frame at a time.
    */
   async function sealRecording(
     input: AttachRecordingInput,
     recovered: boolean,
   ): Promise<EntryAudio> {
-    const plaintext = await files.read(input.uri);
-    if (plaintext.length === 0) throw new JournalFailure('audio_failed');
+    if (files.size(input.uri) === 0) throw new JournalFailure('audio_failed');
 
     // A committed entry is final and a deleted one is gone. Audio arriving late becomes a new draft
     // so that it can neither replace what was committed nor disappear.
@@ -239,9 +239,9 @@ export function createSqlJournal(rt: Runtime, clock: Clock = deviceClock): SqlJo
     };
 
     try {
-      await files.writeAtomic(target, await vault.sealBytes('audio', audioId, plaintext));
-      const reread = await vault.openBytes('audio', audioId, await files.read(target));
-      if (!bytesEqual(reread, plaintext)) throw new JournalFailure('audio_failed');
+      // Written under a temporary name, proved frame by frame, then renamed: the file the row points
+      // to is whole and verified or does not exist, and the plaintext at input.uri is not touched.
+      await vault.sealAudioFile(audioId, input.uri, target);
 
       const sealedMeta = await vault.sealJson('audio_meta', audioId, meta);
       const sealedContent = await sealVerified(draftId, content);
@@ -310,6 +310,21 @@ export function createSqlJournal(rt: Runtime, clock: Clock = deviceClock): SqlJo
   }
 
   const recordingFiles = () => paths.recordingDirs.flatMap((directory) => files.list(directory));
+
+  /**
+   * Removes what is in the audio folder and not named by an audio row: a file sealed and not yet
+   * recorded when the app died, a pending `.tmp`, or the leftover of a delete. Only inside serial,
+   * where no sealing can be half done.
+   */
+  async function removeOrphans(summary: RecoverySummary): Promise<void> {
+    const referenced = await db.all<{ id: string }>('SELECT id FROM audio');
+    const keep = new Set(referenced.map((row) => `${row.id}.enc`));
+    for (const file of files.list(paths.audioDir)) {
+      if (keep.has(file.name)) continue;
+      files.remove(file.uri);
+      summary.orphansRemoved += 1;
+    }
+  }
 
   /**
    * A recording that failed to save keeps its plaintext and ledger row for the launch sweep, which
@@ -549,16 +564,12 @@ export function createSqlJournal(rt: Runtime, clock: Clock = deviceClock): SqlJo
         const row = await findRow(entryId);
         if (!row?.audio_id) throw new JournalFailure('not_found');
         const entry = await decode(row);
-        const plaintext = await vault.openBytes(
-          'audio',
-          row.audio_id,
-          await files.read(audioUri(row.audio_id)),
-        );
         // Honest limit: the player reads from a path, so a decrypted copy exists while it plays. It
-        // lives in the cache, outside backups, and every launch clears the directory.
+        // lives in the cache, outside backups, and every launch clears the directory. It is written
+        // a frame at a time and only handed out once every frame has opened, and a failure removes it.
         files.ensureDirectory(paths.tempDir);
         const uri = childUri(paths.tempDir, `${newId()}${entry.audio?.extension ?? ''}`);
-        await files.writeAtomic(uri, plaintext);
+        await vault.openAudioFile(row.audio_id, audioUri(row.audio_id), uri);
         return { uri, release: () => files.remove(uri) };
       }),
 
@@ -569,6 +580,15 @@ export function createSqlJournal(rt: Runtime, clock: Clock = deviceClock): SqlJo
         // Decrypted copies for playback or export that a crash left behind. They duplicate stored
         // ciphertext, so nothing is lost by removing them.
         files.removeDirectory(paths.tempDir);
+
+        // Sealed files no row names, such as the half of one a killed sealing left: up to the whole
+        // length of a take, which the rescue below is about to need room for a second time. A
+        // failure here must not stop the rescue, and the pass at the end tries again.
+        try {
+          await removeOrphans(summary);
+        } catch {
+          // Finished below.
+        }
 
         const ledger = await db.all<RecordingRow>('SELECT id, draft_id, sealed_at FROM recordings');
         const byId = new Map(ledger.map((row) => [row.id, row]));
@@ -587,14 +607,8 @@ export function createSqlJournal(rt: Runtime, clock: Clock = deviceClock): SqlJo
           await db.run('DELETE FROM recordings WHERE id = ?', [row.id]);
         }
 
-        // Runs last, so audio sealed above is referenced by the time this looks.
-        const referenced = await db.all<{ id: string }>('SELECT id FROM audio');
-        const keep = new Set(referenced.map((row) => `${row.id}.enc`));
-        for (const file of files.list(paths.audioDir)) {
-          if (keep.has(file.name)) continue;
-          files.remove(file.uri);
-          summary.orphansRemoved += 1;
-        }
+        // Again, now that audio sealed above is referenced.
+        await removeOrphans(summary);
         await scrubLog();
         return summary;
       }),
@@ -606,8 +620,7 @@ export function createSqlJournal(rt: Runtime, clock: Clock = deviceClock): SqlJo
 
     readAudio: async (entry) => {
       if (!entry.audio) return null;
-      const sealed = await files.read(audioUri(entry.audio.id));
-      return vault.openBytes('audio', entry.audio.id, sealed);
+      return vault.openAudioBytes(entry.audio.id, audioUri(entry.audio.id));
     },
 
     wipe: () =>
