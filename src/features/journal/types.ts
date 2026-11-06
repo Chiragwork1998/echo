@@ -125,8 +125,12 @@ export interface Journal {
   /** Removes a draft and its audio completely. Drafts leave no tombstone. */
   discardDraft(id: string): Promise<JournalResult<void>>;
   getEntry(id: string): Promise<JournalResult<Entry | null>>;
+  /** The newest draft that opens. Unreadable ones are skipped, and stay in listDrafts. */
   latestDraft(): Promise<JournalResult<Entry | null>>;
-  /** Decrypts one entry, so that Home stays quick however long the journal grows. */
+  /**
+   * The newest entry that opens. Unreadable ones are skipped, and stay in listEntries. Decrypts one
+   * entry, so that Home stays quick however long the journal grows.
+   */
   latestEntry(): Promise<JournalResult<EntrySummary | null>>;
   listDrafts(): Promise<JournalResult<EntrySummary[]>>;
   /** Committed entries, newest first. */

@@ -190,6 +190,26 @@ export function createSqlJournal(rt: Runtime, clock: Clock = deviceClock): SqlJo
     return { entries, summaries, unreadable: rows.length - entries.length };
   }
 
+  /**
+   * The newest row that opens, reading one at a time so the usual case decrypts exactly one. A row
+   * that fails to open is skipped and left where it is: it must not block everything behind it, and
+   * it may open another day. It stays listed as unreadable. Any other failure is not about the row.
+   */
+  async function newestReadable(where: string, order: string): Promise<Entry | null> {
+    for (let offset = 0; ; offset += 1) {
+      const row = await db.first<EntryRow>(
+        `${SELECT_ENTRY} WHERE ${where} ORDER BY ${order} LIMIT 1 OFFSET ?`,
+        [offset],
+      );
+      if (!row) return null;
+      try {
+        return await decode(row);
+      } catch (error) {
+        if (!(error instanceof DecryptionError)) throw error;
+      }
+    }
+  }
+
   const committedRows = () =>
     loadRows("e.status = 'committed' AND e.deleted_at IS NULL", 'e.committed_at DESC');
 
@@ -367,21 +387,17 @@ export function createSqlJournal(rt: Runtime, clock: Clock = deviceClock): SqlJo
       }),
 
     latestDraft: () =>
-      attempt('read_failed', async () => {
-        const row = await db.first<EntryRow>(
-          `${SELECT_ENTRY} WHERE e.status = 'draft' AND e.deleted_at IS NULL
-           ORDER BY e.updated_at DESC LIMIT 1`,
-        );
-        return row ? decode(row) : null;
-      }),
+      attempt('read_failed', () =>
+        newestReadable("e.status = 'draft' AND e.deleted_at IS NULL", 'e.updated_at DESC'),
+      ),
 
     latestEntry: () =>
       attempt('read_failed', async () => {
-        const row = await db.first<EntryRow>(
-          `${SELECT_ENTRY} WHERE e.status = 'committed' AND e.deleted_at IS NULL
-           ORDER BY e.committed_at DESC LIMIT 1`,
+        const entry = await newestReadable(
+          "e.status = 'committed' AND e.deleted_at IS NULL",
+          'e.committed_at DESC',
         );
-        return row ? toSummary(await decode(row)) : null;
+        return entry ? toSummary(entry) : null;
       }),
 
     listDrafts: () =>

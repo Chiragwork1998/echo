@@ -127,12 +127,41 @@ describe('starting', () => {
     expect(current(view).content.body).toBe('one');
   });
 
-  it('reports a draft it cannot read, and does not offer it for editing', async () => {
+  it('reports a draft it was asked for and cannot read, and does not offer it for editing', async () => {
+    unwrap(await journal.saveDraft('bad', { body: 'x', mode: 'text', durationSeconds: 0 }));
+    await rt.db.exec(`UPDATE entries SET sealed = x'01'`);
+    const view = await mount({ draftId: 'bad' });
+    expect(current(view).status).toBe('error');
+    expect(current(view).error).toEqual({ code: 'unreadable', retryable: false });
+  });
+
+  it('starts a new draft past one it cannot read, and leaves that one alone', async () => {
     unwrap(await journal.saveDraft('bad', { body: 'x', mode: 'text', durationSeconds: 0 }));
     await rt.db.exec(`UPDATE entries SET sealed = x'01'`);
     const view = await mount();
-    expect(current(view).status).toBe('error');
-    expect(current(view).error).toEqual({ code: 'unreadable', retryable: false });
+    expect(current(view).status).toBe('ready');
+    expect(current(view).resumed).toBe(false);
+    expect(current(view).id).not.toBe('bad');
+
+    await act(() => current(view).update({ body: 'writing again' }));
+    await advance(AUTOSAVE_INTERVAL_MS);
+    expect(await storedBody(current(view).id)).toBe('writing again');
+    expect(await rowCount()).toBe(2);
+    const bad = await rt.db.first<{ sealed: Uint8Array }>(
+      "SELECT sealed FROM entries WHERE id = 'bad'",
+    );
+    expect(bad?.sealed).toEqual(new Uint8Array([1]));
+  });
+
+  it('resumes the newest draft it can read', async () => {
+    unwrap(await journal.saveDraft('good', { body: 'readable', mode: 'text', durationSeconds: 0 }));
+    unwrap(await journal.saveDraft('bad', { body: 'x', mode: 'text', durationSeconds: 0 }));
+    await rt.db.exec(
+      `UPDATE entries SET sealed = x'01', updated_at = updated_at + 1 WHERE id = 'bad'`,
+    );
+    const view = await mount();
+    expect(current(view)).toMatchObject({ id: 'good', status: 'ready', resumed: true });
+    expect(current(view).content.body).toBe('readable');
   });
 
   it('refuses to open a committed entry as a draft', async () => {

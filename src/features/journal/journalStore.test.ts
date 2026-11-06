@@ -373,6 +373,92 @@ describe('sql journal', () => {
     });
   });
 
+  describe('an unreadable row at the front of the list', () => {
+    const damage = (id: string) =>
+      rt.db.exec(`UPDATE entries SET sealed = x'01' WHERE id = '${id}'`);
+    const stored = async (id: string) =>
+      rt.db.first<{ sealed: Uint8Array }>('SELECT sealed FROM entries WHERE id = ?', [id]);
+
+    /** Saved in this order, so the last one is newest however fast the clock is read. */
+    async function drafts(...ids: string[]) {
+      for (const [index, id] of ids.entries()) {
+        unwrap(await journal.saveDraft(id, text(id)));
+        await rt.db.run('UPDATE entries SET updated_at = ? WHERE id = ?', [index, id]);
+      }
+    }
+
+    async function entries(...ids: string[]) {
+      for (const [index, id] of ids.entries()) {
+        unwrap(await journal.commitEntry(id, text(id)));
+        await rt.db.run('UPDATE entries SET committed_at = ? WHERE id = ?', [index, id]);
+      }
+    }
+
+    it('does not block the drafts behind it', async () => {
+      await drafts('older', 'newest');
+      await damage('newest');
+      expect(unwrap(await journal.latestDraft())?.id).toBe('older');
+    });
+
+    it('does not block the entries behind it', async () => {
+      await entries('older', 'newest');
+      await damage('newest');
+      expect(unwrap(await journal.latestEntry())?.id).toBe('older');
+    });
+
+    it('answers none when nothing can be read', async () => {
+      await drafts('only');
+      await damage('only');
+      expect(unwrap(await journal.latestDraft())).toBeNull();
+    });
+
+    it('gets past a run of them', async () => {
+      await drafts('good', 'bad-1', 'bad-2', 'bad-3');
+      await Promise.all([damage('bad-1'), damage('bad-2'), damage('bad-3')]);
+      expect(unwrap(await journal.latestDraft())?.id).toBe('good');
+    });
+
+    it('gets past a row whose audio details are damaged', async () => {
+      await saveAudio('voice');
+      await drafts('older');
+      await rt.db.run('UPDATE entries SET updated_at = 5 WHERE id = ?', ['voice']);
+      await rt.db.exec(`UPDATE audio SET sealed_meta = x'01'`);
+      expect(unwrap(await journal.latestDraft())?.id).toBe('older');
+    });
+
+    it('never deletes or changes it, and it stays visible as unreadable', async () => {
+      await drafts('older', 'newest');
+      await damage('newest');
+      const before = await stored('newest');
+
+      await journal.latestDraft();
+      await journal.latestEntry();
+
+      expect(await stored('newest')).toEqual(before);
+      expect(unwrap(await journal.listDrafts())).toContainEqual(
+        expect.objectContaining({ id: 'newest', readable: false }),
+      );
+    });
+
+    it('still reports a database that cannot be read, instead of an empty journal', async () => {
+      await drafts('a');
+      jest.spyOn(rt.db, 'first').mockRejectedValueOnce(new Error('database is locked'));
+      expect(await journal.latestDraft()).toEqual({
+        ok: false,
+        error: { code: 'read_failed', retryable: true },
+      });
+      jest.restoreAllMocks();
+    });
+
+    it('decrypts only one row when the newest one opens, however long the journal is', async () => {
+      await entries('a', 'b', 'c', 'd');
+      const open = jest.spyOn(rt.vault, 'openJson');
+      await journal.latestEntry();
+      expect(open).toHaveBeenCalledTimes(1);
+      jest.restoreAllMocks();
+    });
+  });
+
   describe('tombstones', () => {
     it('wipes content and keeps only id and timestamps', async () => {
       unwrap(await journal.commitEntry('a', text(SECRET_BODY)));

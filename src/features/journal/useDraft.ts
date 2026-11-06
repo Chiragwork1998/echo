@@ -32,7 +32,7 @@ import {
 export const AUTOSAVE_INTERVAL_MS = 600;
 
 export type UseDraftOptions = {
-  /** Open this draft. Omit to resume the newest draft, or start a new one if there is none. */
+  /** Open this draft. Omit to resume the newest readable draft, or start a new one. */
   draftId?: string;
   /** Applied only when a new draft is created. */
   seed?: EntryPatch;
