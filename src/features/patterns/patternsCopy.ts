@@ -34,7 +34,7 @@ export const patternsCopy = {
   cards: {
     title: 'Pattern cards',
     intro:
-      'ECHO can read your latest entries and name what keeps returning, in a few quiet cards. Only words you wrote are used, and each quote is checked against them.',
+      'ECHO can read your latest entries and name what keeps returning, in a few quiet cards. Only the words in your entries are used, whether you wrote or spoke them, and each quote is checked against them.',
     read: 'Read my patterns',
     readAgain: 'Read again',
     reading: 'Reading your entries. This can take a minute.',

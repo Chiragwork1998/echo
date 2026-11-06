@@ -158,6 +158,15 @@ export function createSqlJournal(rt: Runtime, clock: Clock = deviceClock): SqlJo
     }
   }
 
+  /** Whether the database names this audio, or null when it cannot be asked. */
+  async function audioRowExists(id: string): Promise<boolean | null> {
+    try {
+      return (await db.first('SELECT id FROM audio WHERE id = ?', [id])) !== null;
+    } catch {
+      return null;
+    }
+  }
+
   async function loadRows(where: string, order: string) {
     const rows = await db.all<EntryRow>(`${SELECT_ENTRY} WHERE ${where} ORDER BY ${order}`);
     const entries: Entry[] = [];
@@ -247,24 +256,37 @@ export function createSqlJournal(rt: Runtime, clock: Clock = deviceClock): SqlJo
       const sealedContent = await sealVerified(draftId, content);
       const at = now();
 
-      await db.transaction(async () => {
-        if (!previous) {
+      try {
+        await db.transaction(async () => {
+          if (!previous) {
+            await db.run(
+              `INSERT INTO entries (id, status, sealed, created_at, updated_at)
+               VALUES (?, 'draft', ?, ?, ?)`,
+              [draftId, sealedContent, at, at],
+            );
+          }
+          if (previous?.audio_id) {
+            await db.run('DELETE FROM audio WHERE id = ?', [previous.audio_id]);
+          }
           await db.run(
-            `INSERT INTO entries (id, status, sealed, created_at, updated_at)
-             VALUES (?, 'draft', ?, ?, ?)`,
-            [draftId, sealedContent, at, at],
+            'INSERT INTO audio (id, entry_id, sealed_meta, created_at) VALUES (?, ?, ?, ?)',
+            [audioId, draftId, sealedMeta, at],
           );
-        }
-        if (previous?.audio_id) await db.run('DELETE FROM audio WHERE id = ?', [previous.audio_id]);
-        await db.run(
-          'INSERT INTO audio (id, entry_id, sealed_meta, created_at) VALUES (?, ?, ?, ?)',
-          [audioId, draftId, sealedMeta, at],
-        );
-        await db.run('UPDATE recordings SET sealed_at = ? WHERE id = ?', [at, input.recordingId]);
-      });
+          await db.run('UPDATE recordings SET sealed_at = ? WHERE id = ?', [at, input.recordingId]);
+        });
+      } catch (error) {
+        // A transaction that throws may still have committed, if it was the answer that was lost.
+        // Then the row names this file and the ledger says sealed, so the audio is safe and this
+        // carries on as a save that worked. Anything else is a failure, and rolled back.
+        if ((await audioRowExists(audioId)) !== true) throw error;
+      }
       if (previous?.audio_id) await removeAudioFile(previous.audio_id);
     } catch (error) {
-      files.remove(target);
+      // Removed only when the database is known not to name it. A file a row names must stay, or the
+      // sweep, seeing the ledger say sealed, would delete the plaintext too and nothing would be left.
+      // Unsure, it stays: with no row to name it, the next launch removes it, and the plaintext was
+      // never touched.
+      if ((await audioRowExists(audioId)) === false) files.remove(target);
       throw error;
     }
 

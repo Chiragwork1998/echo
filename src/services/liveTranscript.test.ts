@@ -81,6 +81,30 @@ describe('the live transcript', () => {
     expect(transcript.text()).toBe('One. Two.');
   });
 
+  it('counts the commits the model has acknowledged, each once', () => {
+    const transcript = feed([
+      delta('a', ' one'),
+      committed('a'),
+      committed('a'),
+      delta('b', ' two'),
+    ]);
+    expect(transcript.committed()).toBe(1);
+    transcript.apply(committed('b'));
+    expect(transcript.committed()).toBe(2);
+    // Settled says nothing about a commit that has not been acknowledged yet. That is the take's to count.
+    transcript.apply(completed('a', 'One.'));
+    transcript.apply(completed('b', 'Two.'));
+    expect(transcript.settled()).toBe(true);
+    expect(transcript.committed()).toBe(2);
+  });
+
+  it('knows when the server reported an error, so the whole cannot be trusted', () => {
+    const transcript = feed([delta('a', ' fine'), committed('a'), completed('a', 'Fine.')]);
+    expect(transcript.failed()).toBe(false);
+    transcript.apply({ kind: 'error' });
+    expect(transcript.failed()).toBe(true);
+  });
+
   it('knows when a turn failed, so the whole cannot be trusted', () => {
     const transcript = feed([
       delta('a', ' x'),

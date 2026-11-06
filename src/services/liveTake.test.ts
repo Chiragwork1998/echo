@@ -164,6 +164,83 @@ describe('a live take', () => {
     expect(link.socket.close).toHaveBeenCalled();
   });
 
+  it('stops feeding a connection that has gone quiet for good, so a dead network cannot build a backlog', async () => {
+    const link = connection();
+    const take = createLiveTake({ open: link.open }, jest.fn());
+    take.push(sound(1, true));
+    await settle();
+    // The network dies without a word: nothing more comes back, and the phone keeps speaking.
+    let seconds = 0;
+    while (!take.failed() && seconds < 600) {
+      take.push(sound(1, false));
+      seconds += 1;
+    }
+    // Bounded: it gave up after minutes, not at the end of an hour of speaking.
+    expect(take.failed()).toBe(true);
+    expect(seconds).toBeGreaterThan(120);
+    expect(seconds).toBeLessThanOrEqual(300);
+    expect(await take.outcome).toEqual({ ok: false });
+    expect(link.socket.close).toHaveBeenCalledTimes(1);
+
+    // The recording is another thing entirely: the take is fed on without harm, and nothing is sent.
+    const sentBefore = link.sent.length;
+    expect(() => {
+      for (let i = 0; i < 50; i += 1) take.push(sound(1, true));
+      take.push(null);
+    }).not.toThrow();
+    expect(link.sent.length).toBe(sentBefore);
+  });
+
+  it('does not mistake a long quiet stretch for a dead network while the server is still answering', async () => {
+    const link = connection();
+    const take = createLiveTake({ open: link.open }, jest.fn());
+    take.push(sound(1, true));
+    await settle();
+    // An hour of sitting in silence, with the connection answering now and then.
+    for (let minute = 0; minute < 60; minute += 1) {
+      for (let second = 0; second < 60; second += 1) take.push(sound(1, false));
+      link.say({ kind: 'delta', itemId: `quiet_${minute}`, text: '' });
+    }
+    expect(take.failed()).toBe(false);
+    // And a few minutes of true silence is a pause, not a failure.
+    for (let second = 0; second < 100; second += 1) take.push(sound(1, false));
+    expect(take.failed()).toBe(false);
+    take.abort();
+  });
+
+  it('falls back at once when the server reports an error mid-take, and does not reconnect', async () => {
+    const link = connection();
+    const take = createLiveTake({ open: link.open }, jest.fn());
+    take.push(sound(1, true));
+    await settle();
+    link.say({ kind: 'delta', itemId: 'one', text: ' hello' });
+    // The server refused something: from here the words cannot be trusted to be whole.
+    link.say({ kind: 'error' });
+    expect(take.failed()).toBe(true);
+    expect(await take.outcome).toEqual({ ok: false });
+    expect(link.socket.close).toHaveBeenCalledTimes(1);
+
+    const before = link.sent.length;
+    take.push(sound(1, true));
+    take.push(sound(2, false));
+    take.push(null);
+    expect(link.sent.length).toBe(before);
+    expect(link.open).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back when an error arrives after the person has stopped, even with every turn finished', async () => {
+    const link = connection();
+    const take = createLiveTake({ open: link.open }, jest.fn());
+    take.push(sound(1, true));
+    await settle();
+    take.push(sound(2, false));
+    link.say({ kind: 'committed', itemId: 'one' });
+    take.push(null);
+    link.say({ kind: 'error' });
+    link.say({ kind: 'completed', itemId: 'one', text: 'Everything.' });
+    expect(await take.outcome).toEqual({ ok: false });
+  });
+
   it('falls back when a turn fails to become words', async () => {
     const link = connection();
     const take = createLiveTake({ open: link.open }, jest.fn());
@@ -175,7 +252,49 @@ describe('a live take', () => {
     expect(await take.outcome).toEqual({ ok: false });
   });
 
-  it('uses the words that have arrived if the last completion never does', async () => {
+  it('does not take a short last phrase for nothing: it waits for the commit it sent to come back', async () => {
+    const link = connection();
+    const take = createLiveTake({ open: link.open }, jest.fn());
+    let early: Awaited<typeof take.outcome> | undefined;
+    void take.outcome.then((outcome) => (early = outcome));
+
+    take.push(sound(1, true));
+    await settle();
+    take.push(sound(2, false)); // A pause: the first turn ends.
+    link.say({ kind: 'delta', itemId: 'one', text: ' First turn.' });
+    link.say({ kind: 'committed', itemId: 'one' });
+    link.say({ kind: 'completed', itemId: 'one', text: 'First turn.' });
+
+    take.push(sound(1, true)); // A short last phrase, and the model has not said a word of it yet.
+    take.push(null);
+    expect(commits(link.sent)).toBe(2);
+    await settle();
+    expect(early).toBeUndefined();
+    expect(link.socket.close).not.toHaveBeenCalled();
+
+    link.say({ kind: 'committed', itemId: 'two' });
+    await settle();
+    expect(early).toBeUndefined(); // Acknowledged, but its words are not in.
+    link.say({ kind: 'completed', itemId: 'two', text: 'And the last words.' });
+    expect(await take.outcome).toEqual({ ok: true, text: 'First turn. And the last words.' });
+  });
+
+  it('falls back to the recording if the last phrase never comes back at all', async () => {
+    const link = connection();
+    const take = createLiveTake({ open: link.open }, jest.fn());
+    take.push(sound(1, true));
+    await settle();
+    take.push(sound(2, false));
+    link.say({ kind: 'committed', itemId: 'one' });
+    link.say({ kind: 'completed', itemId: 'one', text: 'First turn.' });
+    take.push(sound(1, true));
+    take.push(null);
+    jest.advanceTimersByTime(FINISH_MS);
+    expect(await take.outcome).toEqual({ ok: false });
+    expect(take.failed()).toBe(true);
+  });
+
+  it('falls back to the recording, not to partial words, if the last completion never arrives', async () => {
     const link = connection();
     const take = createLiveTake({ open: link.open }, jest.fn());
     take.push(sound(1, true));
@@ -184,7 +303,20 @@ describe('a live take', () => {
     take.push(null);
     link.say({ kind: 'committed', itemId: 'one' });
     jest.advanceTimersByTime(FINISH_MS);
-    expect(await take.outcome).toEqual({ ok: true, text: 'still here' });
+    expect(await take.outcome).toEqual({ ok: false });
+  });
+
+  it('is not held up by a pause at the end: a take that stops in silence after its words is whole', async () => {
+    const link = connection();
+    const take = createLiveTake({ open: link.open }, jest.fn());
+    take.push(sound(1, true));
+    await settle();
+    take.push(sound(3, false)); // The turn ended at the pause.
+    link.say({ kind: 'committed', itemId: 'one' });
+    link.say({ kind: 'completed', itemId: 'one', text: 'All of it.' });
+    take.push(null); // Stopped in the quiet: nothing is open, so no further commit is owed.
+    expect(commits(link.sent)).toBe(1);
+    expect(await take.outcome).toEqual({ ok: true, text: 'All of it.' });
   });
 
   it('ends with no words when nothing was heard, so the recording is what is used', async () => {

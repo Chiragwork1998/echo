@@ -5,6 +5,9 @@ import { openEntryAudio } from '@/features/journal/api';
 import type { JournalResult, PlayableAudio } from '@/features/journal/types';
 import { usePreferences, voiceStatus, type VoiceStatus } from '@/state/preferences';
 
+import { planAdtsPieces } from './adts';
+import { joinSpokenPieces } from './joinWords';
+import { voiceOrigin } from './voiceApi';
 import { parseWav, planPieces, wavPiece } from './wav';
 
 // Turns a sealed recording into text through ECHO's voice server (docs/OWNER_DECISIONS.md, D-005,
@@ -80,35 +83,54 @@ const TYPES: Record<string, string> = {
   webm: 'audio/webm',
 };
 
-/** What the server takes (voice-api/api/transcribe.ts): about 14 minutes at the recorder's 40 kbps. */
+/** What one request may carry (voice-api/api/transcribe.ts): Vercel refuses a body of more than 4.5 MB. */
 export const MAX_UPLOAD_BYTES = 4_400_000;
-/** A longer WAV, which is what a live take is, is sent in pieces of about this size. */
+/** A longer recording is sent in pieces of at most this many bytes: a WAV, which is what a live take is, or an ADTS .aac. */
 export const PIECE_BYTES = 4_000_000;
+/**
+ * And of at most this much sound. The server makes an .aac into FLAC, about 46 KB a second, and OpenAI
+ * takes 25 MB, so a piece is well within that. Five minutes also keeps each piece quick.
+ */
+export const PIECE_SECONDS = 300;
+/** An .aac cannot be listened to for a quiet moment, so each piece begins this long before the last one ended. */
+export const PIECE_OVERLAP_SECONDS = 5;
+/**
+ * The same .aac path refuses a clip of under about five and a half seconds, and the end of a take cut in
+ * pieces can be little more than the overlap. An end shorter than this is sent with the piece before it.
+ */
+export const PIECE_MIN_SECONDS = 20;
+/** An .aac smaller than this, about 200 seconds at 40 kbps, is one piece without being looked through. */
+const AAC_WHOLE_BELOW_BYTES = 1_000_000;
+/** How many pieces of one take are on their way at once. */
+export const PIECE_CONCURRENCY = 3;
+/**
+ * What a phone's uplink is assumed to manage at its worst, in bytes a second. Pieces share it, so each
+ * is given the time to be sent at this speed, on top of the time the server takes.
+ */
+const SLOW_UPLINK = 100_000;
 
-const LOCAL_HOSTS = ['127.0.0.1', 'localhost'];
+/** How long a piece may take: the server's time, and the time to send it with `sharing` pieces at once. */
+export const pieceTimeoutMs = (baseMs: number, bytes: number, sharing: number) =>
+  baseMs + Math.ceil((bytes * sharing * 1000) / SLOW_UPLINK);
 
 /**
- * The server's address, or null when it must not be used. Anything but a phone talking to itself
- * has to be https: a voice never crosses a network in the clear. Parsed by hand, because the URL
- * class is not complete on every React Native runtime, and strict, so that a host like
- * "127.0.0.1.example.com" or "localhost@example.com" cannot pass for a local one.
+ * The server's address for a route, or null when it must not be used. The rule is the app's one rule
+ * for ECHO's server (`voiceOrigin`): https, with plain http only for this Mac's own address in a
+ * development build.
  */
 export function voiceEndpoint(
   raw: string | undefined,
   path: string = TRANSCRIBE_PATH,
+  development?: boolean,
 ): string | null {
-  const match = /^(https?):\/\/([^/?#@\s]+)\/?$/i.exec((raw ?? '').trim());
-  if (!match) return null;
-  const scheme = match[1]!.toLowerCase();
-  const authority = match[2]!.toLowerCase();
-  const host = authority.replace(/:\d{1,5}$/, '');
-  if (host.length === 0 || host.includes(':')) return null;
-  if (scheme === 'http' && !LOCAL_HOSTS.includes(host)) return null;
-  return `${scheme}://${authority}${path}`;
+  const origin = voiceOrigin(raw, development);
+  return origin && `${origin}${path}`;
 }
 
 const responseSchema = z.object({
   text: z.string(),
+  /** The words before their script was changed. Used to find the overlap between pieces, and nowhere else. */
+  raw: z.string().optional(),
   polished: z.boolean().optional(),
   languages: z.array(z.string()).optional(),
   seconds: z.number().nullable().optional(),
@@ -151,8 +173,11 @@ export type TranscribeDeps = {
    * expo-file-system File: the { uri, name, type } part of React Native's own FormData is refused.
    */
   filePart: (uri: string) => Blob;
-  /** A range of a file, for cutting a long WAV into pieces. */
+  /** A range of a file, for cutting a long recording into pieces. */
   readRange: (uri: string, offset: number, length: number) => Promise<Uint8Array>;
+  /** The most bytes, and the most sound, in one piece of a long recording. */
+  pieceBytes: number;
+  pieceSeconds: number;
   /** Exact words unless the person turned on Tidy my words (D-008). */
   style: () => WordsStyle;
   /** Whether the phone reports a connection. null when that cannot be known. */
@@ -205,6 +230,8 @@ const defaults = (): TranscribeDeps => ({
   sizeOf: sizeOnDisk,
   filePart: (uri) => new (fileSystem().File)(uri) as unknown as Blob,
   readRange: rangeOnDisk,
+  pieceBytes: PIECE_BYTES,
+  pieceSeconds: PIECE_SECONDS,
   style: () => (usePreferences.getState().tidyWords ? 'tidy' : 'exact'),
   online: connected,
 });
@@ -255,6 +282,10 @@ export async function transcribeEntryAudio(
 
 type Part = { value: Blob; name: string };
 
+/** What one request brought back. `raw` is only ever used to join pieces. */
+type Sent = Transcript & { raw: string | null };
+const plain = ({ raw: _raw, ...transcript }: Sent): Transcript => transcript;
+
 async function upload(
   uri: string,
   endpoint: string,
@@ -265,23 +296,47 @@ async function upload(
   const extension = /\.([a-z0-9]+)$/i.exec(uri)?.[1]?.toLowerCase() ?? '';
   if (!TYPES[extension]) return fail('unsupported');
   const bytes = deps.sizeOf(uri);
-  if (bytes !== null && bytes > MAX_UPLOAD_BYTES) {
-    // Raw PCM can be cut anywhere. Anything else that is too long for the server stays put, and
-    // the person is told now rather than after sending most of it.
-    if (extension !== 'wav') return fail('too_long');
-    return uploadPieces(uri, bytes, endpoint, token, deps, outside);
+  const whole = async (): Promise<TranscriptionResult<Transcript>> => {
+    const sent = await post(endpoint, token, deps, outside, () => ({
+      value: deps.filePart(uri),
+      name: `speech.${extension}`,
+    }));
+    return sent.ok ? { ok: true, value: plain(sent.value) } : sent;
+  };
+  // PCM can be cut anywhere, and ADTS between any two frames. Anything else that is too long for the
+  // server (an .m4a, which iOS records) cannot be cut without decoding it, stays put, and the person
+  // is told now rather than after sending most of it.
+  if (bytes !== null) {
+    if (extension === 'aac' && bytes > AAC_WHOLE_BELOW_BYTES) {
+      return uploadAac(uri, bytes, endpoint, token, deps, outside, whole);
+    }
+    if (bytes > MAX_UPLOAD_BYTES) {
+      if (extension === 'wav') return uploadWavInPieces(uri, bytes, endpoint, token, deps, outside);
+      return fail('too_long');
+    }
   }
-  return post(endpoint, token, deps, outside, () => ({
-    value: deps.filePart(uri),
-    name: `speech.${extension}`,
-  }));
+  return whole();
 }
 
+/** A recording cut into pieces: how many, and how to get the bytes of each. */
+type PiecePlan = {
+  count: number;
+  /** The bytes of one piece. Rejects if the recording cannot be read. */
+  read: (index: number) => Promise<Uint8Array>;
+  name: string;
+  type: string;
+  /**
+   * How much sound neighbouring pieces both hold, or 0 when they do not overlap. An overlap is looked
+   * for in the words, and its duration is taken off the total.
+   */
+  overlapSeconds: number;
+};
+
 /**
- * A WAV too long for one request: cut into pieces at the quietest moments, sent one at a time in the
- * order they were spoken, and joined. A piece with nothing said in it is not a failure.
+ * A WAV too long for one request: cut into pieces at the quietest moments, so that no word is split
+ * and the pieces need no overlap.
  */
-async function uploadPieces(
+async function uploadWavInPieces(
   uri: string,
   size: number,
   endpoint: string,
@@ -289,47 +344,217 @@ async function uploadPieces(
   deps: TranscribeDeps,
   outside: AbortSignal | undefined,
 ): Promise<TranscriptionResult<Transcript>> {
-  let info: ReturnType<typeof parseWav>;
+  let info: NonNullable<ReturnType<typeof parseWav>>;
   let ranges: Awaited<ReturnType<typeof planPieces>>;
   try {
-    info = parseWav(await deps.readRange(uri, 0, Math.min(size, 4096)), size);
-    if (!info) return fail('unsupported');
-    ranges = await planPieces(info, PIECE_BYTES, (offset, length) =>
+    const parsed = parseWav(await deps.readRange(uri, 0, Math.min(size, 4096)), size);
+    if (!parsed) return fail('unsupported');
+    info = parsed;
+    ranges = await planPieces(info, deps.pieceBytes, (offset, length) =>
       deps.readRange(uri, offset, length),
     );
   } catch {
     return fail('audio_unavailable', true);
   }
-
-  const texts: string[] = [];
-  const languages = new Set<string>();
-  let seconds = 0;
-  let polished = false;
-  for (const range of ranges) {
-    if (outside?.aborted) return fail('cancelled');
-    let piece: Uint8Array;
-    try {
-      piece = wavPiece(info, await deps.readRange(uri, range.start, range.end - range.start));
-    } catch {
-      return fail('audio_unavailable', true);
-    }
-    const result = await post(endpoint, token, deps, outside, () => ({
-      value: bytesPart(piece, 'speech.wav', 'audio/wav'),
+  return sendPieces(
+    {
+      count: ranges.length,
+      read: async (index) => {
+        const { start, end } = ranges[index]!;
+        return wavPiece(info, await deps.readRange(uri, start, end - start));
+      },
       name: 'speech.wav',
-    }));
-    if (!result.ok) {
-      if (result.error.code === 'no_speech') continue;
-      return result;
-    }
-    texts.push(result.value.text);
-    result.value.languages.forEach((code) => languages.add(code));
-    seconds += result.value.seconds ?? 0;
-    polished = polished || result.value.polished;
+      type: 'audio/wav',
+      overlapSeconds: 0,
+    },
+    endpoint,
+    token,
+    deps,
+    outside,
+  );
+}
+
+/**
+ * An ADTS .aac, which is what Android records. A long take is cut between frames into pieces of five
+ * minutes, which keeps each one quick and within OpenAI's size limit once the server has made it FLAC.
+ * They overlap by a few seconds because the quiet moments cannot be found without decoding it. The words of the overlap are said twice and
+ * joined once (joinWords.ts). A take that fits is sent whole. A file that cannot be followed frame by
+ * frame is sent whole if the server could take it, and is otherwise too long.
+ */
+async function uploadAac(
+  uri: string,
+  size: number,
+  endpoint: string,
+  token: string,
+  deps: TranscribeDeps,
+  outside: AbortSignal | undefined,
+  whole: () => Promise<TranscriptionResult<Transcript>>,
+): Promise<TranscriptionResult<Transcript>> {
+  let plan: Awaited<ReturnType<typeof planAdtsPieces>>;
+  try {
+    plan = await planAdtsPieces(
+      size,
+      {
+        seconds: deps.pieceSeconds,
+        bytes: deps.pieceBytes,
+        overlapSeconds: PIECE_OVERLAP_SECONDS,
+        minSeconds: PIECE_MIN_SECONDS,
+      },
+      (offset, length) => deps.readRange(uri, offset, length),
+    );
+  } catch {
+    return fail('audio_unavailable', true);
   }
-  if (texts.length === 0) return fail('no_speech');
+  if (!plan) return size > MAX_UPLOAD_BYTES ? fail('too_long') : whole();
+  const { ranges, overlapSeconds } = plan;
+  if (ranges.length === 1) return whole();
+  return sendPieces(
+    {
+      count: ranges.length,
+      read: (index) => {
+        const { start, end } = ranges[index]!;
+        return deps.readRange(uri, start, end - start);
+      },
+      name: 'speech.aac',
+      type: 'audio/aac',
+      overlapSeconds,
+    },
+    endpoint,
+    token,
+    deps,
+    outside,
+  );
+}
+
+/**
+ * The server writes Hindi in Roman script one request at a time, and keeps the Devanagari when its
+ * check of the result fails. With a take in pieces that leaves a whole piece in a script the app
+ * cannot show, between pieces that are not, so such a piece gets one more try with the same step on
+ * its words alone. It never fails the take: if the try does not work, the piece stays as it was.
+ */
+async function romaniseAgain(
+  piece: Sent,
+  style: WordsStyle,
+  deps: TranscribeDeps,
+  signal: AbortSignal,
+): Promise<Sent> {
+  if (style !== 'exact' || !hasDevanagari(piece.text)) return piece;
+  const again = await refineWords(piece.text, { signal }, { ...deps, style: () => style });
+  return again.ok && !hasDevanagari(again.value.text)
+    ? { ...piece, text: again.value.text }
+    : piece;
+}
+
+/**
+ * The pieces of one take, a few at a time and joined in the order they were spoken. A piece with
+ * nothing said in it is not a failure, once it has been asked for twice. A piece that fails is the whole take failing: the first
+ * failure stops the others, none of the words are returned, and trying again sends the take afresh.
+ * Part of a take is never handed back as if it were the whole. What is decided for the take is
+ * decided once, before the first piece: the style of the words.
+ */
+async function sendPieces(
+  plan: PiecePlan,
+  endpoint: string,
+  token: string,
+  deps: TranscribeDeps,
+  outside: AbortSignal | undefined,
+): Promise<TranscriptionResult<Transcript>> {
+  const style = deps.style();
+  const arrived: (Sent | null | undefined)[] = new Array<undefined>(plan.count).fill(undefined);
+  const stop = new AbortController();
+  const stopOnRequest = () => stop.abort();
+  outside?.addEventListener('abort', stopOnRequest);
+  if (outside?.aborted) stop.abort();
+
+  let failure: TranscriptionResult<never> | null = null;
+  const giveUp = (result: TranscriptionResult<never>) => {
+    failure ??= result;
+    stop.abort();
+  };
+  let next = 0;
+  const worker = async () => {
+    while (next < plan.count && !stop.signal.aborted) {
+      const index = next;
+      next += 1;
+      let bytes: Uint8Array;
+      try {
+        bytes = await plan.read(index);
+      } catch {
+        giveUp(fail('audio_unavailable', true));
+        return;
+      }
+      if (stop.signal.aborted) return;
+      // Pieces share the phone's uplink, so each is given the time that sending it would take.
+      const timeoutMs = pieceTimeoutMs(
+        deps.timeoutMs,
+        bytes.length,
+        Math.min(PIECE_CONCURRENCY, plan.count),
+      );
+      const ask = () =>
+        post(
+          endpoint,
+          token,
+          { ...deps, timeoutMs },
+          stop.signal,
+          () => ({ value: bytesPart(bytes, plan.name, plan.type), name: plan.name }),
+          style,
+        );
+      let result = await ask();
+      // A long take may honestly hold a quiet stretch, so an empty piece is not a failure. But an
+      // empty answer is also what a piece looks like when the recogniser missed it, and its words
+      // would be gone without a trace. It is asked for once more, and only a second empty answer
+      // means silence.
+      if (!result.ok && result.error.code === 'no_speech' && !stop.signal.aborted) {
+        result = await ask();
+      }
+      if (result.ok) {
+        arrived[index] = await romaniseAgain(result.value, style, deps, stop.signal);
+      } else if (result.error.code === 'no_speech') {
+        arrived[index] = null;
+      } else {
+        giveUp(result);
+        return;
+      }
+    }
+  };
+  try {
+    await Promise.all(
+      Array.from({ length: Math.min(PIECE_CONCURRENCY, plan.count) }, () => worker()),
+    );
+  } finally {
+    outside?.removeEventListener('abort', stopOnRequest);
+  }
+  if (outside?.aborted) return fail('cancelled');
+  if (failure) return failure;
+
+  const spoken = arrived.filter((piece): piece is Sent => piece !== null && piece !== undefined);
+  if (spoken.length === 0) return fail('no_speech');
+  const text =
+    plan.overlapSeconds > 0
+      ? joinSpokenPieces(
+          // Only words that were not tidied line up with the transcript they came from.
+          spoken.map((piece) => ({
+            text: piece.text,
+            heard: piece.polished || piece.raw === null ? undefined : piece.raw,
+          })),
+        )
+      : spoken.map((piece) => piece.text).join(' ');
+  const seconds = spoken.every((piece) => piece.seconds !== null)
+    ? Math.max(
+        0,
+        spoken.reduce((total, piece) => total + piece.seconds!, 0) -
+          plan.overlapSeconds * (spoken.length - 1),
+      )
+    : null;
   return {
     ok: true,
-    value: { text: texts.join(' '), polished, languages: [...languages], seconds },
+    value: {
+      text,
+      // Tidy only if every piece was.
+      polished: spoken.every((piece) => piece.polished),
+      languages: [...new Set(spoken.flatMap((piece) => piece.languages))],
+      seconds,
+    },
   };
 }
 
@@ -340,14 +565,15 @@ async function post(
   deps: TranscribeDeps,
   outside: AbortSignal | undefined,
   part: () => Part,
-): Promise<TranscriptionResult<Transcript>> {
+  style: WordsStyle = deps.style(),
+): Promise<TranscriptionResult<Sent>> {
   // A request that cannot be built has not met the network, and is not reported as the network.
   let form: FormData;
   try {
     form = new FormData();
     const { value, name } = part();
     form.append('file', value, name);
-    form.append('style', deps.style());
+    form.append('style', style);
   } catch {
     return fail('unexpected', true);
   }
@@ -384,6 +610,7 @@ async function post(
       ok: true,
       value: {
         text,
+        raw: parsed.data.raw?.trim() ?? null,
         polished: parsed.data.polished ?? false,
         languages: parsed.data.languages ?? [],
         seconds: parsed.data.seconds ?? null,

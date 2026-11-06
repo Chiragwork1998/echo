@@ -42,6 +42,17 @@ describe('parseWav', () => {
     expect(parseWav(file, 44 + 1001)?.dataBytes).toBe(1000);
   });
 
+  it('trusts the file over a header that lags behind it, so the end of a recovered take is not lost', () => {
+    // The stream writes its samples, and then the header. A crash between the two leaves a header that
+    // is right about everything but the last buffer, and the last buffer is the end of what was said.
+    const file = tone(2);
+    const lagging = file.slice(0, 4096);
+    new DataView(lagging.buffer).setUint32(40, RATE * 2, true); // One second of the two there are.
+    expect(parseWav(lagging, file.length)?.dataBytes).toBe(RATE * 4);
+    // Whole sample frames only.
+    expect(parseWav(lagging, file.length - 1)?.dataBytes).toBe(RATE * 4 - 2);
+  });
+
   it('refuses what is not 16-bit PCM in a WAV', () => {
     expect(parseWav(new Uint8Array(100), 100)).toBeNull();
     const float = tone(1).slice();

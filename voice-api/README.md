@@ -35,11 +35,36 @@ Production: https://echo-voice-roan.vercel.app, in the `chiragtalwar-finzarccoms
 Environment: `OPENAI_API_KEY`, `ECHO_VOICE_TOKEN`. Optional: `ECHO_TRANSCRIBE_MODEL`,
 `ECHO_POLISH_MODEL`.
 
-Vercel rejects request bodies over 4.5 MB. At the app's 40 kbps that is about 14 minutes. A live take is
-a 24 kHz WAV, so the app splits a long one into pieces of about 4 MB and sends them in order.
+A request is limited twice over: Vercel rejects bodies over 4.5 MB, and OpenAI rejects files over 25 MB.
+An Android `.aac` becomes FLAC in `src/audio.ts` before OpenAI sees it, about 46 KB a second, because
+OpenAI refused fragmented MP4 unpredictably: 1 second, 5.5 seconds and anything past about 6.3 minutes. FLAC
+is lossless, goes through pipes, and was taken at every length tried from 1 to 429 seconds. A clip under two
+seconds gets quiet added at its end, because OpenAI refuses sound of under about a second. A piece of five
+minutes takes 9 to 12 seconds end to end, so `maxDuration` is not the limit.
+The app cuts a long take into pieces and sends them up to three at a time: a live take is a 24 kHz WAV, cut
+at its quietest moments into pieces of about 4 MB (83 seconds), and a hidden take on Android is an ADTS
+`.aac`, cut between frames into pieces of 20 to 320 seconds that overlap by five seconds, whose words the
+app joins. Each piece is an ordinary request to `/api/transcribe`, and counts as one against the limit of 120
+per ten minutes per address: an hour of `.aac` is 13, an hour of WAV is 44. A piece that comes back with no
+speech is sent a second time by the app before it counts as silence, so a silent piece costs two.
+
+ffmpeg is held to limits in `src/audio.ts`, because it runs for as long as a request lets it: a conversion is
+killed after 30 seconds (`503`, code `too_slow`, retryable), no more than four run at once on an instance (a fifth
+gets `503`, code `busy`, retryable), and one that writes more than 25 MiB, which OpenAI would refuse anyway, is
+stopped (`422`, `unsupported_audio`). A five minute piece converts in about a second. The limits are the
+constants in `LIMITS`.
+
+`/api/refine` takes up to 100,000 characters, which is an hour and a half of speech at a fast 200 words a
+minute. An hour is about 70,000.
+
+Every route counts a wrong token against the address that sent it: after 20 in ten minutes the address is
+answered `429` without its token being looked at, so a right guess is no more use than a wrong one. The count,
+like the rate limit, is held in memory per instance and is dropped when its window is over, with at most 5,000
+addresses remembered. It stops casual abuse and nothing more, as below.
 
 `ECHO_VOICE_TOKEN` ships inside the app, so it stops casual abuse only. Before public launch this
-needs App Attest and Play Integrity, or per-account auth, plus an OpenAI spend limit.
+needs App Attest and Play Integrity, or per-account auth, plus an OpenAI spend limit. See "Before public
+launch" in `docs/SPEC_CONFLICTS.md`.
 
 ## Pattern Cards
 

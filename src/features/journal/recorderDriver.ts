@@ -43,7 +43,7 @@ export function recordingOptions(module: ExpoAudio): RecordingOptions {
     // MPEG-4 writes its index last, so a recording cut off by a crash cannot be played. ADTS frames
     // are self-contained: everything flushed before the crash survives. AVAudioRecorder has no
     // equivalent for AAC, so on iOS a crashed recording is preserved but may not play. The voice
-    // server rewraps .aac as .m4a before it goes on, with no re-encoding.
+    // server turns .aac into lossless FLAC before it goes on.
     android: { ...preset.android, extension: '.aac', outputFormat: 'aac_adts' },
     // MAX quality asks for more than a 40 kbps speech stream can carry. The bit rate is the limit.
     ios: { ...preset.ios, audioQuality: module.AudioQuality?.MEDIUM ?? 64 },
