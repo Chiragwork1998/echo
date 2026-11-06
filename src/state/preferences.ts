@@ -9,6 +9,8 @@ const THEME_KEY = 'theme';
 const PATTERNS_CONSENT_KEY = 'patternsConsent';
 const VOICE_KEY = 'voiceConsent';
 const MODE_KEY = 'sessionMode';
+const VOLUME_KEY = 'volume';
+const OPENS_KEY = 'bookOpens';
 
 /**
  * The version of the words people agree to before their voice leaves the phone (D-005). Change what
@@ -40,6 +42,15 @@ type Preferences = {
   setVoiceConsent: (choice: VoiceChoice) => void;
   lastMode: RememberedMode;
   setLastMode: (mode: RememberedMode) => void;
+  /** The volume of the book the person chose on the shelf (D-004). Null until they choose. */
+  volume: string | null;
+  setVolume: (volume: string) => void;
+  /**
+   * How many times the book has opened for them. The opening ritual plays in full for the first few
+   * and then shortens (D-008), so a thing that is lovely once does not become friction every morning.
+   */
+  bookOpens: number;
+  countBookOpen: () => void;
 };
 
 let persist: ((key: string, value: string | null) => Promise<unknown>) | null = null;
@@ -72,6 +83,18 @@ export const usePreferences = create<Preferences>((set) => ({
     set({ lastMode });
     save(MODE_KEY, lastMode);
   },
+  volume: null,
+  setVolume: (volume) => {
+    set({ volume });
+    save(VOLUME_KEY, volume);
+  },
+  bookOpens: 0,
+  countBookOpen: () =>
+    set((state) => {
+      const bookOpens = state.bookOpens + 1;
+      save(OPENS_KEY, String(bookOpens));
+      return { bookOpens };
+    }),
 }));
 
 /**
@@ -109,8 +132,8 @@ export async function hydratePreferences(
   serial: WriteQueue = (task) => task(),
 ): Promise<void> {
   const rows = await db.all<{ key: string; value: string }>(
-    'SELECT key, value FROM preferences WHERE key IN (?, ?, ?, ?)',
-    [THEME_KEY, PATTERNS_CONSENT_KEY, VOICE_KEY, MODE_KEY],
+    'SELECT key, value FROM preferences WHERE key IN (?, ?, ?, ?, ?, ?)',
+    [THEME_KEY, PATTERNS_CONSENT_KEY, VOICE_KEY, MODE_KEY, VOLUME_KEY, OPENS_KEY],
   );
   const stored = new Map(rows.map((row) => [row.key, row.value]));
   const theme = stored.get(THEME_KEY);
@@ -120,6 +143,8 @@ export async function hydratePreferences(
     patternsConsent: stored.get(PATTERNS_CONSENT_KEY) ?? null,
     voiceConsent: parseConsent(stored.get(VOICE_KEY)),
     lastMode: mode === 'write' || mode === 'speak' ? mode : DEFAULT_MODE,
+    volume: stored.get(VOLUME_KEY) ?? null,
+    bookOpens: Math.max(0, Math.floor(Number(stored.get(OPENS_KEY))) || 0),
   });
   persist = (key, value) =>
     serial(() =>
@@ -140,5 +165,7 @@ export function resetPreferences(): void {
     patternsConsent: null,
     voiceConsent: null,
     lastMode: DEFAULT_MODE,
+    volume: null,
+    bookOpens: 0,
   });
 }

@@ -1,20 +1,39 @@
 import { Image } from 'expo-image';
+import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState, type ComponentRef } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
-import Animated, { useAnimatedKeyboard, useAnimatedStyle } from 'react-native-reanimated';
+import Animated, {
+  Easing,
+  ReduceMotion,
+  useAnimatedKeyboard,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { EchoBackground } from '@/components/EchoBackground';
 import { EchoText } from '@/components/EchoText';
+import { copy } from '@/content/copy';
 import { backgroundSources } from '@/design/generated/backgrounds';
+import { useLayout } from '@/design/layout';
 import { useTheme } from '@/design/theme';
+import { BookPage, useBookFrame } from '@/features/book/BookPage';
+import { PaperProvider, usePaperLook, type Surface } from '@/features/book/paper';
+import { ritualFor } from '@/features/book/ritual';
+import { Shelf, ShelfBackdrop, useShelfOffset } from '@/features/book/Shelf';
+import { volumeById, volumeIndex, VOLUMES } from '@/features/book/volumes';
+import { usePreferences } from '@/state/preferences';
 import { useWhileHere } from '@/features/home/dissolve';
 import { usePlateFrame, usePlatePoint } from '@/design/usePlatePoint';
 import { useReduceMotion } from '@/design/useReduceMotion';
 
 import { Beacon } from './Beacon';
+import { HEADER_HEIGHT } from './geometry';
 import { QuietControls } from './QuietControls';
 import { sessionCopy } from './sessionCopy';
+import { SessionHeader } from './SessionHeader';
 import { CONTROLS, qaKeyboardHeight, useSkyFrame, useSkyInk } from './sky';
 import { SkyInput } from './SkyInput';
 import type { SessionController } from './useSessionController';
@@ -35,7 +54,24 @@ const SERIF = 'CormorantGaramond_500Medium';
  * only the mountains remain. No header, no timer, no saved mark, no page. The photograph never moves,
  * words appear straight on the sky, and the controls surface only when they are wanted.
  */
-export function ImmersiveSession({ session }: { session: SessionController }) {
+export function ImmersiveSession({
+  session,
+  page = 'sky',
+  concealed = false,
+}: {
+  session: SessionController;
+  /**
+   * The words are kept but not shown, so the page is empty with only the breathing light (D-008).
+   * They fade away and back; every word is still in the draft.
+   */
+  concealed?: boolean;
+  /**
+   * What the words sit on. `sky`: straight on the mountains, as D-003 first drew it. `vellum`: a
+   * translucent page in a book that rises and opens (D-004). `paper`: the same book with an opaque
+   * page, for First Echo, which begins at the shelf.
+   */
+  page?: 'sky' | Surface;
+}) {
   const { name, colors } = useTheme();
   const ink = useSkyInk();
   const insets = useSafeAreaInsets();
@@ -44,7 +80,14 @@ export function ImmersiveSession({ session }: { session: SessionController }) {
   const reduced = useReduceMotion();
   const screenReader = useScreenReader();
   const here = useWhileHere();
-  const settled = useStillness(reduced);
+  // The ritual of opening plays in full for the first few sessions and then shortens (D-008). What
+  // applies is what it was when this session began, so it never changes under the person's eyes.
+  const [ritual] = useState(() => ritualFor(usePreferences.getState().bookOpens));
+  const countOpen = usePreferences((state) => state.countBookOpen);
+  // A tap anywhere before the page is open says enough: it comes at once, and softly.
+  const [tapped, setTapped] = useState(false);
+  const stilled = useStillness(reduced, ritual.stillness);
+  const settled = stilled || tapped;
   const frame = useSkyFrame(plate, insets.top);
   const inputRef = useRef<ComponentRef<typeof TextInput>>(null);
   const [focused, setFocused] = useState(false);
@@ -60,6 +103,41 @@ export function ImmersiveSession({ session }: { session: SessionController }) {
   // Shade only comes with words on the sky: the mountains are left alone until then.
   const washed = draft.content.body.length > 0 || voiceNote || failure !== null;
   const quiet = useQuietControls({ always: screenReader, pinned });
+
+  // The book (D-004). First Echo begins at the shelf, and the person chooses a volume. The daily
+  // echo has no shelf: after the stillness their own book rises and opens.
+  const book = page !== 'sky';
+  const onboarding = !session.daily;
+  const look = usePaperLook(page === 'paper' ? 'paper' : 'vellum');
+  const { gutter, width: column } = useLayout();
+  const remembered = usePreferences((state) => state.volume);
+  const rememberVolume = usePreferences((state) => state.setVolume);
+  const [picked, setPicked] = useState<string | null>(null);
+  const [opened, setOpened] = useState(!book);
+  const volume = volumeById(picked ?? remembered ?? undefined);
+  const bookFrame = useBookFrame(insets.top + (onboarding ? HEADER_HEIGHT - 5 : 0));
+  const shelfOffset = useShelfOffset();
+  // A draft that is being continued is not a reason to choose a book again.
+  const resumed = ready && draft.resumed && draft.hasContent;
+  const shelf = onboarding && book && picked === null && !resumed;
+  const studio = useSharedValue(shelf ? 1 : 0);
+  useEffect(() => {
+    studio.set(
+      withTiming(shelf ? 1 : 0, {
+        duration: 700,
+        easing: Easing.inOut(Easing.quad),
+        reduceMotion: ReduceMotion.Never,
+      }),
+    );
+  }, [shelf, studio]);
+  const choose = (index: number) => {
+    const chosen = VOLUMES[index];
+    if (!chosen) return;
+    setPicked(chosen.id);
+    rememberVolume(chosen.id);
+  };
+  const bookInView = book && !shelf;
+  const pageOpen = !book || opened;
 
   // The keyboard rises over the lower scenery. The photograph and the words stay where they are:
   // only the quiet controls ride above it.
@@ -109,6 +187,8 @@ export function ImmersiveSession({ session }: { session: SessionController }) {
   // Anywhere on the scenery. Writing: the keyboard comes, and the caret lands. Speaking: tap to
   // start, tap to pause.
   const touchScenery = () => {
+    // Before the book is open, any touch skips the rest of the ritual.
+    if (book && (!settled || !pageOpen)) return setTapped(true);
     if (!ready || failure !== null) return;
     if (writing) {
       if (focused) quiet.show();
@@ -144,58 +224,123 @@ export function ImmersiveSession({ session }: { session: SessionController }) {
 
   return (
     <View style={styles.root}>
-      {/* The same photograph Home was showing, on a transparent screen above the same layer. */}
-      <Image
-        source={backgroundSources[name].home}
-        style={StyleSheet.absoluteFill}
-        contentFit="cover"
-        contentPosition="center"
-        transition={0}
-        accessibilityElementsHidden
-        importantForAccessibility="no-hide-descendants"
-      />
+      {onboarding && book ? (
+        <EchoBackground screen="first-echo" />
+      ) : (
+        // The same photograph Home was showing, on a transparent screen above the same layer.
+        <Image
+          source={backgroundSources[name].home}
+          style={StyleSheet.absoluteFill}
+          contentFit="cover"
+          contentPosition="center"
+          transition={0}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        />
+      )}
+      {book && <Stack.Screen options={{ gestureEnabled: false }} />}
       {/* The clock and the icons go with everything else. */}
       <StatusBar hidden={here ? true : undefined} animated />
 
       <Pressable
         {...scenery}
-        disabled={!ready}
+        disabled={!ready && (!book || pageOpen)}
         onPress={touchScenery}
         style={StyleSheet.absoluteFill}
         testID="session-scenery"
       />
 
-      <Wash
-        kind="sky"
-        visible={washed}
-        style={{ top: 0, height: frame.top + frame.height + SKY_WASH_BELOW }}
-      />
+      {!book && (
+        <>
+          <Wash
+            kind="sky"
+            visible={washed}
+            style={{ top: 0, height: frame.top + frame.height + SKY_WASH_BELOW }}
+          />
 
-      <SkyInput
-        inputRef={inputRef}
-        value={draft.content.body}
-        label={session.prompt}
-        editable={ready && writing}
-        onChangeText={(body) => {
-          session.change(body);
-          quiet.typed();
-        }}
-        onFocus={() => {
-          setFocused(true);
-          quiet.arm();
-        }}
-        onBlur={() => {
-          setFocused(false);
-          quiet.show();
-        }}
-        frame={frame}
-        arrival={session.arrival}
-        caret={settled && writing && ready && failure === null}
-        focused={focused}
-        interactive={writing}
-      />
+          <SkyInput
+            inputRef={inputRef}
+            value={draft.content.body}
+            label={session.prompt}
+            editable={ready && writing}
+            onChangeText={(body) => {
+              session.change(body);
+              quiet.typed();
+            }}
+            onFocus={() => {
+              setFocused(true);
+              quiet.arm();
+            }}
+            onBlur={() => {
+              setFocused(false);
+              quiet.show();
+            }}
+            frame={frame}
+            arrival={session.arrival}
+            caret={settled && writing && ready && failure === null}
+            focused={focused}
+            interactive={writing}
+          />
+        </>
+      )}
 
-      {!writing && (
+      {bookInView && (
+        <BookPage
+          frame={bookFrame}
+          surface={page === 'paper' ? 'paper' : 'vellum'}
+          volume={volume}
+          entrance={onboarding ? 'forward' : 'rise'}
+          start={onboarding ? true : settled}
+          riseFrom={bookFrame.top + bookFrame.height + 40}
+          ritual={ritual}
+          // A screen reader is not made to wait for the book either.
+          hurry={tapped || screenReader}
+          concealed={concealed}
+          arrival={session.arrival}
+          onOpened={() => {
+            setOpened(true);
+            countOpen();
+          }}
+          inputRef={inputRef}
+          value={draft.content.body}
+          label={session.prompt}
+          placeholder={onboarding ? copy.firstEcho.placeholder : undefined}
+          lead={onboarding ? { lines: 2, text: copy.firstEcho.title } : undefined}
+          editable={ready && writing}
+          interactive={writing}
+          onChangeText={(body) => {
+            session.change(body);
+            quiet.typed();
+          }}
+          onFocus={() => {
+            setFocused(true);
+            quiet.arm();
+          }}
+          onBlur={() => {
+            setFocused(false);
+            quiet.show();
+          }}
+          onTap={touchScenery}
+        >
+          {(open) =>
+            !writing && (
+              <Beacon
+                kind="light"
+                visible={open && ready && !voiceNote && failure === null}
+                live={recording || busy}
+                x={bookFrame.width / 2}
+                y={
+                  concealed || draft.content.body.length === 0
+                    ? bookFrame.height / 2
+                    : bookFrame.height - 30
+                }
+              />
+            )
+          }
+        </BookPage>
+      )}
+
+      {!book && !writing && (
         <Beacon
           kind="light"
           visible={settled && ready && !voiceNote && failure === null}
@@ -205,36 +350,77 @@ export function ImmersiveSession({ session }: { session: SessionController }) {
         />
       )}
 
-      {(voiceNote || failure !== null) && (
+      {(voiceNote || failure !== null) && (!book || bookInView) && (
         <View
           pointerEvents="box-none"
-          style={[styles.centre, { top: frame.top, height: frame.height }]}
+          style={[
+            styles.centre,
+            book
+              ? {
+                  top: bookFrame.top,
+                  height: bookFrame.height,
+                  left: bookFrame.left,
+                  right: bookFrame.left,
+                }
+              : { top: frame.top, height: frame.height },
+          ]}
         >
-          {failure !== null ? (
-            <FailedDraft
-              message={failure}
-              retry={session.failedCode !== 'unreadable'}
-              onRetry={() => void draft.reload()}
-            />
-          ) : (
-            <VoiceNote
-              view={speakView}
-              onAllow={() => void session.allowMicrophone()}
-              onSettings={session.openSettings}
-              onWrite={() => {
-                refocus.current = true;
-                session.writeInstead();
-              }}
-              onRetry={session.retryTranscription}
-              line={session.speakLine}
-            />
-          )}
+          <PaperProvider look={look}>
+            {failure !== null ? (
+              <FailedDraft
+                message={failure}
+                retry={session.failedCode !== 'unreadable'}
+                onRetry={() => void draft.reload()}
+              />
+            ) : (
+              <VoiceNote
+                view={speakView}
+                onAllow={() => void session.allowMicrophone()}
+                onSettings={session.openSettings}
+                onWrite={() => {
+                  refocus.current = true;
+                  session.writeInstead();
+                }}
+                onRetry={session.retryTranscription}
+                line={session.speakLine}
+              />
+            )}
+          </PaperProvider>
         </View>
+      )}
+
+      {onboarding && book && (
+        <>
+          <ShelfBackdrop offset={shelfOffset} visible={studio} />
+          <View
+            pointerEvents="box-none"
+            style={[
+              styles.header,
+              { width: column, paddingHorizontal: gutter, paddingTop: Math.max(insets.top - 5, 8) },
+            ]}
+          >
+            <SessionHeader
+              step={session.target.step}
+              onBack={session.back}
+              remaining={session.timer.remaining}
+              timerState={session.timer.state}
+            />
+          </View>
+          {shelf && (
+            <View pointerEvents="box-none" style={styles.shelf}>
+              <Shelf
+                initial={volumeIndex(remembered ?? undefined)}
+                offset={shelfOffset}
+                onChoose={choose}
+              />
+            </View>
+          )}
+        </>
       )}
 
       <Wash
         kind="ground"
-        visible={quiet.visible || notice !== null}
+        visible={(quiet.visible && pageOpen && !shelf) || notice !== null}
         style={[styles.ground, span]}
       />
 
@@ -254,7 +440,7 @@ export function ImmersiveSession({ session }: { session: SessionController }) {
           </View>
         )}
         <QuietControls
-          visible={quiet.visible}
+          visible={quiet.visible && pageOpen && !shelf}
           middle={recording ? 'stop' : writing ? 'speak' : 'write'}
           middleDisabled={busy || !ready}
           canReflect={canReflect}
@@ -308,6 +494,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   bottom: { position: 'absolute', left: 0, right: 0 },
+  header: { position: 'absolute', top: 0, alignSelf: 'center' },
+  shelf: { ...StyleSheet.absoluteFill, justifyContent: 'center' },
   ground: { bottom: 0 },
   notice: {
     alignSelf: 'center',
