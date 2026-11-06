@@ -55,15 +55,37 @@ export const useGate = create<Gate>(() => ({
 let booting: Promise<void> | null = null;
 let authInFlight = false;
 let backgroundedAt: number | null = null;
+/** The last answer from the device. 'passcode' until then: it never offers a way out. */
+let knownMethod: LockMethod = 'passcode';
 
 async function lockState(failure: AuthFailure | null = null): Promise<LockStatus> {
   const method = await getLockMethod();
+  knownMethod = method;
   return {
     kind: 'locked',
     method,
     failure,
     canDisable: method === 'none',
   };
+}
+
+/**
+ * Locks now, in the caller's tick. The cover lifts in the same AppState event, and asking the device
+ * what can unlock is a native round trip, so waiting for that would show content in between. Its
+ * answer refines this lock, unless the prompt has already answered: applying it then would lock an
+ * unlocked app, or clear a failure and re-prompt in a loop.
+ */
+function relock(): void {
+  const lock: LockStatus = {
+    kind: 'locked',
+    method: knownMethod,
+    failure: null,
+    canDisable: false,
+  };
+  useGate.setState({ lock });
+  void lockState().then((checked) => {
+    if (useGate.getState().lock === lock) useGate.setState({ lock: checked });
+  });
 }
 
 async function resolve(runtime: Runtime): Promise<void> {
@@ -168,12 +190,10 @@ export function handleAppState(next: string, now: number = Date.now()): void {
     if (status.kind === 'storage_error' && status.reason === 'secure_store') void bootApp();
     const away = backgroundedAt === null ? 0 : now - backgroundedAt;
     backgroundedAt = null;
-    if (
-      away >= RELOCK_AFTER_MS &&
-      status.kind === 'ready' &&
-      useOnboarding.getState().privacy.biometricLock
-    ) {
-      void lockState().then((lock) => useGate.setState({ lock }));
+    // Negative means the clock moved back while away, so how long it really was is unknown.
+    const expired = away < 0 || away >= RELOCK_AFTER_MS;
+    if (expired && status.kind === 'ready' && useOnboarding.getState().privacy.biometricLock) {
+      relock();
     }
   } else if (next === 'background' && !authInFlight) {
     backgroundedAt ??= now;
@@ -184,5 +204,6 @@ export function resetGateForTests(): void {
   booting = null;
   authInFlight = false;
   backgroundedAt = null;
+  knownMethod = 'passcode';
   useGate.setState({ status: { kind: 'booting' }, lock: { kind: 'unlocked' } });
 }

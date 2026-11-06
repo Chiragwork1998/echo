@@ -7,7 +7,7 @@ import { deleteAllLocal } from '@/services/deleteAllLocal';
 import { getLockMethod } from '@/services/biometric';
 
 import RootLayout from '../../app/_layout';
-import { bootApp, resetGateForTests, unlock, useGate } from './gate';
+import { bootApp, RELOCK_AFTER_MS, resetGateForTests, unlock, useGate } from './gate';
 import { gateCopy } from './gateCopy';
 import { resetOnboarding, useOnboarding } from './onboarding';
 
@@ -264,5 +264,18 @@ describe('the privacy cover', () => {
     expect(screen.queryByTestId(NAVIGATOR)).toBeNull();
     await send('active');
     expect(screen.getByTestId(NAVIGATOR)).toBeTruthy();
+  });
+
+  it('never lifts onto content the re-lock has not reached yet', async () => {
+    // The capability check is a native round trip. Here it has not come back at all.
+    jest.mocked(getLockMethod).mockReturnValueOnce(new Promise(() => undefined));
+    useOnboarding.setState({ privacy: { biometricLock: true, privateBackup: false } });
+    await render(<RootLayout />);
+    await setGate(ready);
+    await send('background');
+    jest.setSystemTime(Date.now() + RELOCK_AFTER_MS);
+    await send('active');
+    expect(screen.getByText(gateCopy.lock.title)).toBeTruthy();
+    expect(screen.queryByTestId(NAVIGATOR)).toBeNull();
   });
 });

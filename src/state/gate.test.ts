@@ -511,6 +511,86 @@ describe('relocking', () => {
     expect(lock().kind).toBe('unlocked');
   });
 
+  it('locks when the clock went back while away, since the time away is then unknown', async () => {
+    await unlockedWithLock();
+    handleAppState('background', start);
+    handleAppState('active', start - 60 * 60 * 1000);
+    await settle();
+    expect(lock().kind).toBe('locked');
+  });
+
+  it('locks in the same tick, before the cover can lift', async () => {
+    await unlockedWithLock();
+    handleAppState('background', start);
+    handleAppState('active', start + RELOCK_AFTER_MS);
+    expect(lock().kind).toBe('locked');
+  });
+
+  it('shows what it knows at once, then what the device says', async () => {
+    await unlockedWithLock();
+    handleAppState('background', start);
+    enrolled.mockResolvedValue(LocalAuthentication.SecurityLevel.SECRET);
+    handleAppState('active', start + RELOCK_AFTER_MS);
+    expect(lock()).toMatchObject({ method: 'biometric', failure: null, canDisable: false });
+    await settle();
+    expect(lock()).toMatchObject({ method: 'passcode', failure: null, canDisable: false });
+  });
+
+  it('never offers the way out before the device has been asked', async () => {
+    enrolled.mockResolvedValue(LocalAuthentication.SecurityLevel.NONE);
+    await unlockedWithLock();
+    await disableLock();
+    useOnboarding.getState().update({ privacy: { biometricLock: true, privateBackup: false } });
+    handleAppState('background', start);
+    handleAppState('active', start + RELOCK_AFTER_MS);
+    expect(lock()).toMatchObject({ kind: 'locked', canDisable: false });
+    await settle();
+    expect(lock()).toMatchObject({ kind: 'locked', method: 'none', canDisable: true });
+  });
+
+  it('assumes no more than a passcode if the method was never learned', async () => {
+    await usedDevice(async () => {
+      await completeOnboarding();
+    });
+    await bootApp();
+    useOnboarding.getState().update({ privacy: { biometricLock: true, privateBackup: false } });
+    handleAppState('background', start);
+    handleAppState('active', start + RELOCK_AFTER_MS);
+    expect(lock()).toMatchObject({ kind: 'locked', method: 'passcode', canDisable: false });
+    await settle();
+  });
+
+  it('does not lock again if the prompt answered before the device did', async () => {
+    await unlockedWithLock();
+    let answerLevel = (_level: number) => undefined as void;
+    enrolled.mockReturnValueOnce(new Promise((resolve) => (answerLevel = resolve)));
+    handleAppState('background', start);
+    handleAppState('active', start + RELOCK_AFTER_MS);
+
+    await unlock();
+    expect(lock().kind).toBe('unlocked');
+
+    answerLevel(LocalAuthentication.SecurityLevel.BIOMETRIC_STRONG);
+    await settle();
+    expect(lock().kind).toBe('unlocked');
+  });
+
+  it('does not wipe out a failure with a late answer, which would prompt in a loop', async () => {
+    await unlockedWithLock();
+    let answerLevel = (_level: number) => undefined as void;
+    enrolled.mockReturnValueOnce(new Promise((resolve) => (answerLevel = resolve)));
+    handleAppState('background', start);
+    handleAppState('active', start + RELOCK_AFTER_MS);
+
+    authenticate.mockResolvedValue({ success: false, error: 'user_cancel' });
+    await unlock();
+    expect(lock()).toMatchObject({ kind: 'locked', failure: 'cancelled' });
+
+    answerLevel(LocalAuthentication.SecurityLevel.BIOMETRIC_STRONG);
+    await settle();
+    expect(lock()).toMatchObject({ kind: 'locked', failure: 'cancelled' });
+  });
+
   it('does not lock on inactive alone, which is what the prompt itself causes', async () => {
     await unlockedWithLock();
     handleAppState('inactive', start);
