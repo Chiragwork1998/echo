@@ -88,7 +88,8 @@
       "/node_modules/",
       "/.artifacts/",
       "/dist/",
-      "<rootDir>/.claude/"
+      "<rootDir>/.claude/",
+      "<rootDir>/voice-api/"
     ],
     "setupFiles": [
       "<rootDir>/jest.setup.ts"

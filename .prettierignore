@@ -6,3 +6,4 @@ src/design/generated
 package-lock.json
 *.md
 .claude
+voice-api
