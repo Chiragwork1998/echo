@@ -1,7 +1,22 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-// Static guards. Each of these rules is one a future edit could break without any test failing.
+import { sqlJournalFor } from '@/features/journal/runtime';
+import type { EntryContent } from '@/features/journal/types';
+import {
+  flushOnboarding,
+  hydrateOnboarding,
+  resetOnboarding,
+  useOnboarding,
+  type Mood,
+} from '@/state/onboarding';
+import { createOnboardingPersistence } from '@/state/onboardingStore';
+import { hydratePreferences, resetPreferences, usePreferences } from '@/state/preferences';
+
+import { createTestRuntime, everyStoredByte, type TestRuntime } from './testing/nodePorts';
+
+// Static guards. Each of these rules is one a future edit could break without any test failing. They
+// read source, so they say nothing about what happens at runtime. The tests below this describe do.
 const OWNED = [
   'src/storage',
   'src/services',
@@ -51,5 +66,186 @@ describe('privacy rules', () => {
   it('never ties the content key to biometrics', () => {
     const source = read('src/storage/nativePorts.ts');
     expect(source).not.toMatch(/requireAuthentication\s*:/);
+  });
+});
+
+describe('what the app actually does with private content', () => {
+  const TITLE = 'MARKERTITLE';
+  const BODY = 'MARKERBODY';
+  const PROMPT_ID = 'MARKERPROMPTID';
+  const PROMPT_TEXT = 'MARKERPROMPTTEXT';
+  const REFLECTION = 'MARKERREFLECTION';
+  const AUDIO = 'MARKERAUDIO';
+  const VOICE_BODY = 'MARKERVOICE';
+  const DURATION = 4242;
+  const REMINDER = '07:41';
+  const MOOD = 'MARKERMOOD' as Mood;
+  const ONBOARDING_MOOD = 'unsettled';
+  const INTENT = 'understand_self';
+
+  const content: EntryContent = {
+    title: TITLE,
+    body: BODY,
+    mode: 'text',
+    moodBefore: MOOD,
+    promptId: PROMPT_ID,
+    promptText: PROMPT_TEXT,
+    durationSeconds: DURATION,
+  };
+
+  const PRIVATE = [
+    TITLE,
+    BODY,
+    PROMPT_ID,
+    PROMPT_TEXT,
+    REFLECTION,
+    AUDIO,
+    VOICE_BODY,
+    REMINDER,
+    ONBOARDING_MOOD,
+    INTENT,
+    MOOD,
+    // Field names too: finding one would mean a whole record went down unsealed.
+    'moodBefore',
+    'durationSeconds',
+    '"privacy"',
+  ];
+
+  let rt: TestRuntime;
+
+  beforeEach(async () => {
+    resetOnboarding();
+    resetPreferences();
+    rt = await createTestRuntime();
+    await hydrateOnboarding(createOnboardingPersistence(rt));
+    await hydratePreferences(rt.db, rt.serial);
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  function leaveRecording(recordingId: string) {
+    const directory = rt.paths.recordingDirs[0] ?? '';
+    mkdirSync(directory, { recursive: true });
+    const uri = join(directory, `${recordingId}.m4a`);
+    writeFileSync(uri, AUDIO.repeat(200));
+    return uri;
+  }
+
+  /** Every kind of private write the app makes. */
+  async function writeEverything() {
+    useOnboarding.getState().update({
+      intent: INTENT,
+      mood: ONBOARDING_MOOD,
+      reminder: { time: REMINDER, enabled: true },
+    });
+    await flushOnboarding();
+
+    const journal = sqlJournalFor(rt);
+    await journal.saveDraft('draft', content);
+    await journal.commitEntry('entry', content);
+    await journal.saveReflection('entry', { status: 'complete', text: REFLECTION });
+
+    const begun = await journal.beginRecording('voice');
+    if (!begun.ok) throw new Error('begin failed');
+    const attached = await journal.attachRecording({
+      recordingId: begun.value.recordingId,
+      uri: leaveRecording(begun.value.recordingId),
+      draftId: 'voice',
+      durationSeconds: 3,
+      content: { ...content, body: VOICE_BODY, mode: 'voice' },
+    });
+    if (!attached.ok) throw new Error('attach failed');
+  }
+
+  it('finds no private content anywhere on disk, write-ahead log included', async () => {
+    await writeEverything();
+    const stored = everyStoredByte(rt.root);
+    expect(PRIVATE.filter((secret) => stored.includes(secret))).toEqual([]);
+  });
+
+  it('finds none of it after those pages move into the database file either', async () => {
+    await writeEverything();
+    await rt.db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+    const stored = everyStoredByte(rt.root);
+    expect(PRIVATE.filter((secret) => stored.includes(secret))).toEqual([]);
+  });
+
+  // Without these, a scan that found nothing could just be a scan that does not work.
+  describe('the scan can see what it is looking for', () => {
+    it('finds a value stored as plain text in the database', async () => {
+      usePreferences.getState().setTheme('automatic');
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(everyStoredByte(rt.root).includes('automatic')).toBe(true);
+    });
+
+    it('finds plaintext in a file, as an unfinished recording really is', () => {
+      leaveRecording('unfinished');
+      expect(everyStoredByte(rt.root).includes(AUDIO)).toBe(true);
+    });
+
+    it('finds a row in the write-ahead log before any checkpoint', async () => {
+      await rt.db.run('INSERT INTO preferences (key, value) VALUES (?, ?)', ['probe', BODY]);
+      expect(readFileSync(`${rt.db.file}-wal`).includes(BODY)).toBe(true);
+      expect(everyStoredByte(rt.root).includes(BODY)).toBe(true);
+    });
+  });
+
+  describe('nothing reaches the console or an error result', () => {
+    const CONSOLE = ['log', 'info', 'warn', 'error', 'debug'] as const;
+
+    function watchConsole() {
+      const spies = CONSOLE.map((method) =>
+        jest.spyOn(console, method).mockImplementation(() => undefined),
+      );
+      return () => spies.flatMap((spy) => spy.mock.calls);
+    }
+
+    it('stays silent through normal use', async () => {
+      const logged = watchConsole();
+      await writeEverything();
+      const journal = sqlJournalFor(rt);
+      await journal.getEntry('entry');
+      await journal.listEntries();
+      await journal.searchEntries(BODY);
+      await journal.deleteEntry('entry');
+      await journal.recoverLeftovers();
+      expect(logged()).toEqual([]);
+    });
+
+    it('stays silent reading a corrupt row', async () => {
+      const logged = watchConsole();
+      await writeEverything();
+      await rt.db.exec(`UPDATE entries SET sealed = x'01' WHERE id = 'entry'`);
+      const journal = sqlJournalFor(rt);
+      await journal.getEntry('entry');
+      await journal.listEntries();
+      await journal.latestEntry();
+      expect(logged()).toEqual([]);
+    });
+
+    it('keeps a native error that quotes the content out of what callers see', async () => {
+      const logged = watchConsole();
+      const quoting = new Error(`constraint failed near ${BODY}`);
+      const journal = sqlJournalFor(rt);
+      jest.spyOn(rt.db, 'run').mockRejectedValue(quoting);
+
+      const saved = await journal.saveDraft('a', content);
+      const committed = await journal.commitEntry('a', content);
+
+      expect(saved).toEqual({ ok: false, error: { code: 'write_failed', retryable: true } });
+      expect(JSON.stringify(committed)).not.toContain(BODY);
+      expect(logged()).toEqual([]);
+    });
+
+    it('keeps content out of what a failed decryption throws', async () => {
+      await writeEverything();
+      const row = await rt.db.first<{ sealed: Uint8Array }>(
+        "SELECT sealed FROM entries WHERE id = 'entry'",
+      );
+      const failure = await rt.vault
+        .openJson('entry', 'another-id', row?.sealed ?? new Uint8Array())
+        .catch((error: unknown) => String(error));
+      expect(failure).toBe('DecryptionError: decryption failed');
+    });
   });
 });
