@@ -1,3 +1,5 @@
+import { liveAllowed, usePreferences } from '@/state/preferences';
+
 import { VOICE_TOKEN_HEADER, voiceApi, type VoiceApi } from './voiceApi';
 
 // Live words (docs/OWNER_DECISIONS.md, D-007, D-008): a take streamed to OpenAI's realtime
@@ -77,6 +79,8 @@ export type LiveDeps = {
   WebSocket: SocketConstructor;
   /** How long to wait for the secret, and then for the socket to open. */
   timeoutMs: number;
+  /** Whether the person agreed to their voice being streamed as it is spoken (`liveAllowed`). */
+  allowed: () => boolean;
 };
 
 const defaults = (): LiveDeps => ({
@@ -84,21 +88,32 @@ const defaults = (): LiveDeps => ({
   api: voiceApi(),
   WebSocket: WebSocket as unknown as SocketConstructor,
   timeoutMs: 12_000,
+  allowed: () => liveAllowed(usePreferences.getState().voiceConsent),
 });
 
 export const LIVE_SESSION_PATH = '/api/live-session';
 
+/** The one place a live voice is streamed to. The server names it, but the phone does not take its word. */
+export const LIVE_HOST = 'api.openai.com';
+export const LIVE_PATH = '/v1/realtime';
+
+const OPENAI_REALTIME = new RegExp(
+  `^wss://${LIVE_HOST.replace(/\./g, '\\.')}${LIVE_PATH}(?:[/?][^\\s#\\\\]*)?$`,
+);
+
 /**
- * The address the server gave, if it is safe to stream a voice to: wss, or this Mac's own loopback
- * in a development build. Anything else is refused, so a wrong reply can never send a voice
- * somewhere in the clear.
+ * The address the server gave, if it is safe to stream a voice to: OpenAI's realtime API over wss,
+ * exactly (host `api.openai.com`, a path that starts `/v1/realtime`, no user, no port), or this
+ * Mac's own loopback in a development build. Anything else is refused, so a wrong reply, or someone
+ * standing in for the server, can never send a voice to a host of their choosing, or in the clear.
+ * Parsed by hand: the URL class is not complete on every React Native runtime.
  */
 export function liveAddress(
   url: unknown,
   development: boolean = typeof __DEV__ !== 'undefined' && __DEV__,
 ): string | null {
   if (typeof url !== 'string') return null;
-  if (/^wss:\/\/[^/?#@\s]+(\/[^\s#]*)?(\?[^\s#]*)?$/i.test(url)) return url;
+  if (OPENAI_REALTIME.test(url) && !url.includes('..')) return url;
   if (
     development &&
     /^ws:\/\/(127\.0\.0\.1|localhost)(:\d{1,5})?(\/[^\s#]*)?(\?[^\s#]*)?$/i.test(url)
@@ -127,12 +142,15 @@ async function mint(deps: LiveDeps): Promise<Granted | null> {
 /**
  * Opens a live transcription session and resolves once audio can be sent, or with null if it could
  * not be opened for any reason. A connection that later ends is reported through `onClose`, once.
+ * It checks the person's consent itself, before it asks the server for anything, so no caller can
+ * stream a voice that was not agreed to be streamed.
  */
 export async function openLiveSocket(
   handlers: LiveHandlers,
   overrides: Partial<LiveDeps> = {},
 ): Promise<LiveSocket | null> {
   const deps = { ...defaults(), ...overrides };
+  if (!deps.allowed()) return null;
   let granted: Granted | null;
   try {
     granted = await mint(deps);

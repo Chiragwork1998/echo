@@ -1,8 +1,8 @@
 import { act, renderHook } from '@testing-library/react-native';
 
 import { createMemoryJournal, setJournal, useDraft, type Journal } from '@/features/journal';
-import { openEntryAudio } from '@/features/journal/api';
-import type { Entry, EntryAudio } from '@/features/journal/types';
+import { openEntryAudio, saveDraft } from '@/features/journal/api';
+import { failure, type Entry, type EntryAudio } from '@/features/journal/types';
 import {
   transcribeEntryAudio,
   type TranscriptionErrorCode,
@@ -329,6 +329,38 @@ describe('speaking several times', () => {
     expect(released).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps a take and its kept copy when its words could not be saved, and saves them once on Try again', async () => {
+    const released = jest.fn();
+    openAudio.mockResolvedValue({
+      ok: true,
+      value: { uri: 'file:///kept/one.m4a', release: released },
+    });
+    send.mockResolvedValueOnce(failed('offline'));
+    const { result } = await mount();
+    await act(async () => result.current.words.enqueue(audio('a1')));
+    await settle();
+    await act(async () => result.current.words.holdCurrent());
+
+    // The words come back, and the phone cannot write them down.
+    jest.spyOn(journal, 'saveDraft').mockResolvedValueOnce(failure('write_failed'));
+    send.mockResolvedValueOnce(said('One.')).mockResolvedValueOnce(said('Two.'));
+    await act(async () => result.current.words.enqueue(audio('a2')));
+    await settle();
+    expect(result.current.words.phase).toEqual({ kind: 'failed', code: 'server' });
+    // The copy kept for this take is the only copy of that recording: it is not let go of.
+    expect(released).not.toHaveBeenCalled();
+    expect((await stored()).body).toBe('Before.');
+
+    await act(async () => result.current.words.retry());
+    await settle();
+    // The words in hand are saved. They are not asked for again, and not added twice.
+    expect(send).toHaveBeenCalledTimes(3);
+    expect(result.current.words.phase).toEqual({ kind: 'idle' });
+    expect(result.current.draft.content.body).toBe('Before.\n\nOne.\n\nTwo.');
+    expect((await stored()).body).toBe('Before.\n\nOne.\n\nTwo.');
+    expect(released).toHaveBeenCalledTimes(1);
+  });
+
   it('says so, and carries on, when an earlier take was replaced with no copy kept', async () => {
     const first = pending();
     send.mockReturnValueOnce(first.promise).mockResolvedValueOnce(said('Two.'));
@@ -422,6 +454,41 @@ describe('when the session closes mid-request', () => {
     expect(saved.audio?.id).toBe('a1');
   });
 
+  it('does not overwrite text another session saved in the instant it was storing late words', async () => {
+    const request = pending();
+    send.mockReturnValue(request.promise);
+    const view = await mount();
+    await act(async () => view.result.current.words.enqueue(audio('a1')));
+    await view.unmount();
+
+    // A reopened session autosaves what was typed there, just after this one has read the draft.
+    const real = journal.getEntry.bind(journal);
+    let once = true;
+    jest.spyOn(journal, 'getEntry').mockImplementation(async (id) => {
+      const found = await real(id);
+      if (once) {
+        once = false;
+        void saveDraft(id, {
+          body: 'Before. Typed meanwhile.',
+          mode: 'voice',
+          durationSeconds: 10,
+        });
+      }
+      return found;
+    });
+    await act(async () => request.settle(said('Arrived late.')));
+    await settle();
+    await settle();
+
+    const saved = await stored();
+    // What a person typed is never what is lost. The words may be written over by that other
+    // session's older copy of the page, but then the draft does not claim to have them, and the
+    // recording is still there for Try again.
+    expect(saved.body).toContain('Typed meanwhile.');
+    expect(saved.body.includes('Arrived late.') || saved.transcribedAudioId !== 'a1').toBe(true);
+    expect(saved.audio?.id).toBe('a1');
+  });
+
   it('does not bring back a draft that was discarded meanwhile', async () => {
     const request = pending();
     send.mockReturnValue(request.promise);
@@ -444,6 +511,34 @@ describe('when the session closes mid-request', () => {
     await act(async () => request.settle(said('Too late.')));
     await settle();
     expect((await stored()).body).toBe('Kept.');
+  });
+
+  it('lets go of the decrypted copies kept for earlier takes if the words fail after the session is gone', async () => {
+    const released = jest.fn();
+    openAudio.mockResolvedValue({
+      ok: true,
+      value: { uri: 'file:///kept/one.m4a', release: released },
+    });
+    send.mockResolvedValueOnce(failed('offline'));
+    const view = await mount();
+    await act(async () => view.result.current.words.enqueue(audio('a1')));
+    await settle();
+    await act(async () => view.result.current.words.holdCurrent());
+
+    const request = pending();
+    send.mockReturnValueOnce(request.promise);
+    await act(async () => view.result.current.words.enqueue(audio('a2')));
+    await view.unmount();
+    expect(released).not.toHaveBeenCalled(); // The request is still running, and may yet succeed.
+
+    await act(async () => request.settle(failed('offline')));
+    await settle();
+    // Nothing can retry it now, and a decrypted recording is not left in the cache for the next launch.
+    expect(released).toHaveBeenCalledTimes(1);
+    // The sealed recording is never what is let go of.
+    const saved = await stored();
+    expect(saved.audio?.id).toBe('a1');
+    expect(saved.body).toBe('Before.');
   });
 
   it('leaves the recording retryable if the words never arrive', async () => {

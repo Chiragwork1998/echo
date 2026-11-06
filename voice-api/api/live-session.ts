@@ -1,11 +1,11 @@
-import { clientIp, createLimiter, fail, json, tokenMatches } from '../src/guard.js';
+import { createGate, fail, json } from '../src/guard.js';
 import { delayOf, LiveError, mintLiveSession } from '../src/live.js';
 
 const WINDOW_MS = 10 * 60 * 1000;
 // One live take is one secret. A person may speak a good many takes in ten minutes, and each one
 // that cannot connect falls back to being sent after it ends.
 const WINDOW_LIMIT = 40;
-const limited = createLimiter(WINDOW_MS, WINDOW_LIMIT);
+const gate = createGate(WINDOW_MS, WINDOW_LIMIT);
 
 /**
  * `POST /api/live-session`, with the app token and no body. Returns a short-lived secret and the
@@ -16,10 +16,8 @@ export async function POST(request: Request) {
   const started = Date.now();
   const { OPENAI_API_KEY, ECHO_VOICE_TOKEN } = process.env;
   if (!OPENAI_API_KEY || !ECHO_VOICE_TOKEN) return fail(503, 'not_configured');
-  if (!tokenMatches(request.headers.get('x-echo-voice-token'), ECHO_VOICE_TOKEN)) {
-    return fail(401, 'unauthorized');
-  }
-  if (limited(clientIp(request), started)) return fail(429, 'rate_limited', true);
+  const turnedAway = gate(request, ECHO_VOICE_TOKEN, started);
+  if (turnedAway) return turnedAway;
 
   try {
     const session = await mintLiveSession({

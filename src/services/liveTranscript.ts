@@ -18,7 +18,7 @@ export type LiveTranscript = {
   apply(event: LiveEvent): void;
   /** Everything so far, for showing: finished turns, then the words still arriving. */
   text(): string;
-  /** A turn failed to become words, so this transcript cannot be trusted to be whole. */
+  /** A turn failed to become words, or the server reported an error: this cannot be trusted to be whole. */
   failed(): boolean;
   /** Every committed turn is finished, and nothing is left open. */
   settled(): boolean;
@@ -26,12 +26,15 @@ export type LiveTranscript = {
   hasWords(): boolean;
   /** Words have arrived that no commit has ended yet. */
   hasOpenWords(): boolean;
+  /** How many commits the model has acknowledged. A commit sent and not yet acknowledged is not here. */
+  committed(): number;
 };
 
 export function createLiveTranscript(): LiveTranscript {
   const items = new Map<string, Item>();
   let seen = 0;
   let commits = 0;
+  let errored = false;
 
   const itemFor = (itemId: string): Item => {
     let item = items.get(itemId);
@@ -49,7 +52,12 @@ export function createLiveTranscript(): LiveTranscript {
 
   return {
     apply(event) {
-      if (event.kind === 'error') return;
+      if (event.kind === 'error') {
+        // A refused append or commit, or anything else the server objects to. It names no turn, so
+        // it cannot be said which words are missing, only that some may be.
+        errored = true;
+        return;
+      }
       const item = itemFor(event.itemId);
       switch (event.kind) {
         case 'delta':
@@ -72,7 +80,7 @@ export function createLiveTranscript(): LiveTranscript {
         .map(wordsOf)
         .filter((words) => words.length > 0)
         .join(' '),
-    failed: () => [...items.values()].some((item) => item.failed),
+    failed: () => errored || [...items.values()].some((item) => item.failed),
     settled: () =>
       [...items.values()].every((item) =>
         item.commit === null ? wordsOf(item).length === 0 : item.final !== null || item.failed,
@@ -80,5 +88,6 @@ export function createLiveTranscript(): LiveTranscript {
     hasWords: () => [...items.values()].some((item) => wordsOf(item).length > 0),
     hasOpenWords: () =>
       [...items.values()].some((item) => item.commit === null && wordsOf(item).length > 0),
+    committed: () => commits,
   };
 }

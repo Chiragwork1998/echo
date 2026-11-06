@@ -54,7 +54,15 @@ type Overlap = {
  * Where the end of `before` and the start of `after` say the same words. The pieces overlap in time,
  * so the stretch they share is the whole start of the second and the whole end of the first. A run
  * of matching words is believed when most of the stretch it implies agrees too, and of the runs
- * believed the longest wins. When two are equally long, the one that throws away fewer words wins.
+ * believed the one that throws away the fewest words wins. When two throw away as many, the longer
+ * run wins.
+ *
+ * Fewest thrown, not longest, because of a phrase someone really said more than once. Said three
+ * times, "I did not mean it" matches itself a repeat along as well as in place, and a longer run is
+ * always found a repeat along, where the join would drop a repeat that was spoken. The match at the
+ * cut itself is the one that throws away almost nothing. Where a refrain fills the whole overlap and
+ * more, which is four or more repeats of six words, the text alone cannot say which repeat is which,
+ * and a repeat can still be lost.
  */
 function findOverlap(before: string[], after: string[]): Overlap | null {
   const tailLength = Math.min(WINDOW, before.length);
@@ -90,7 +98,7 @@ function findOverlap(before: string[], after: string[]): Overlap | null {
       if (agree / span < AGREEMENT) continue;
 
       const thrown = ahead + behind;
-      if (!best || run > best.run || (run === best.run && thrown < best.thrown)) {
+      if (!best || thrown < best.thrown || (thrown === best.thrown && run > best.run)) {
         best = { tail: i, head: j, run, thrown };
       }
     }

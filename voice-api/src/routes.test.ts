@@ -64,6 +64,30 @@ test('refine: exact Devanagari gets the script step, and a style it does not kno
   assert.equal(calls.length, 1);
 });
 
+test('refine takes an hour of speech with room to spare, and not a book', async () => {
+  // An hour at 200 words a minute, which is fast, is about 12,000 words and 70,000 characters.
+  const hour = 'word '.repeat(14_000).trim();
+  assert.ok(hour.length >= 69_000 && hour.length <= 71_000);
+  const taken = await refine(post({ text: hour }, TOKEN, '5.5.5.5'));
+  assert.equal(taken.status, 200);
+  assert.equal(((await taken.json()) as { text: string }).text.length, hour.length);
+
+  const book = 'word '.repeat(20_001);
+  assert.equal((await refine(post({ text: book }, TOKEN, '5.5.5.6'))).status, 413);
+});
+
+test('a wrong token is counted, and an address that keeps guessing is turned away', async () => {
+  const statuses: number[] = [];
+  for (let i = 0; i < 25; i += 1) {
+    statuses.push((await refine(post({ text: 'hi' }, 'guess', '6.6.6.6'))).status);
+  }
+  assert.equal(statuses[0], 401);
+  assert.equal(statuses.at(-1), 429);
+  // The right token from that address is not heard either, and nobody else is affected.
+  assert.equal((await refine(post({ text: 'hi' }, TOKEN, '6.6.6.6'))).status, 429);
+  assert.equal((await refine(post({ text: 'hi' }, TOKEN, '6.6.6.7'))).status, 200);
+});
+
 test('live-session needs the app token and mints a secret for a transcription session', async () => {
   assert.equal((await liveSession(post('', null, '3.3.3.3'))).status, 401);
   const response = await liveSession(post('', TOKEN, '3.3.3.3'));

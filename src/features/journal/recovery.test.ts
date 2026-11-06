@@ -170,6 +170,116 @@ describe('launch sweep', () => {
     expect(await rows(context, 'recordings')).toBe(0);
   });
 
+  it('keeps the sealed audio when the commit went through and the answer was lost', async () => {
+    // The row is written and the plaintext's ledger row says sealed. If the sealed file were then
+    // removed because the call threw, the next sweep would delete the plaintext too: nothing would be left.
+    const context = await setup();
+    const { journal, rt } = context;
+    const { recordingId } = unwrap(await journal.beginRecording('draft-1'));
+    const uri = leaveRecording(context, `${recordingId}.m4a`);
+    const lossy = createSqlJournal({
+      ...rt,
+      db: {
+        ...rt.db,
+        transaction: async (task) => {
+          await rt.db.transaction(task);
+          throw new Error('the reply never came');
+        },
+      },
+    });
+
+    const attached = await lossy.attachRecording({
+      recordingId,
+      uri,
+      draftId: 'draft-1',
+      durationSeconds: 8,
+      content: emptyContent({ mode: 'voice' }),
+    });
+    // It did save, so it is said to have saved.
+    expect(attached.ok).toBe(true);
+    expect(rt.files.list(rt.paths.audioDir)).toHaveLength(1);
+
+    // And after the next launch the recording is still whole and plays.
+    const next = await rt.reopen();
+    const after = createSqlJournal(next);
+    await after.recoverLeftovers();
+    const audio = unwrap(await after.openAudio('draft-1'));
+    expect(Buffer.from(await next.files.read(audio.uri)).toString()).toBe(SPOKEN);
+    audio.release();
+  });
+
+  it('keeps the sealed file when it cannot tell whether the commit happened, and loses nothing', async () => {
+    const context = await setup();
+    const { journal, rt } = context;
+    const { recordingId } = unwrap(await journal.beginRecording('draft-1'));
+    const uri = leaveRecording(context, `${recordingId}.m4a`);
+    let asked = false;
+    const blind = createSqlJournal({
+      ...rt,
+      db: {
+        ...rt.db,
+        transaction: async (task) => {
+          await rt.db.transaction(task);
+          asked = true;
+          throw new Error('the reply never came');
+        },
+        first: async (source, params) => {
+          if (asked) throw new Error('the database is gone');
+          return rt.db.first(source, params);
+        },
+      },
+    });
+    const attached = await blind.attachRecording({
+      recordingId,
+      uri,
+      draftId: 'draft-1',
+      durationSeconds: 8,
+      content: emptyContent({ mode: 'voice' }),
+    });
+    expect(attached.ok).toBe(false);
+    expect(rt.files.list(rt.paths.audioDir)).toHaveLength(1);
+    // The plaintext is still there, and the launch that follows leaves one whole recording.
+    expect(existsSync(uri)).toBe(true);
+    const next = await rt.reopen();
+    const after = createSqlJournal(next);
+    await after.recoverLeftovers();
+    const audio = unwrap(await after.openAudio('draft-1'));
+    expect(Buffer.from(await next.files.read(audio.uri)).toString()).toBe(SPOKEN);
+    audio.release();
+    expect(unwrap(await after.listDrafts())).toHaveLength(1);
+  });
+
+  it('removes the sealed file when the commit did not happen, as before', async () => {
+    const context = await setup();
+    const { journal, rt } = context;
+    const { recordingId } = unwrap(await journal.beginRecording('draft-1'));
+    const uri = leaveRecording(context, `${recordingId}.m4a`);
+    const refusing = createSqlJournal({
+      ...rt,
+      db: {
+        ...rt.db,
+        transaction: async () => {
+          throw new Error('rolled back');
+        },
+      },
+    });
+
+    const attached = await refusing.attachRecording({
+      recordingId,
+      uri,
+      draftId: 'draft-1',
+      durationSeconds: 8,
+      content: emptyContent({ mode: 'voice' }),
+    });
+
+    expect(attached.ok).toBe(false);
+    expect(rt.files.list(rt.paths.audioDir)).toEqual([]);
+    // The plaintext is untouched, and the next launch seals it.
+    expect(existsSync(uri)).toBe(true);
+    await journal.recoverLeftovers();
+    expect(unwrap(await journal.getEntry('draft-1'))?.audio?.recovered).toBe(true);
+  });
+
   it('does not bring back a recording whose entry was since deleted', async () => {
     const context = await setup();
     const { journal, rt } = context;

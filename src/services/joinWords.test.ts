@@ -127,6 +127,49 @@ describe('repeated phrases', () => {
     ).toBe("and I said it twice, I don't know, I don't know. What should I do now?");
   });
 
+  it('does not collapse a phrase someone said three times when the cut falls inside it', () => {
+    const lead =
+      'After the call I walked out to the back garden and stood there for a while thinking about what she said and then I started to say it over and over';
+    const tail =
+      'and after that I could not say anything else and I went back inside and sat down by the window';
+    const truth = `${lead} I did not mean it I did not mean it I did not mean it ${tail}`;
+    // The first piece ends after the second of them. The second began nine words before that.
+    const words = truth.split(' ');
+    const first = words.slice(0, 41).join(' ');
+    const second = words.slice(32).join(' ');
+    expect(join(first, second)).toBe(truth);
+  });
+
+  it('keeps every repeat of a refrain said three times, wherever the pieces are cut', () => {
+    const lead =
+      'After the call I walked out to the back garden and stood there for a while thinking about what she said and then I started to say it over and over';
+    const tail =
+      'and after that I could not say anything else and I went back inside and sat down by the window';
+    const leadWords = lead.split(' ').length;
+    let cuts = 0;
+    for (const refrain of [
+      'please stay with me',
+      'I did not mean it',
+      'it will be fine now',
+      'I am so tired of this',
+    ]) {
+      const length = refrain.split(' ').length;
+      const truth = `${lead} ${refrain} ${refrain} ${refrain} ${tail}`;
+      const words = truth.split(' ');
+      // Every place the first piece can end from the first repeat to just past the last, and every
+      // overlap of nine to fourteen words, which is about what five seconds holds.
+      for (let end = leadWords + length; end <= leadWords + length * 3 + 3; end += 1) {
+        for (let overlap = 9; overlap <= 14; overlap += 1) {
+          const first = words.slice(0, end).join(' ');
+          const second = words.slice(end - overlap).join(' ');
+          expect(join(first, second)).toBe(truth);
+          cuts += 1;
+        }
+      }
+    }
+    expect(cuts).toBeGreaterThan(300);
+  });
+
   it('removes a whole repeated phrase once when it is all in the overlap', () => {
     expect(join("yaar I don't know, I don't know", "I don't know, I don't know what to do")).toBe(
       "yaar I don't know, I don't know what to do",

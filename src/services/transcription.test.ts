@@ -124,6 +124,38 @@ describe('voiceEndpoint', () => {
   });
 });
 
+describe('voiceEndpoint in a release build', () => {
+  it('refuses plain http even to this Mac’s own address, as the rest of the app does', () => {
+    expect(voiceEndpoint('http://127.0.0.1:8787', undefined, false)).toBeNull();
+    expect(voiceEndpoint('http://localhost:8787', '/api/refine', false)).toBeNull();
+    expect(voiceEndpoint('https://voice.example.com', undefined, false)).toBe(
+      'https://voice.example.com/api/transcribe',
+    );
+  });
+
+  it('sends nothing to a loopback address when the build is not a development one', async () => {
+    const globals = globalThis as { __DEV__?: boolean };
+    const before = globals.__DEV__;
+    globals.__DEV__ = false;
+    try {
+      expect(await failedWith(run({ url: 'http://127.0.0.1:8787' }))).toEqual({
+        code: 'not_configured',
+        retryable: false,
+      });
+      const refined = await refineWords(
+        'आज मन भारी है',
+        {},
+        { fetch: send, url: 'http://localhost:8787', token: TOKEN, status, style: () => 'exact' },
+      );
+      expect(refined).toEqual({ ok: false, error: { code: 'not_configured', retryable: false } });
+      expect(send).not.toHaveBeenCalled();
+      expect(open).not.toHaveBeenCalled();
+    } finally {
+      globals.__DEV__ = before;
+    }
+  });
+});
+
 describe('request building', () => {
   it('posts the recording as multipart with the token header and nothing else', async () => {
     const result = await run();
@@ -487,14 +519,44 @@ describe('a long WAV is sent in pieces', () => {
     expect(release).toHaveBeenCalledTimes(1);
   });
 
-  it('does not treat a piece with nothing said in it as a failure', async () => {
+  const empty = () => reply(422, { code: 'empty', retryable: false });
+
+  it('does not treat a piece with nothing said in it as a failure, once it has been asked for twice', async () => {
     send
-      .mockResolvedValueOnce(reply(422, { code: 'empty', retryable: false }))
-      .mockResolvedValueOnce(reply(200, { ...good, text: 'Only this.' }));
+      .mockResolvedValueOnce(empty())
+      .mockResolvedValueOnce(reply(200, { ...good, text: 'Only this.' }))
+      .mockResolvedValueOnce(empty()); // The second try of the first piece: it is quiet.
     expect(await long()).toMatchObject({ ok: true, value: { text: 'Only this.' } });
+    expect(send).toHaveBeenCalledTimes(3);
     send.mockReset();
-    send.mockResolvedValue(reply(422, { code: 'empty', retryable: false }));
+    send.mockResolvedValue(empty());
     expect(await failedWith(long())).toEqual({ code: 'no_speech', retryable: false });
+    // Both pieces were asked for twice before the take was called silent.
+    expect(send).toHaveBeenCalledTimes(4);
+  });
+
+  it('asks again for a piece that came back empty, so words that were missed once are not lost', async () => {
+    send
+      .mockResolvedValueOnce(reply(200, { ...good, text: 'First part,' }))
+      .mockResolvedValueOnce(empty())
+      .mockResolvedValueOnce(reply(200, { ...good, text: 'second part, after all.' }));
+    expect(await long()).toMatchObject({
+      ok: true,
+      value: { text: 'First part, second part, after all.' },
+    });
+    expect(send).toHaveBeenCalledTimes(3);
+    // The same piece went again: the same bytes, in a request of its own.
+    const [, first] = send.mock.calls[1] as [string, RequestInit];
+    const [, again] = send.mock.calls[2] as [string, RequestInit];
+    expect(await partBytes(again)).toEqual(await partBytes(first));
+  });
+
+  it('fails the take if the second try of an empty piece fails for any other reason', async () => {
+    send
+      .mockResolvedValueOnce(reply(200, good))
+      .mockResolvedValueOnce(empty())
+      .mockResolvedValueOnce(reply(503, { code: 'internal', retryable: true }));
+    expect(await failedWith(long())).toEqual({ code: 'server', retryable: true });
   });
 
   it('fails the whole take when a piece fails, and the recording stays', async () => {
@@ -773,18 +835,36 @@ describe('a long ADTS .aac is sent in overlapping pieces', () => {
     expect(await take(nine, { style: () => 'tidy' })).toMatchObject({ value: { polished: true } });
   });
 
-  it('does not treat a piece with nothing said in it as a failure', async () => {
+  it('does not treat a piece with nothing said in it as a failure: a quiet stretch is honest', async () => {
+    const quiet = () => reply(422, { code: 'empty', retryable: false });
     send
       .mockResolvedValueOnce(piece('before the quiet'))
-      .mockResolvedValueOnce(reply(422, { code: 'empty', retryable: false }))
-      .mockResolvedValueOnce(piece('after the quiet'));
+      .mockResolvedValueOnce(quiet())
+      .mockResolvedValueOnce(piece('after the quiet'))
+      .mockResolvedValueOnce(quiet()); // The second try of the middle piece: still nothing.
     expect(await take(nine)).toMatchObject({
       ok: true,
       value: { text: 'before the quiet after the quiet' },
     });
+    expect(send).toHaveBeenCalledTimes(4);
     send.mockReset();
-    send.mockResolvedValue(reply(422, { code: 'empty', retryable: false }));
+    send.mockResolvedValue(quiet());
     expect(await failedWith(take(nine))).toEqual({ code: 'no_speech', retryable: false });
+    // Three pieces, each asked for twice.
+    expect(send).toHaveBeenCalledTimes(6);
+  });
+
+  it('asks again for a middle piece that came back empty, and keeps the words that come', async () => {
+    send
+      .mockResolvedValueOnce(piece('before the quiet'))
+      .mockResolvedValueOnce(reply(422, { code: 'empty', retryable: false }))
+      .mockResolvedValueOnce(piece('after the quiet'))
+      .mockResolvedValueOnce(piece('the middle that was missed'));
+    expect(await take(nine)).toMatchObject({
+      ok: true,
+      value: { text: 'before the quiet the middle that was missed after the quiet' },
+    });
+    expect(send).toHaveBeenCalledTimes(4);
   });
 
   it('finds the overlap in the words before their script was changed', async () => {
