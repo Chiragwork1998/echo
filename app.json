@@ -4,13 +4,22 @@
     "slug": "echo",
     "scheme": "echo",
     "version": "0.1.0",
+    "icon": "./assets/app/icon.png",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
     "backgroundColor": "#13263A",
     "ios": {
+      "bundleIdentifier": "com.thesaturnlabs.echo",
       "supportsTablet": true
     },
     "android": {
+      "package": "com.thesaturnlabs.echo",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/app/adaptive-foreground.png",
+        "monochromeImage": "./assets/app/adaptive-monochrome.png",
+        "backgroundColor": "#13263A"
+      },
       "predictiveBackGestureEnabled": false,
       "allowBackup": false,
       "blockedPermissions": [
@@ -28,7 +37,15 @@
       "expo-status-bar",
       "expo-font",
       "expo-image",
-      "expo-splash-screen",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/app/splash-mark.png",
+          "imageWidth": 288,
+          "resizeMode": "contain",
+          "backgroundColor": "#13263A"
+        }
+      ],
       [
         "expo-audio",
         {
@@ -53,6 +70,12 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "41a5c5d7-7758-4278-bc58-75ad954b0ed8"
+      }
+    },
+    "owner": "chiragtalwar123"
   }
 }
