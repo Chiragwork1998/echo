@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 
 import { sqlJournalFor } from '@/features/journal/runtime';
 import type { SqlJournal } from '@/features/journal/sqlJournal';
@@ -29,10 +29,29 @@ const nativeShare: ShareTarget = {
 };
 
 // Android's promise settles when the chooser hands off, and the receiving app may read the file
-// after that. Deleting at once could send an empty attachment. The window stays short, and the launch
-// sweep clears the directory if the process dies first. iOS has copied the file by the time it
-// resolves.
+// after that. Deleting at once could send an empty attachment. iOS has copied the file by the time
+// it resolves.
 const RELEASE_DELAY_MS = Platform.OS === 'android' ? 60_000 : 0;
+
+/**
+ * Runs release once the delay is up. Android pauses timers while the app is in the background and
+ * nothing here runs there, so the timer alone can leave plaintext on disk for as long as the app
+ * stays away. The soonest it can go is the next return to the foreground, and the launch sweep covers
+ * the process dying first. A return inside the delay changes nothing: the receiving app may still be
+ * reading.
+ */
+function releaseAfter(delayMs: number, release: () => void): void {
+  const deadline = Date.now() + delayMs;
+  const finish = () => {
+    clearTimeout(timer);
+    subscription.remove();
+    release();
+  };
+  const timer = setTimeout(finish, delayMs);
+  const subscription = AppState.addEventListener('change', (state) => {
+    if (state === 'active' && Date.now() >= deadline) finish();
+  });
+}
 
 type Exported = {
   id: string;
@@ -129,7 +148,7 @@ async function writeArchive(
 /**
  * Builds echo-export.zip (entries.json, entries.md, audio/) and opens the share sheet. The archive is
  * plaintext by nature, because the user is taking their words out. It is the one deliberate exception
- * to encryption at rest: it lives in the cache, for as short a time as sharing allows.
+ * to encryption at rest: it lives in the cache, for as short a time as sharing and the platform allow.
  */
 export async function exportJournal(
   share: ShareTarget = nativeShare,
@@ -151,7 +170,7 @@ export async function exportJournal(
     const uri = childUri(directory, 'echo-export.zip');
     const counts = await writeArchive(rt, sqlJournalFor(rt), uri, new Date(rt.now()));
     await share.share(uri);
-    if (releaseDelayMs > 0) setTimeout(release, releaseDelayMs);
+    if (releaseDelayMs > 0) releaseAfter(releaseDelayMs, release);
     else release();
     return { ok: true, ...counts };
   } catch {

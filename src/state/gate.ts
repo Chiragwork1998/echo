@@ -95,6 +95,14 @@ async function resolve(runtime: Runtime): Promise<void> {
     // Night is an acceptable theme. A missing preference is no reason to keep someone out.
   }
 
+  try {
+    // Ahead of the key, because a decrypted export needs none to remove, and the states below can
+    // stop this launch before the sweep runs.
+    runtime.files.removeDirectory(runtime.paths.tempDir);
+  } catch {
+    // The sweep tries again, and the next launch after that.
+  }
+
   const vault = await runtime.vault.prepare();
   if (vault.state === 'key_missing' || vault.state === 'key_mismatch') {
     const reason = vault.state === 'key_missing' ? 'missing' : 'mismatch';

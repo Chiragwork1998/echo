@@ -2,6 +2,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { crc32 as nodeCrc32 } from 'node:zlib';
 
+import { AppState } from 'react-native';
+
 import { emptyContent } from '@/features/journal/content';
 import { sqlJournalFor } from '@/features/journal/runtime';
 import { installRuntime } from '@/storage/runtime';
@@ -155,6 +157,79 @@ describe('exportJournal', () => {
     jest.advanceTimersByTime(60_000);
     expect(existsSync(path)).toBe(false);
     jest.useRealTimers();
+  });
+
+  describe('on Android, where timers stop while the app is in the background', () => {
+    const WINDOW_MS = 60_000;
+    let handlers: ((state: string) => void)[];
+    let unsubscribed: number;
+    let path: string;
+
+    const send = (state: string) => handlers.forEach((handler) => handler(state));
+
+    beforeEach(async () => {
+      jest.useFakeTimers();
+      handlers = [];
+      unsubscribed = 0;
+      jest.spyOn(AppState, 'addEventListener').mockImplementation((_type, handler) => {
+        handlers.push(handler as (state: string) => void);
+        return { remove: () => (unsubscribed += 1) } as unknown as ReturnType<
+          typeof AppState.addEventListener
+        >;
+      });
+      await sqlJournalFor(rt).commitEntry('a', emptyContent({ body: 'x' }));
+      await exportJournal({ ...share, share: async (uri) => void (path = uri) }, WINDOW_MS);
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+      jest.restoreAllMocks();
+    });
+
+    /** Time passes on the clock, and the timer does not run: what a paused app sees. */
+    const awayFor = (ms: number) => jest.setSystemTime(Date.now() + ms);
+
+    it('removes it on return once the window has passed, with the timer never having run', () => {
+      send('background');
+      awayFor(WINDOW_MS * 10);
+      expect(existsSync(path)).toBe(true);
+      send('active');
+      expect(existsSync(path)).toBe(false);
+    });
+
+    it('leaves it for the receiving app on a return inside the window', () => {
+      send('background');
+      awayFor(WINDOW_MS / 6);
+      send('active');
+      expect(existsSync(path)).toBe(true);
+      jest.advanceTimersByTime(WINDOW_MS);
+      expect(existsSync(path)).toBe(false);
+    });
+
+    it('does nothing on the way out', () => {
+      awayFor(WINDOW_MS);
+      send('inactive');
+      send('background');
+      expect(existsSync(path)).toBe(true);
+    });
+
+    it('stops listening once it is done, however it got there', () => {
+      jest.advanceTimersByTime(WINDOW_MS);
+      expect(unsubscribed).toBe(1);
+      expect(jest.getTimerCount()).toBe(0);
+    });
+
+    it('cancels the timer when the return does the removing', () => {
+      awayFor(WINDOW_MS);
+      send('active');
+      expect(unsubscribed).toBe(1);
+      expect(jest.getTimerCount()).toBe(0);
+    });
+
+    it('is removed by the next launch if the process dies first', async () => {
+      await sqlJournalFor(rt).recoverLeftovers();
+      expect(existsSync(path)).toBe(false);
+    });
   });
 
   it('removes the archive if sharing fails', async () => {

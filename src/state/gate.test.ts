@@ -192,6 +192,19 @@ describe('when the key is lost', () => {
     expect(status()).toEqual({ kind: 'storage_error', reason: 'database' });
   });
 
+  it('removes a left-behind export or playback copy even without a key', async () => {
+    mkdirSync(rt.paths.tempDir, { recursive: true });
+    const uri = join(rt.paths.tempDir, 'echo-export.zip');
+    writeFileSync(uri, 'every word they ever wrote');
+    await sqlJournalFor(rt).commitEntry('a', emptyContent({ body: 'kept' }));
+    rt.secrets.items.clear();
+
+    await bootApp();
+
+    expect(status().kind).toBe('key_lost');
+    expect(existsSync(uri)).toBe(false);
+  });
+
   it('runs no sweep without a key, so plaintext is left to be rescued later', async () => {
     const directory = rt.paths.recordingDirs[0] ?? '';
     mkdirSync(directory, { recursive: true });

@@ -216,7 +216,13 @@ Sealed with AES-256-GCM, each object bound to its kind and id: entry title, body
 
 Readable without the key: ids, timestamps, status, the local day of each entry, and the theme. These say when someone wrote, never what.
 
-**Plaintext does touch disk in three places, briefly.** Recording, until `stop()` finishes. Playback, until `release()`. Export, until the share completes. All three are in the OS cache, outside device backups, and the launch sweep clears anything a crash leaves behind.
+**Plaintext does touch disk in three places.** All three are in the OS cache, outside device backups.
+
+- Recording: until `stop()` finishes. If that fails, until the next launch encrypts it, or the draft is discarded.
+- Playback: until `release()`, or the next launch.
+- Export: on iOS, until the share completes. On Android, for at least a minute after the share sheet closes, because the receiving app may still be reading. Android pauses timers in the background and nothing runs while the app is away, so if ECHO leaves the foreground inside that minute, the zip stays until the app next returns to the foreground or launches. That can be days. This is a limit of the platform, and the app cannot shorten it.
+
+Every launch removes leftover export and playback files, whatever else happens. Leftover recordings wait for the key, so they can be rescued.
 
 ## Device checks
 
@@ -253,6 +259,6 @@ Native behaviour cannot be proved in Jest. Each of these needs a real device.
 
 16. Schedule a reminder two minutes ahead with the app killed. The body is exactly the fixed line.
 17. Change timezone with the reminder set. It stays at the local time.
-18. Export to Files and to an email app. The zip opens with `entries.json`, `entries.md`, and `audio/`, and Android's cache is empty a minute later.
+18. Export to Files and to an email app. The zip opens with `entries.json`, `entries.md`, and `audio/`. On Android, check `cache/echo-temp` three ways. Stay in the app: empty a minute later. Background the app inside that minute and return after it: empty on return, and not before. Background it, then force stop: empty after the next launch.
 19. Delete all. The app returns to Landing, and `files/echo` is gone.
 20. Change the timezone, and confirm past days in the week strip do not move.
