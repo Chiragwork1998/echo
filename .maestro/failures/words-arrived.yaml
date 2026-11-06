@@ -1,0 +1,16 @@
+appId: host.exp.exponent
+name: The words are on the page after a recovery
+# e2e: reduce-motion
+# env: SHOT (screenshot name)
+---
+- tapOn: 'Show words'
+- runFlow:
+    when:
+      visible: 'Show your words as you speak\?'
+    commands:
+      - tapOn: 'Keep words hidden'
+      - tapOn: 'Write'
+- extendedWaitUntil:
+    visible: '.*Um, today I sat by the window.*'
+    timeout: 30000
+- takeScreenshot: ${SHOT || 'words'}

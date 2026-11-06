@@ -1,0 +1,8 @@
+appId: host.exp.exponent
+# Answers "Turn your voice into words?" with Allow, if it is asked.
+---
+- runFlow:
+    when:
+      visible: 'Turn your voice into words\?'
+    commands:
+      - tapOn: 'Allow'

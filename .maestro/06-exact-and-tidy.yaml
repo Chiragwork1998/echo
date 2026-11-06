@@ -1,0 +1,34 @@
+appId: host.exp.exponent
+name: Exact words by default, and Tidy my words removes fillers
+# e2e: reduce-motion
+# Start: ECHO on Home, voice allowed. Takes the synthetic English speech: "Um, ... you know".
+---
+# Tidy on, in You.
+- tapOn: 'You'
+- extendedWaitUntil:
+    visible: 'Tidy my words'
+    timeout: 60000
+- tapOn: 'Tidy my words'
+- runFlow:
+    when:
+      visible: 'Tidy my words?'
+    commands:
+      - tapOn: 'Allow'
+- assertVisible:
+    text: 'Tidy my words'
+    checked: true
+- tapOn: 'Today'
+- runFlow: subflows/begin-daily.yaml
+- runFlow: subflows/speak-take.yaml
+- runFlow: subflows/allow-voice.yaml
+- runFlow:
+    file: subflows/pause.yaml
+    env:
+      SECONDS: 40
+- tapOn: 'Write'
+- extendedWaitUntil:
+    visible: '.*sat by the window.*'
+    timeout: 60000
+- takeScreenshot: 06-tidy-on
+- assertNotVisible: '.*Um,.*'
+- assertNotVisible: '.*you know.*'

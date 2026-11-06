@@ -1,0 +1,14 @@
+appId: host.exp.exponent
+name: Leave the session and throw the draft away, so the next test starts clean
+# e2e: reduce-motion
+---
+- runFlow:
+    when:
+      notVisible: 'Back'
+    commands:
+      - tapOn: 'What is asking for your attention\?'
+- tapOn: 'Back'
+- tapOn: 'Discard'
+- extendedWaitUntil:
+    visible: 'Where are you, really\?'
+    timeout: 120000

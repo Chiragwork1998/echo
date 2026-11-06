@@ -1,0 +1,41 @@
+appId: host.exp.exponent
+# Landing to First Echo's shelf, with fixed choices. Synthetic answers only.
+---
+- extendedWaitUntil:
+    visible: 'Meet the hidden parts of you.'
+    timeout: 120000
+- tapOn: 'BEGIN'
+- extendedWaitUntil:
+    visible: 'What brought you here?'
+    timeout: 30000
+- tapOn: 'Quiet the noise'
+- tapOn: 'Begin with this'
+- extendedWaitUntil:
+    visible: 'Which horizon needs your attention?'
+    timeout: 30000
+- tapOn: 'Where I am'
+- tapOn: 'Start here'
+- extendedWaitUntil:
+    visible: 'How should ECHO meet you?'
+    timeout: 30000
+- tapOn: 'Let me speak'
+- tapOn: 'Walk this way'
+- extendedWaitUntil:
+    visible: 'When can we meet you?'
+    timeout: 30000
+- tapOn: 'Set my rhythm'
+# Android 13 and later may ask about notifications once.
+- runFlow:
+    when:
+      visible: 'Don’t allow'
+    commands:
+      - tapOn: 'Don’t allow'
+- extendedWaitUntil:
+    visible: 'Leave no trace.'
+    timeout: 30000
+- tapOn: 'Protect my journal'
+- extendedWaitUntil:
+    visible: 'Arrive as you are.'
+    timeout: 30000
+- tapOn: 'Steady'
+- tapOn: 'That’s close'

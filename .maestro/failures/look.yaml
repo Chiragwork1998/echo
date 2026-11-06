@@ -1,0 +1,10 @@
+appId: host.exp.exponent
+name: Wait and take a screenshot
+# e2e: reduce-motion
+# env: SECONDS (default 5), SHOT (screenshot name)
+---
+- runFlow:
+    file: ../subflows/pause.yaml
+    env:
+      SECONDS: ${SECONDS || 5}
+- takeScreenshot: ${SHOT || 'look'}

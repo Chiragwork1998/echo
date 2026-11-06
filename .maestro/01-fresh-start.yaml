@@ -1,0 +1,48 @@
+appId: host.exp.exponent
+name: Fresh start, onboarding to First Echo, to Home
+# e2e: reduce-motion
+# Start: E2E_LAUNCH=fresh .maestro/run.sh 01-fresh-start.yaml (clears Expo Go, then starts ECHO).
+# Maestro must not start a cold Expo Go: it is killed for "start timeout" while the screen is polled.
+---
+# After a clear, Expo Go shows its developer-menu tip over Landing. Launch.sh dismisses it when it can.
+- runFlow:
+    when:
+      visible: 'Continue'
+    commands:
+      - tapOn: 'Continue'
+      - tapOn:
+          text: 'Close'
+          optional: true
+- extendedWaitUntil:
+    visible: 'Meet the hidden parts of you.'
+    timeout: 60000
+- takeScreenshot: 01-landing
+- runFlow: subflows/onboard-to-first-echo.yaml
+# First Echo: the shelf of volumes, then the cover opens on the page.
+- takeScreenshot: 01-first-echo-shelf
+- tapOn:
+    point: 50%,53%
+- extendedWaitUntil:
+    visible: 'A PRIVATE JOURNAL'
+    timeout: 60000
+- takeScreenshot: 01-first-echo-book
+- extendedWaitUntil:
+    visible: 'Write'
+    timeout: 60000
+- tapOn: 'Write'
+- inputText: 'Today I sat by the window.'
+- extendedWaitUntil:
+    visible: 'Reflect'
+    timeout: 60000
+- tapOn: 'Reflect'
+- extendedWaitUntil:
+    visible: 'You made space for yourself.'
+    timeout: 120000
+- takeScreenshot: 01-completion
+- tapOn: 'Enter your space'
+- extendedWaitUntil:
+    visible: 'Where are you, really\?'
+    timeout: 120000
+- assertVisible: 'Begin. Your seven minutes'
+- assertVisible: 'Write instead'
+- takeScreenshot: 01-home

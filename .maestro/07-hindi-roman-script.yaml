@@ -1,0 +1,48 @@
+appId: host.exp.exponent
+name: Hindi, hidden and live, ends in Roman script
+# e2e: reduce-motion
+# Start: ECHO on Home, Speak the last mode, voice allowed, live words already agreed (flow 04), Show
+# words off. Metro must run with the Hindi speech:
+#   ECHO_E2E=1 EXPO_PUBLIC_E2E_SPEECH=hi npx expo start --clear --port 8081
+# Costs a transcription and a Roman-script pass for each of the two takes.
+---
+# Hidden: the words come after Stop, and are Roman.
+- runFlow: subflows/begin-daily.yaml
+- runFlow: subflows/speak-take.yaml
+- runFlow: subflows/allow-voice.yaml
+- runFlow:
+    file: subflows/pause.yaml
+    env:
+      SECONDS: 40
+- tapOn: 'Show words'
+- extendedWaitUntil:
+    visible: '.*[A-Za-z]{3,}.*'
+    timeout: 60000
+- assertNotVisible: '.*[ऀ-ॿ].*'
+- takeScreenshot: 07-hidden-roman
+- tapOn: 'Back'
+- tapOn: 'Discard'
+# Live: Roman while it streams, and Roman at Stop.
+- runFlow: subflows/begin-daily.yaml
+- extendedWaitUntil:
+    visible: 'Hide words'
+    timeout: 60000
+- tapOn: 'Start recording'
+- extendedWaitUntil:
+    visible: 'Stop recording'
+    timeout: 60000
+- extendedWaitUntil:
+    visible: '.*[A-Za-z]{3,}.*'
+    timeout: 120000
+- assertNotVisible: '.*[ऀ-ॿ].*'
+- takeScreenshot: 07-live-roman
+- tapOn: 'Stop recording'
+- runFlow:
+    file: subflows/pause.yaml
+    env:
+      SECONDS: 40
+- assertNotVisible: '.*[ऀ-ॿ].*'
+- takeScreenshot: 07-live-after-stop
+- tapOn: 'Hide words'
+- tapOn: 'Back'
+- tapOn: 'Discard'

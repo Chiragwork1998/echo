@@ -1,0 +1,18 @@
+appId: host.exp.exponent
+name: Written text is still there after the app was killed
+# e2e: reduce-motion
+# Start: all.sh ran 08, then `adb shell am force-stop host.exp.exponent`, then launched ECHO again.
+---
+- extendedWaitUntil:
+    visible: 'Where are you, really\?'
+    timeout: 120000
+- assertVisible: 'Continue an echo'
+- takeScreenshot: 08b-continue-card
+- tapOn: 'Begin. Your seven minutes'
+- extendedWaitUntil:
+    visible: 'A PRIVATE JOURNAL'
+    timeout: 120000
+- extendedWaitUntil:
+    visible: 'A quiet line written by hand.*'
+    timeout: 60000
+- takeScreenshot: 08b-draft-back

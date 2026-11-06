@@ -1,0 +1,31 @@
+appId: host.exp.exponent
+name: Write path, keyboard lifts the book and it settles back, page turns, draft kept
+# e2e: reduce-motion
+# Start: ECHO on Home with no draft. Ends in the session with the keyboard down. Flow 08b checks that
+# the text survives a kill (all.sh force-stops the app between the two).
+---
+- extendedWaitUntil:
+    visible: 'Where are you, really\?'
+    timeout: 120000
+- tapOn: 'Write instead'
+- extendedWaitUntil:
+    visible: 'A PRIVATE JOURNAL'
+    timeout: 120000
+- takeScreenshot: 08-book-at-rest
+- tapOn: 'What is asking for your attention\?'
+- inputText: 'A quiet line written by hand. It has no voice in it.'
+- extendedWaitUntil:
+    visible: 'A quiet line written by hand.*'
+    timeout: 30000
+- takeScreenshot: 08-keyboard-up
+- hideKeyboard
+- takeScreenshot: 08-keyboard-down
+# Enough words to fill the page and turn it.
+- tapOn: 'A quiet line written by hand.*'
+- inputText: ' The window was open and the street below went on with its small noises. A bicycle bell, a door, someone calling a name that was not mine. I thought about the week and how much of it I had spent waiting for a moment that would announce itself. It did not come. What came instead was this ordinary evening, and the plain fact that I was in it. I made tea and let it go cold. I watched the light move across the wall until it was gone.'
+- extendedWaitUntil:
+    visible: '.*light move across the wall.*'
+    timeout: 60000
+- takeScreenshot: 08-long-text
+- hideKeyboard
+- takeScreenshot: 08-after-long-text

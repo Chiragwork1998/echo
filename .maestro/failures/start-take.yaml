@@ -1,0 +1,10 @@
+appId: host.exp.exponent
+name: Start a spoken take and leave it running
+# e2e: reduce-motion
+# For the failure scripts, which do something to the phone and then carry on with the take.
+---
+- runFlow: ../subflows/begin-daily.yaml
+- runFlow:
+    file: ../subflows/speak-take.yaml
+    env:
+      STOP: 'no'

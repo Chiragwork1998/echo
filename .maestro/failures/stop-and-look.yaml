@@ -1,0 +1,12 @@
+appId: host.exp.exponent
+name: Stop the take, answer the voice question if asked, then wait and look
+# e2e: reduce-motion
+# env: SECONDS (how long to wait, default 20), SHOT (screenshot name)
+---
+- tapOn: 'Stop recording'
+- runFlow: ../subflows/allow-voice.yaml
+- runFlow:
+    file: ../subflows/pause.yaml
+    env:
+      SECONDS: ${SECONDS || 20}
+- takeScreenshot: ${SHOT || 'stopped'}

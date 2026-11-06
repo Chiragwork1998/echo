@@ -1,0 +1,65 @@
+appId: host.exp.exponent
+name: Keep my voice only never sends, keeps the recording, and can be changed in You
+# e2e: reduce-motion
+# Start: a fresh install past onboarding (flow 01), voice never asked about. The server log must show
+# no /api/transcribe for the first half: check it with the vercel logs command in all.sh.
+---
+- runFlow: subflows/begin-daily.yaml
+- runFlow: subflows/speak-take.yaml
+- extendedWaitUntil:
+    visible: 'Turn your voice into words\?'
+    timeout: 60000
+- takeScreenshot: 05-consent
+- tapOn: 'Keep my voice only'
+- runFlow:
+    file: subflows/pause.yaml
+    env:
+      SECONDS: 15
+# The take is kept, nothing was sent, and nothing pesters the person about words.
+- assertNotVisible: 'Turn your voice into words\?'
+- assertNotVisible: '.*sat by the window.*'
+- takeScreenshot: 05-kept
+# Back, keeping the draft and its recording.
+- tapOn: 'Back'
+- tapOn: 'Keep draft'
+- extendedWaitUntil:
+    visible: 'Where are you, really\?'
+    timeout: 120000
+- tapOn: 'You'
+- extendedWaitUntil:
+    visible: 'Turn my voice into words'
+    timeout: 60000
+- assertVisible:
+    text: 'Turn my voice into words'
+    checked: false
+# Changing it in You asks the question again. Allow turns it on.
+- tapOn: 'Turn my voice into words'
+- extendedWaitUntil:
+    visible: 'Turn your voice into words\?'
+    timeout: 30000
+- tapOn: 'Allow'
+- assertVisible:
+    text: 'Turn my voice into words'
+    checked: true
+- takeScreenshot: 05-you-on
+# The kept recording is still there, and now it can become words.
+- tapOn: 'Today'
+- runFlow: subflows/begin-daily.yaml
+- extendedWaitUntil:
+    visible: 'Turn my voice into words'
+    timeout: 60000
+- tapOn: 'Turn my voice into words'
+- runFlow:
+    file: subflows/pause.yaml
+    env:
+      SECONDS: 30
+- tapOn: 'Reflect'
+- extendedWaitUntil:
+    visible: 'You made space for yourself.'
+    timeout: 120000
+- tapOn: 'Enter your space'
+- tapOn: 'Echoes'
+- extendedWaitUntil:
+    visible: 'Um, today I sat by the window.*'
+    timeout: 60000
+- takeScreenshot: 05-echoes
