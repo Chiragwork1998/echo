@@ -50,5 +50,3 @@ describe('preferences', () => {
     usePreferences.getState().setPatternsConsent('patterns-1');
     resetPreferences();
     expect(usePreferences.getState().patternsConsent).toBeNull();
-  });
-});

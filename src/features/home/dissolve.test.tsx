@@ -13,12 +13,12 @@ jest.mock('expo-router', () => ({
 
 function Probe() {
   const control = useHomeDissolve();
-  const { begin, speakInstead, continueDraft } = useSessionEntry();
+  const { begin, writeInstead, continueDraft } = useSessionEntry();
   return (
     <>
       <Text testID="phase">{control.phase}</Text>
       <Pressable testID="begin" onPress={begin} />
-      <Pressable testID="speak" onPress={speakInstead} />
+      <Pressable testID="write" onPress={writeInstead} />
       <Pressable testID="continue" onPress={() => continueDraft('d1')} />
       <Pressable testID="opened" onPress={control.sessionOpened} />
       <Pressable testID="closed" onPress={control.sessionClosed} />
@@ -59,13 +59,13 @@ describe('the dissolve into the daily session', () => {
     expect(phase()).toBe('gone');
   });
 
-  it('carries Speak and Continue into the session the same way', async () => {
+  it('carries Write instead and Continue into the session the same way', async () => {
     await open();
-    await fireEvent.press(screen.getByTestId('speak'));
+    await fireEvent.press(screen.getByTestId('write'));
     await tick(DISSOLVE_MS);
     expect(router.push).toHaveBeenCalledWith({
       pathname: '/home/session',
-      params: { mode: 'voice' },
+      params: { mode: 'write' },
     });
     // The session closes, Home returns, and Continue is open to use again.
     await fireEvent.press(screen.getByTestId('opened'));

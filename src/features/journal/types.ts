@@ -14,6 +14,11 @@ export type EntryContent = {
   promptId?: string;
   promptText?: string;
   durationSeconds: number;
+  /**
+   * The recording whose words are already in `body`. A recording that is not this one has not been
+   * turned into words yet, so a reopened draft can offer to do it. Set together with the text.
+   */
+  transcribedAudioId?: string;
 };
 
 export type EntryPatch = Partial<EntryContent>;

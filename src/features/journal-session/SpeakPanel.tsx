@@ -31,7 +31,13 @@ export type SpeakView =
   | 'denied'
   | 'unavailable'
   | 'failed'
-  | 'kept';
+  | 'kept'
+  /** Spoken words are on their way. The next take can already begin. */
+  | 'listening'
+  /** A recording is safe but has no words yet. */
+  | 'untranscribed'
+  | 'transcribe_failed'
+  | 'transcribe_unavailable';
 
 const STATUS: Record<SpeakView, string> = {
   ready: sessionCopy.speak.ready,
@@ -44,6 +50,11 @@ const STATUS: Record<SpeakView, string> = {
   unavailable: sessionCopy.speak.unavailable,
   failed: sessionCopy.speak.failed,
   kept: sessionCopy.speak.kept,
+  listening: sessionCopy.transcribe.listening,
+  untranscribed: sessionCopy.transcribe.untranscribed,
+  // The session says why, from the failure's code. These are the fallbacks.
+  transcribe_failed: sessionCopy.transcribe.failed.server,
+  transcribe_unavailable: sessionCopy.transcribe.unavailable,
 };
 const CLOCK_VIEWS: SpeakView[] = ['recording', 'saving', 'recorded'];
 const NO_BUTTON_VIEWS: SpeakView[] = ['explain', 'unavailable', 'failed', 'kept'];
@@ -138,6 +149,10 @@ type Props = {
   onAllow: () => void;
   onSettings: () => void;
   onWrite: () => void;
+  /** Try again, or turn a recording with no words yet into words. */
+  onRetry: () => void;
+  /** The sentence for the transcription states. */
+  line: string | null;
 };
 
 /** One record-and-stop control, the time, and a calm line of status. Nothing else. */
@@ -150,6 +165,8 @@ export function SpeakPanel({
   onAllow,
   onSettings,
   onWrite,
+  onRetry,
+  line,
 }: Props) {
   const { text, shadow } = useSurfaceInk();
   const recording = view === 'recording';
@@ -168,7 +185,7 @@ export function SpeakPanel({
         </EchoText>
       )}
       <EchoText variant="bodyM" align="center" style={[{ color: text, opacity: 0.9 }, shadow]}>
-        {STATUS[view]}
+        {line ?? STATUS[view]}
       </EchoText>
       {view === 'recorded' && recovered && (
         <EchoText variant="caption" align="center" style={[{ color: text, opacity: 0.8 }, shadow]}>
@@ -176,11 +193,18 @@ export function SpeakPanel({
         </EchoText>
       )}
       {view === 'explain' && <TextAction label={sessionCopy.speak.allow} onPress={onAllow} />}
+      {view === 'untranscribed' && (
+        <TextAction label={sessionCopy.transcribe.action} onPress={onRetry} />
+      )}
+      {view === 'transcribe_failed' && (
+        <TextAction label={sessionCopy.errors.retry} onPress={onRetry} />
+      )}
       {view === 'denied' && <TextAction label={sessionCopy.speak.settings} onPress={onSettings} />}
       {(view === 'explain' ||
         view === 'denied' ||
         view === 'unavailable' ||
         view === 'failed' ||
+        view === 'transcribe_unavailable' ||
         view === 'kept') && <TextAction label={sessionCopy.speak.writeInstead} onPress={onWrite} />}
     </View>
   );

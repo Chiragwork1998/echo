@@ -121,6 +121,36 @@ Saving happens by itself: every 600 ms while typing, on leaving the screen, and 
 - Recording again replaces the previous recording. Warn first if `draft.audio` is set.
 - Backgrounding stops and encrypts on its own. Leaving the screen rescues the recording.
 
+## Voice to words
+
+D-005 and D-006: ECHO is voice first, and a spoken take becomes text. `src/services/transcription.ts` uploads a sealed recording to the voice server, and never throws.
+
+```ts
+const result = await transcribeEntryAudio(draftId, { signal });
+// { ok: true, value: { text, polished, languages, seconds } }
+// { ok: false, error: { code, retryable } }
+```
+
+| `error.code`        | Meaning                                                      | What the person sees                         |
+| ------------------- | ------------------------------------------------------------ | -------------------------------------------- |
+| `consent_required`  | Not asked yet, or Keep my voice only. **Nothing was sent**   | The consent sheet, or nothing                |
+| `not_configured`    | No address or token, a non-HTTPS remote address, or 503      | Unavailable, recording is safe, Write instead |
+| `unauthorized`      | 401: the token was not accepted                              | Unavailable, recording is safe, Write instead |
+| `offline`, `timeout`| No reply, or none within 100 s                               | Recording is safe, Try again                 |
+| `too_long`          | 413: the server takes about 14 minutes at 40 kbps            | Recording is safe, Try again                 |
+| `no_speech`         | 422: nothing was heard                                       | Recording is safe, Try again                 |
+| `unsupported`       | 415, or 422 `unsupported_audio`                              | Recording is safe, Try again                 |
+| `rate_limited`, `server`, `invalid_response` | 429, 5xx, or a reply that is not the contract | Recording is safe, Try again       |
+| `audio_unavailable` | The sealed recording would not open                          | Recording is safe, Try again                 |
+
+- The service reads the person's choice itself (`voiceStatus` in `@/state/preferences`), so no caller can upload without consent. A choice made under an older `VOICE_POLICY_VERSION` counts as unset.
+- It opens the recording with `openEntryAudio` and calls `release()` on every path.
+- Only `127.0.0.1` and `localhost` may use plain http. Any other address must be https.
+- Nothing is logged: not the audio, not the words, not the address.
+- `content.transcribedAudioId` names the recording whose words are already in `body`. A draft whose `audio.id` is something else has a recording with no words yet, and a reopened session offers to turn it into words.
+- The words join `body` after a paragraph break and are saved at once. A session that closes mid-request still delivers them into the stored draft.
+- The draft keeps one recording. A new recording replaces the sealed one, so a take that is still waiting for its words keeps a decrypted copy until it is done. If that copy could not be made, the take cannot be retried, and the session says so.
+
 ## Completion
 
 ```ts

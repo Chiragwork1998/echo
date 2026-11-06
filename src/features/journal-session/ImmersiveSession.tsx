@@ -49,7 +49,9 @@ export function ImmersiveSession({ session }: { session: SessionController }) {
   const inputRef = useRef<ComponentRef<typeof TextInput>>(null);
   const [focused, setFocused] = useState(false);
 
-  const { draft, mode, speakView, ready, canReflect, failure, notice, retryable } = session;
+  const { draft, mode, speakView, ready, canReflect, failure, retryable } = session;
+  // Spoken words on their way are a quiet line above the controls, not a card over the sky.
+  const notice = session.notice ?? session.quietLine;
   const writing = mode === 'write';
   const recording = speakView === 'recording';
   const busy = speakView === 'starting' || speakView === 'saving';
@@ -78,12 +80,16 @@ export function ImmersiveSession({ session }: { session: SessionController }) {
     return { height: (height > 0 ? height + CONTROLS.aboveKeyboard : resting) + GROUND_FADE };
   });
 
-  // Recording is only a point of light. A pause, with a take to show for it, brings the controls.
-  const { hide, show } = quiet;
+  // Recording is a point of light, and Stop is always one glance away in the quiet row. A pause,
+  // with a take to show for it, brings the controls too.
+  const { hide, show, arm } = quiet;
   useEffect(() => {
-    if (speakView === 'recording' || speakView === 'starting') hide();
+    if (speakView === 'starting') hide();
+    else if (speakView === 'recording') show();
     else if (speakView === 'recorded' && !writing) show();
-  }, [speakView, writing, hide, show]);
+    // Waiting on the light: after the same few quiet seconds as writing, Back and Write come.
+    else if (speakView === 'ready' && !writing) arm();
+  }, [speakView, writing, hide, show, arm]);
 
   // Choosing Write from the controls puts the caret straight back on the sky.
   const refocus = useRef(false);
@@ -110,8 +116,10 @@ export function ImmersiveSession({ session }: { session: SessionController }) {
       return;
     }
     if (recording) void session.stop();
-    else if (speakView === 'ready') session.record();
-    else quiet.show();
+    // A further take can begin while the last is still becoming words.
+    else if (speakView === 'ready' || speakView === 'recorded' || speakView === 'listening') {
+      session.record();
+    } else quiet.show();
   };
 
   const onMiddle = () => {
@@ -181,6 +189,7 @@ export function ImmersiveSession({ session }: { session: SessionController }) {
           quiet.show();
         }}
         frame={frame}
+        arrival={session.arrival}
         caret={settled && writing && ready && failure === null}
         focused={focused}
         interactive={writing}
@@ -190,7 +199,7 @@ export function ImmersiveSession({ session }: { session: SessionController }) {
         <Beacon
           kind="light"
           visible={settled && ready && !voiceNote && failure === null}
-          live={recording || busy}
+          live={recording || busy || session.listening}
           x={width / 2}
           y={frame.top + frame.height / 2}
         />
@@ -216,6 +225,8 @@ export function ImmersiveSession({ session }: { session: SessionController }) {
                 refocus.current = true;
                 session.writeInstead();
               }}
+              onRetry={session.retryTranscription}
+              line={session.speakLine}
             />
           )}
         </View>

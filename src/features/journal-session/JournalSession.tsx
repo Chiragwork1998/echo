@@ -33,6 +33,7 @@ import {
   type SessionOptions,
   type SessionVariant,
 } from './useSessionController';
+import { VoiceConsentSheet } from './VoiceConsentSheet';
 import { WritingSurface } from './WritingSurface';
 
 export type { SessionVariant } from './useSessionController';
@@ -77,10 +78,21 @@ type Props = SessionOptions;
  */
 export function JournalSession(props: Props) {
   const session = useSessionController(props);
-  return IMMERSIVE[props.variant] ? (
-    <ImmersiveSession session={session} />
-  ) : (
-    <WrittenSession session={session} />
+  return (
+    <>
+      {IMMERSIVE[props.variant] ? (
+        <ImmersiveSession session={session} />
+      ) : (
+        <WrittenSession session={session} />
+      )}
+      {/* Before a voice first leaves the phone, over whichever page this is. */}
+      <VoiceConsentSheet
+        visible={session.consentOpen}
+        onAllow={() => session.chooseConsent('allowed')}
+        onKeep={() => session.chooseConsent('voice_only')}
+        onClose={() => session.chooseConsent('later')}
+      />
+    </>
   );
 }
 
@@ -146,6 +158,7 @@ function WrittenSession({ session }: { session: SessionController }) {
     onChangeText: change,
     saveState: draft.saveState,
     squeezed: keyboardOpen,
+    arrival: session.arrival,
   };
 
   return (
@@ -197,6 +210,8 @@ function WrittenSession({ session }: { session: SessionController }) {
               onAllow={() => void allowMicrophone()}
               onSettings={openSettings}
               onWrite={writeInstead}
+              onRetry={session.retryTranscription}
+              line={session.speakLine}
             />
           </WritingSurface>
         )}

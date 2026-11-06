@@ -27,6 +27,12 @@ export const youCopy = {
   lockFailed: 'The lock couldn’t be confirmed, so it stays off.',
   lockChecking: 'Checking the lock',
 
+  // Needs the owner's approval. The facts themselves are said in the question that turning it on shows.
+  voiceWords: 'Turn my voice into words',
+  voiceWordsRow: 'Your voice',
+  voiceWordsDetail:
+    'Off: recordings stay on this phone and are never sent. On: they go to OpenAI to become text. Turning it on shows exactly what happens first.',
+
   notAvailable: 'Not available yet',
   backup: 'Private backup',
   backupDetail: 'Not available yet. Your journal is kept only on this phone.',

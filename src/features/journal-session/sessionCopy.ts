@@ -26,6 +26,63 @@ export const sessionCopy = {
     unreadable: 'This draft can’t be opened.',
     retry: 'Try again',
   },
+  /**
+   * Turning a recording into words (D-005). Every line that follows a failure says the recording is
+   * safe, because it is: it was sealed on this phone before anything was sent.
+   */
+  transcribe: {
+    listening: '…listening',
+    /** A recording that has not become words yet, on a draft that was reopened. */
+    untranscribed: 'Your recording is safe. It hasn’t become words yet.',
+    action: 'Turn my voice into words',
+    failed: {
+      offline: 'There’s no connection just now. Your recording is safe on this phone.',
+      timeout: 'That took too long. Your recording is safe on this phone.',
+      server: 'ECHO couldn’t turn this into words just now. Your recording is safe.',
+      tooLong:
+        'This recording is too long to turn into words in one go. It’s safe on this phone, and you can write instead.',
+      noSpeech: 'ECHO didn’t hear any words. Your recording is safe.',
+      unsupported: 'ECHO couldn’t read this recording. It’s safe on this phone.',
+      audio: 'ECHO couldn’t open this recording just now. It’s safe on this phone.',
+      lost: 'One part of what you said couldn’t be turned into words. The rest is here.',
+    },
+    unavailable:
+      'Turning your voice into words isn’t available right now. Your recording is safe, and you can write instead.',
+    /** Reflect pressed while words are still on their way. */
+    waiting: {
+      title: 'Still turning your voice into words',
+      message: 'You can wait, or go on now. Your recording stays with this echo either way.',
+      wait: 'Wait',
+      goOn: 'Go on',
+    },
+    /** Reflect pressed when a recording has no words yet. */
+    missing: {
+      title: 'Your recording has no words yet',
+      message: 'You can try again, or go on. Your recording stays with this echo either way.',
+      retry: 'Try again',
+      goOn: 'Go on',
+    },
+    replaceMessage: 'This recording hasn’t become words yet, and a new one replaces it.',
+  },
+  /**
+   * Said before a voice first leaves the phone, and again from You. Needs the owner's approval, and
+   * the facts need checking against OpenAI's current terms before release. Raise
+   * VOICE_POLICY_VERSION in state/preferences.ts whenever any of it changes.
+   */
+  consent: {
+    title: 'Turn your voice into words?',
+    intro: 'ECHO can write down what you say. This is what happens to it.',
+    facts: [
+      'Your voice goes to OpenAI to become text, and is sent securely.',
+      'OpenAI’s transcription service does not store it, and does not train on it.',
+      'The text then goes to OpenAI once more to be cleaned up. OpenAI may keep that text for up to 30 days to check for abuse, then deletes it. It is not used for training.',
+      'ECHO’s own server keeps nothing.',
+      'Your recording and the words stay encrypted on this phone.',
+    ],
+    allow: 'Allow',
+    keep: 'Keep my voice only',
+    note: 'Keep my voice only saves your recording on this phone and never sends it. You can change this any time in You.',
+  },
   speak: {
     ready: 'Tap when you’re ready.',
     starting: 'Getting ready…',

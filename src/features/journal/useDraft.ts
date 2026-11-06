@@ -312,5 +312,15 @@ const findDraft = (id?: string) => (id ? getEntry(id) : latestDraft());
 
 function pickContent(entry: Entry): EntryContent {
   const { title, body, mode, moodBefore, promptId, promptText, durationSeconds } = entry;
-  return { title, body, mode, moodBefore, promptId, promptText, durationSeconds };
+  const { transcribedAudioId } = entry;
+  return {
+    title,
+    body,
+    mode,
+    moodBefore,
+    promptId,
+    promptText,
+    durationSeconds,
+    ...(transcribedAudioId ? { transcribedAudioId } : null),
+  };
 }

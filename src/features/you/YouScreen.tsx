@@ -15,6 +15,7 @@ import { APP_VERSION, openSupport, SUPPORT_EMAIL } from './support';
 import { useDeleteAll, useExport, type ExportState } from './useDataActions';
 import { useLockSetting, type LockNote } from './useLockSetting';
 import { useReminderSetting } from './useReminderSetting';
+import { useVoiceSetting } from './useVoiceSetting';
 import { youCopy } from './youCopy';
 
 const THEMES: readonly { value: ThemePreference; label: string; detail?: string }[] = [
@@ -83,6 +84,7 @@ const lockMessage: Record<Exclude<LockNote, 'none' | 'checking'>, string> = {
 
 function Privacy() {
   const lock = useLockSetting();
+  const voice = useVoiceSetting();
   const label = Platform.OS === 'android' ? copy.privacy.lockAndroid : copy.privacy.lockIos;
   return (
     <View style={styles.group}>
@@ -96,7 +98,15 @@ function Privacy() {
       {(lock.note === 'unavailable' || lock.note === 'failed') && (
         <Notice message={lockMessage[lock.note]} />
       )}
+      <ToggleRow
+        label={youCopy.voiceWords}
+        value={voice.enabled}
+        onChange={voice.change}
+        hint={youCopy.voiceWordsDetail}
+      />
+      {voice.sheet}
       <Section>
+        <Row label={youCopy.voiceWordsRow} detail={youCopy.voiceWordsDetail} />
         <Row label={youCopy.backup} detail={youCopy.backupDetail} />
         <Row label={youCopy.ai} detail={youCopy.aiDetail} />
       </Section>
