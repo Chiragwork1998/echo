@@ -174,7 +174,9 @@ export function useSessionEntry() {
   const { dissolve } = useHomeDissolve();
   return useMemo(
     () => ({
-      begin: () => dissolve('/home/session'),
+      // Begin is the spoken session and Write instead is the written one (D-006). Neither follows what
+      // was used last: the route says which, so the same stone always does the same thing.
+      begin: () => dissolve({ pathname: '/home/session', params: { mode: 'voice' } }),
       writeInstead: () => dissolve({ pathname: '/home/session', params: { mode: 'write' } }),
       continueDraft: (draftId: string) =>
         dissolve({ pathname: '/home/session', params: { draftId } }),

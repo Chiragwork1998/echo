@@ -49,7 +49,11 @@ describe('the dissolve into the daily session', () => {
     expect(router.push).not.toHaveBeenCalled();
     await tick(1);
     expect(router.push).toHaveBeenCalledTimes(1);
-    expect(router.push).toHaveBeenCalledWith('/home/session');
+    // Begin is the spoken session (D-006), whatever mode was used last.
+    expect(router.push).toHaveBeenCalledWith({
+      pathname: '/home/session',
+      params: { mode: 'voice' },
+    });
   });
 
   it('hands the status bar over once most of Home is gone', async () => {
@@ -112,6 +116,9 @@ describe('without a provider', () => {
   it('simply navigates', async () => {
     await render(<Probe />);
     await fireEvent.press(screen.getByTestId('begin'));
-    expect(router.push).toHaveBeenCalledWith('/home/session');
+    expect(router.push).toHaveBeenCalledWith({
+      pathname: '/home/session',
+      params: { mode: 'voice' },
+    });
   });
 });
