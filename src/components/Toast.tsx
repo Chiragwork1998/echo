@@ -24,7 +24,7 @@ const RISE = 8;
  * Clear of the primary CTA and of the tab bar. The CTA is 56 pt tall and sits 18 pt above the safe
  * bottom, so it ends 74 pt up. The Night tab bar ends 83 pt up. The toast rests above both.
  */
-const ABOVE_SAFE_BOTTOM = 92;
+const ABOVE_SAFE_BOTTOM = 88;
 
 type ToastState = { toast: { id: number; message: string } | null };
 const useToasts = create<ToastState>(() => ({ toast: null }));
@@ -86,7 +86,7 @@ function ToastView({ id, message }: { id: number; message: string }) {
           styles.pill,
           {
             maxWidth: width - gutter * 2,
-            backgroundColor: colors.surfaceGlassStrong,
+            backgroundColor: colors.textInk,
             borderColor: colors.borderGlass,
           },
           animated,
@@ -110,7 +110,15 @@ export function ToastHost() {
 }
 
 const styles = StyleSheet.create({
-  dock: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
+  // Above every screen, on every platform: the web stacks screens with a z-index of their own.
+  dock: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 1000,
+    elevation: 1000,
+  },
   pill: {
     borderRadius: tokens.radius.large,
     borderWidth: 1,
