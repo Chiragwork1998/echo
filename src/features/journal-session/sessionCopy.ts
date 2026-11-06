@@ -1,9 +1,11 @@
+import { specCopy } from '@/content/specCopy';
+
 // Working text for the writing session. The copy deck has none of it, so it is NOT locked copy: it
 // needs owner approval before moving to src/content. It stays plain and calm, and never repeats
-// anything the person wrote. Strings that are in the deck live in src/content/copy.ts.
+// anything the person wrote. Strings that are in the deck live in src/content/copy.ts, and the
+// spec's own in src/content/specCopy.ts.
 export const sessionCopy = {
-  /** From INTERACTIONS_AND_STATES.md, "Offline". */
-  saved: 'Saved on this device',
+  saved: specCopy.savedOnDevice,
   timer: 'Time left',
   /** Read aloud with the disabled Reflect button, to say what it is waiting for. */
   reflectHint: 'Write a little more, or record a few seconds, to reflect.',

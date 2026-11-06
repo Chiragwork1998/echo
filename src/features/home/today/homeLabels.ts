@@ -1,4 +1,5 @@
 import { copy } from '@/content/copy';
+import { specCopy } from '@/content/specCopy';
 import { dayDistance, type EntrySummary } from '@/features/journal';
 
 /**
@@ -7,8 +8,7 @@ import { dayDistance, type EntrySummary } from '@/features/journal';
  * contract force (a day label, a duration, an unreadable entry, a retry).
  */
 export const homeLabels = {
-  // INTERACTIONS_AND_STATES.md, Empty. It is not in copy.ts yet.
-  emptyRecent: 'Your first echo will appear here.',
+  emptyRecent: specCopy.emptyEchoes,
   yesterday: 'Yesterday',
   daysAgo: (days: number) => `${days} days ago`,
   minutes: (minutes: number) => `${minutes} min`,

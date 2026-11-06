@@ -1,17 +1,18 @@
 import { copy } from '@/content/copy';
+import { specCopy } from '@/content/specCopy';
 
 /**
  * WORKING COPY. Everything the Echoes archive and the entry reader say that is not in the copy deck.
- * The three empty and search lines come from INTERACTIONS_AND_STATES.md but are not in copy.ts yet.
- * None of this is locked: the owner approves or replaces it when the designs arrive.
+ * The empty and search lines are the spec's, in specCopy. None of the rest is locked: the owner
+ * approves or replaces it when the designs arrive.
  */
 export const echoesCopy = {
   title: copy.home.tabs[1],
   searchLabel: 'Search your echoes',
   searchPlaceholder: 'Search by word, title or date',
   clearSearch: 'Clear search',
-  empty: 'Your first echo will appear here.',
-  noMatches: 'Nothing returned for that search.',
+  empty: specCopy.emptyEchoes,
+  noMatches: specCopy.noMatches,
   loading: 'Loading your echoes',
   searching: 'Searching',
   loadError: 'Your echoes couldn’t be loaded.',

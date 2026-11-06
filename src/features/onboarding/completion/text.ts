@@ -1,13 +1,14 @@
 import { copy } from '@/content/copy';
+import { specCopy } from '@/content/specCopy';
 
 /**
- * Words the spec gives for Completion that the copy deck does not hold yet: the reflection's
- * loading and error lines (INTERACTIONS_AND_STATES.md) and one line for a failed finish. This is
- * working text, not locked copy. Lead request: move into src/content/copy.ts under `completion`.
+ * Words Completion needs that the copy deck does not hold: the reflection's loading and error lines
+ * (the spec's own, in specCopy) and one line for a failed finish. The rest is working text, not
+ * locked copy.
  */
 export const completionText = {
-  pending: 'Listening for what returned…',
-  error: 'Your words are saved. The reflection can wait.',
+  pending: specCopy.reflectionListening,
+  error: specCopy.reflectionError,
   retry: 'Try again',
   continue: 'Continue',
   enterFailed: 'Your words are still saved. Try again in a moment.',
