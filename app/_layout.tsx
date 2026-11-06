@@ -10,6 +10,7 @@ import { SafeAreaInsetsContext, SafeAreaProvider } from 'react-native-safe-area-
 import { EchoText } from '@/components/EchoText';
 import { EchoWordmark } from '@/components/EchoWordmark';
 import { PrimaryCTA } from '@/components/PrimaryCTA';
+import { ToastHost } from '@/components/Toast';
 import { fontMap } from '@/design/fonts';
 import { ThemeProvider, useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
@@ -257,7 +258,11 @@ function Content({ status, onSettled }: { status: GateStatus; onSettled: () => v
         importantForAccessibility={hidden ? 'no-hide-descendants' : 'auto'}
       >
         {status.kind === 'ready' ? (
-          <Navigator resume={status.resume} onSettled={onSettled} />
+          <>
+            <Navigator resume={status.resume} onSettled={onSettled} />
+            {/* Here, so that a lock or the app switcher hides it from screen readers too. */}
+            <ToastHost />
+          </>
         ) : null}
       </View>
       {status.kind === 'key_lost' ? <KeyLostPanel /> : null}

@@ -4,6 +4,7 @@ import * as ScreenCapture from 'expo-screen-capture';
 import * as SplashScreen from 'expo-splash-screen';
 import { Alert, AppState, Platform } from 'react-native';
 
+import { clearToast, showToast } from '@/components/Toast';
 import { deleteAllLocal } from '@/services/deleteAllLocal';
 import { getLockMethod } from '@/services/biometric';
 
@@ -222,6 +223,19 @@ describe('the lock', () => {
     await render(<RootLayout />);
     await setGate(locked);
     expect(screen.queryByTestId(NAVIGATOR)).toBeNull();
+  });
+
+  it('hides the toast from screen readers with everything else', async () => {
+    await render(<RootLayout />);
+    await setGate({ status: locked.status });
+    await act(async () => showToast('We’ll meet you at 9:30 PM.'));
+    expect(screen.getByText('We’ll meet you at 9:30 PM.')).toBeTruthy();
+    await setGate({ lock: locked.lock });
+    expect(screen.queryByText('We’ll meet you at 9:30 PM.')).toBeNull();
+    expect(
+      screen.queryByText('We’ll meet you at 9:30 PM.', { includeHiddenElements: true }),
+    ).toBeTruthy();
+    await act(async () => clearToast());
   });
 
   it('does not re-prompt after a failure, so nobody is trapped in a loop', async () => {

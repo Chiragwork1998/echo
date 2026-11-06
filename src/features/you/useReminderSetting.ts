@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 
 import { commitReminder } from '@/features/onboarding/rhythm/commitReminder';
+import { announceReminder } from '@/features/onboarding/rhythm/reminderToast';
 import { formatTime, parseTime } from '@/features/onboarding/rhythm/time';
 import { useClockFormat, useClockText } from '@/features/onboarding/rhythm/useClock';
 import { useTimePicker } from '@/features/onboarding/rhythm/useTimePicker';
@@ -37,7 +38,7 @@ export function useReminderSetting() {
     applying.current = true;
     setSaving(true);
     try {
-      await commitReminder(time, enabled);
+      announceReminder(await commitReminder(time, enabled));
       setBlocked(await isBlocked(enabled));
     } finally {
       applying.current = false;

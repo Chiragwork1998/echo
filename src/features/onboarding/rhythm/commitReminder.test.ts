@@ -30,19 +30,22 @@ function answer(...choices: string[]) {
   });
 }
 
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => {
+  jest.clearAllMocks();
+  jest.mocked(scheduleReminder).mockResolvedValue({ ok: true });
+});
 
 describe('commitReminder', () => {
   it('cancels, and never asks, when the reminder is off', async () => {
-    await commitReminder('21:30', false);
+    expect(await commitReminder('21:30', false)).toEqual({ status: 'off' });
     expect(cancelReminder).toHaveBeenCalled();
     expect(current).not.toHaveBeenCalled();
     expect(scheduleReminder).not.toHaveBeenCalled();
   });
 
-  it('schedules without prompting when already allowed', async () => {
+  it('schedules without prompting when already allowed, and says so', async () => {
     current.mockResolvedValue({ status: 'granted', canAskAgain: true });
-    await commitReminder('21:30', true);
+    expect(await commitReminder('21:30', true)).toEqual({ status: 'scheduled', time: '21:30' });
     expect(request).not.toHaveBeenCalled();
     expect(scheduleReminder).toHaveBeenCalledWith('21:30');
   });
@@ -51,7 +54,7 @@ describe('commitReminder', () => {
     current.mockResolvedValue({ status: 'undetermined', canAskAgain: true });
     request.mockResolvedValue({ status: 'granted', canAskAgain: true });
     answer('Allow');
-    await commitReminder('08:00', true);
+    expect(await commitReminder('08:00', true)).toEqual({ status: 'scheduled', time: '08:00' });
     expect(Alert.alert).toHaveBeenCalledTimes(1);
     expect(request).toHaveBeenCalledTimes(1);
     expect(scheduleReminder).toHaveBeenCalledWith('08:00');
@@ -60,7 +63,7 @@ describe('commitReminder', () => {
   it('never shows the OS prompt when the person says not now', async () => {
     current.mockResolvedValue({ status: 'undetermined', canAskAgain: true });
     answer('Not now');
-    await commitReminder('08:00', true);
+    expect(await commitReminder('08:00', true)).toEqual({ status: 'not_allowed' });
     expect(request).not.toHaveBeenCalled();
     expect(scheduleReminder).not.toHaveBeenCalled();
   });
@@ -69,8 +72,14 @@ describe('commitReminder', () => {
     current.mockResolvedValue({ status: 'undetermined', canAskAgain: true });
     request.mockResolvedValue({ status: 'denied', canAskAgain: false });
     answer('Allow', 'Enable in Settings');
-    await commitReminder('08:00', true);
+    expect(await commitReminder('08:00', true)).toEqual({ status: 'not_allowed' });
     expect(openAppSettings).toHaveBeenCalledTimes(1);
     expect(scheduleReminder).not.toHaveBeenCalled();
+  });
+
+  it('does not claim a reminder the phone refused to schedule', async () => {
+    current.mockResolvedValue({ status: 'granted', canAskAgain: true });
+    jest.mocked(scheduleReminder).mockResolvedValue({ ok: false, code: 'failed' });
+    expect(await commitReminder('21:30', true)).toEqual({ status: 'failed' });
   });
 });

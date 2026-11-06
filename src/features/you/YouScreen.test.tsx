@@ -1,6 +1,7 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { Alert, Dimensions, Linking } from 'react-native';
 
+import { showToast } from '@/components/Toast';
 import { copy } from '@/content/copy';
 import { commitReminder } from '@/features/onboarding/rhythm/commitReminder';
 import { deleteAllLocal } from '@/services/deleteAllLocal';
@@ -34,6 +35,11 @@ jest.mock('@/services/permissions', () => ({
   openAppSettings: jest.fn(),
 }));
 jest.mock('@/features/onboarding/rhythm/commitReminder', () => ({ commitReminder: jest.fn() }));
+jest.mock('@/components/Toast', () => ({ showToast: jest.fn() }));
+jest.mock('expo-localization', () => ({
+  getLocales: () => [{ languageTag: 'en-US' }],
+  getCalendars: () => [{ uses24hourClock: false }],
+}));
 
 const verifyLock = jest.mocked(verifyLockAvailable);
 const alert = () => jest.mocked(Alert.alert);
@@ -57,7 +63,7 @@ beforeEach(() => {
   jest
     .mocked(getNotificationPermission)
     .mockResolvedValue({ status: 'granted', canAskAgain: true });
-  jest.mocked(commitReminder).mockResolvedValue(undefined);
+  jest.mocked(commitReminder).mockResolvedValue({ status: 'off' });
   const metrics = { width: 393, height: 852, scale: 2, fontScale: 1 };
   Dimensions.set({ window: metrics, screen: metrics });
 });
@@ -86,6 +92,16 @@ describe('You: reminder', () => {
     await fireEvent.press(reminder());
     await waitFor(() => expect(commitReminder).toHaveBeenLastCalledWith('21:30', false));
     expect(useOnboarding.getState().reminder.enabled).toBe(false);
+  });
+
+  it('meets a reminder that was scheduled with a toast, and says nothing otherwise', async () => {
+    await render(<YouScreen />);
+    jest.mocked(commitReminder).mockResolvedValueOnce({ status: 'scheduled', time: '21:30' });
+    await fireEvent.press(reminder());
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('We’ll meet you at 9:30 PM.'));
+    await fireEvent.press(reminder());
+    await waitFor(() => expect(commitReminder).toHaveBeenLastCalledWith('21:30', false));
+    expect(showToast).toHaveBeenCalledTimes(1);
   });
 
   it('does not promise a reminder the phone will not deliver, and links to Settings', async () => {

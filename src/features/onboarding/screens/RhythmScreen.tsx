@@ -13,6 +13,7 @@ import { backPath, nextPath } from '@/features/onboarding/flow';
 import { commitReminder } from '@/features/onboarding/rhythm/commitReminder';
 import { PRESETS, PresetCards } from '@/features/onboarding/rhythm/PresetCards';
 import { ReminderRow } from '@/features/onboarding/rhythm/ReminderRow';
+import { announceReminder } from '@/features/onboarding/rhythm/reminderToast';
 import { RhythmHeading } from '@/features/onboarding/rhythm/RhythmHeading';
 import { TimeButton } from '@/features/onboarding/rhythm/TimeButton';
 import { TimeDial, dialSize } from '@/features/onboarding/rhythm/TimeDial';
@@ -65,7 +66,8 @@ export function RhythmScreen() {
   const finish = async () => {
     const time = formatTime(minutes);
     update({ reminder: { time, enabled, preset } });
-    await commitReminder(time, enabled);
+    // The toast rises as the next screen arrives, so the journey is never held for it.
+    announceReminder(await commitReminder(time, enabled));
     const next = nextPath('rhythm');
     if (next) router.navigate(next as never);
   };

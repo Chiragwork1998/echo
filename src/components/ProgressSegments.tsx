@@ -43,6 +43,7 @@ export function ProgressSegments({ step, total = 8, maxWidth }: Props) {
         {Array.from({ length: total }, (_, i) => (
           <View
             key={i}
+            testID="progress-segment"
             style={[
               styles.segment,
               {

@@ -3,6 +3,7 @@ import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { Dimensions, Platform } from 'react-native';
 
+import { showToast } from '@/components/Toast';
 import { copy } from '@/content/copy';
 import { dialSize } from '@/features/onboarding/rhythm/TimeDial';
 import { initialOnboarding, useOnboarding } from '@/state/onboarding';
@@ -18,8 +19,9 @@ jest.mock('expo-haptics', () => ({
 }));
 jest.mock('expo-router', () => ({ router: { navigate: jest.fn() } }));
 jest.mock('@/features/onboarding/rhythm/commitReminder', () => ({
-  commitReminder: jest.fn().mockResolvedValue(undefined),
+  commitReminder: jest.fn(),
 }));
+jest.mock('@/components/Toast', () => ({ showToast: jest.fn() }));
 jest.mock(
   'react-native-safe-area-context',
   () => jest.requireActual('react-native-safe-area-context/jest/mock').default,
@@ -323,6 +325,37 @@ describe('Set my rhythm', () => {
     await waitFor(() => expect(router.navigate).toHaveBeenCalledWith('/onboarding/privacy'));
     expect(commitReminder).toHaveBeenCalledWith('08:00', true);
   });
+
+  it('meets a scheduled reminder with a toast, in the device’s own time format', async () => {
+    jest.mocked(commitReminder).mockResolvedValue({ status: 'scheduled', time: '08:00' });
+    await render(<RhythmScreen />);
+    await fireEvent.press(preset(MORNING));
+    await fireEvent.press(reminder());
+    await fireEvent.press(cta());
+    await waitFor(() => expect(router.navigate).toHaveBeenCalledWith('/onboarding/privacy'));
+    expect(showToast).toHaveBeenCalledTimes(1);
+    expect(showToast).toHaveBeenCalledWith('We’ll meet you at 8:00 AM.');
+  });
+
+  it('writes the toast on a 24-hour clock when the device uses one', async () => {
+    mockClock.uses24 = true;
+    jest.mocked(commitReminder).mockResolvedValue({ status: 'scheduled', time: '21:30' });
+    await render(<RhythmScreen />);
+    await fireEvent.press(reminder());
+    await fireEvent.press(cta());
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('We’ll meet you at 21:30.'));
+  });
+
+  it.each([{ status: 'off' }, { status: 'not_allowed' }, { status: 'failed' }] as const)(
+    'says nothing when the reminder is $status, and still moves on',
+    async (result) => {
+      jest.mocked(commitReminder).mockResolvedValue(result);
+      await render(<RhythmScreen />);
+      await fireEvent.press(cta());
+      await waitFor(() => expect(router.navigate).toHaveBeenCalledWith('/onboarding/privacy'));
+      expect(showToast).not.toHaveBeenCalled();
+    },
+  );
 
   it('stores a dragged time with no preset', async () => {
     await render(<RhythmScreen />);
