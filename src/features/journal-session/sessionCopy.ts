@@ -15,6 +15,8 @@ export const sessionCopy = {
     discard: 'Discard',
     stay: 'Stay',
   },
+  /** The quiet controls of the daily echo. Two plain words. */
+  quiet: { back: 'Back', stop: 'Stop' },
   errors: {
     save: 'We couldn’t save just now. Your words are still here, and we’ll try again.',
     commit: 'We couldn’t keep this echo just now. Your words are safe. Try again.',

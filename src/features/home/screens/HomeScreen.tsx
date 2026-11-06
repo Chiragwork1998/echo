@@ -1,4 +1,6 @@
+import { StatusBar } from 'expo-status-bar';
 import { ScrollView, StyleSheet, View } from 'react-native';
+import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { EchoBackground } from '@/components/EchoBackground';
@@ -7,6 +9,7 @@ import { useLayout } from '@/design/layout';
 import { useTheme } from '@/design/theme';
 import { useHomeSummary } from '@/features/journal';
 
+import { useHomeDissolve, useHomeVeil, useWhileHere } from '../dissolve';
 import { useTabBarSpace } from '../tabs/HomeTabBar';
 import { DayHome } from '../today/DayHome';
 import { NightFloor, NightHome } from '../today/NightHome';
@@ -28,29 +31,44 @@ export function HomeScreen() {
   const { width, gutter } = useLayout();
   const tabBarSpace = useTabBarSpace();
   const night = name === 'night';
+  // Pressing Begin dissolves everything but the photograph, which is drawn outside the veil and
+  // never moves. The floor shade is part of the dissolve: the session's plate has none.
+  const { phase } = useHomeDissolve();
+  const veil = useHomeVeil();
+  const dissolved = phase !== 'idle';
+  const here = useWhileHere();
 
   return (
     <View style={styles.root}>
+      {/* Gone with the rest of the chrome, and back with it. Nothing else here touches it. */}
+      <StatusBar hidden={phase === 'gone' && here ? true : undefined} animated />
       <BlurSurface backdrop={<EchoBackground screen="home" />}>
-        {night && <NightFloor />}
-        {/* Scrolls only when the content is taller than the screen. The tab bar is not inside it. */}
-        <ScrollView
-          testID="home-scroll"
-          style={styles.fill}
-          contentContainerStyle={[
-            styles.scroll,
-            {
-              paddingTop: Math.max(insets.top + HEADER_OFFSET_FROM_SAFE_TOP, 8),
-              paddingBottom: tabBarSpace + ABOVE_TAB_BAR[name],
-            },
-          ]}
-          alwaysBounceVertical={false}
-          showsVerticalScrollIndicator={false}
+        <Animated.View
+          style={[styles.fill, veil]}
+          pointerEvents={dissolved ? 'none' : 'box-none'}
+          accessibilityElementsHidden={dissolved}
+          importantForAccessibility={dissolved ? 'no-hide-descendants' : 'auto'}
         >
-          <View style={[styles.column, { width, paddingHorizontal: gutter }]}>
-            {night ? <NightHome summary={summary} /> : <DayHome summary={summary} />}
-          </View>
-        </ScrollView>
+          {night && <NightFloor />}
+          {/* Scrolls only when the content is taller than the screen. The tab bar is not inside it. */}
+          <ScrollView
+            testID="home-scroll"
+            style={styles.fill}
+            contentContainerStyle={[
+              styles.scroll,
+              {
+                paddingTop: Math.max(insets.top + HEADER_OFFSET_FROM_SAFE_TOP, 8),
+                paddingBottom: tabBarSpace + ABOVE_TAB_BAR[name],
+              },
+            ]}
+            alwaysBounceVertical={false}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={[styles.column, { width, paddingHorizontal: gutter }]}>
+              {night ? <NightHome summary={summary} /> : <DayHome summary={summary} />}
+            </View>
+          </ScrollView>
+        </Animated.View>
       </BlurSurface>
     </View>
   );

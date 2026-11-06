@@ -1,7 +1,6 @@
-import * as Haptics from 'expo-haptics';
-import { Stack, router } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
-import { Alert, BackHandler, Keyboard, Platform, StyleSheet, View } from 'react-native';
+import { Stack } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { Keyboard, Platform, StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedKeyboard, useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -10,10 +9,6 @@ import { OnboardingHeading } from '@/components/OnboardingHeading';
 import { PrimaryCTA } from '@/components/PrimaryCTA';
 import { ScreenShell } from '@/components/ScreenShell';
 import { copy } from '@/content/copy';
-import { backPath, nextPath, onboardingSteps } from '@/features/onboarding/flow';
-import { useDraft, useVoiceRecorder, type JournalErrorCode } from '@/features/journal';
-import { requestMicrophonePermission, openAppSettings } from '@/services/permissions';
-import { useOnboarding } from '@/state/onboarding';
 
 import {
   CONTROL,
@@ -27,29 +22,33 @@ import {
   TITLE_SIZE,
   TITLE_TOP,
 } from './geometry';
-import { SegmentedMode, type SessionMode } from './SegmentedMode';
+import { ImmersiveSession } from './ImmersiveSession';
+import { SegmentedMode } from './SegmentedMode';
 import { SessionHeader } from './SessionHeader';
 import { sessionCopy } from './sessionCopy';
-import { SpeakPanel, TextAction, type SpeakView } from './SpeakPanel';
-import { useSessionTimer } from './useSessionTimer';
+import { SpeakPanel, TextAction } from './SpeakPanel';
+import {
+  useSessionController,
+  type SessionController,
+  type SessionOptions,
+  type SessionVariant,
+} from './useSessionController';
 import { WritingSurface } from './WritingSurface';
 
-const FIRST_ECHO_STEP = onboardingSteps.indexOf('first-echo') + 1;
+export type { SessionVariant } from './useSessionController';
+
 const SHADOW = {
   textShadowColor: 'rgba(3,11,22,0.32)',
   textShadowRadius: 10,
   textShadowOffset: { width: 0, height: 1 },
 } as const;
 
-export type SessionVariant = 'onboarding' | 'daily';
-
-// Where each variant goes. Onboarding follows the flow. The daily session returns to Home, and
-// reflects through Completion, which another screen owns.
-const TARGETS = {
-  onboarding: { back: backPath('first-echo'), next: nextPath('first-echo'), step: FIRST_ECHO_STEP },
-  daily: { back: '/home', next: '/home/complete', step: undefined },
-} as const;
-const go = (path: string | undefined) => path && router.navigate(path as never);
+/**
+ * Which variants take the open sky (D-003): no page, no header, no timer, only the mountains and
+ * the person's words. First Echo keeps its golden. Setting `onboarding` to true is the whole change
+ * to give First Echo the same moment.
+ */
+const IMMERSIVE: Record<SessionVariant, boolean> = { onboarding: false, daily: true };
 
 function useKeyboardOpen() {
   const [open, setOpen] = useState(false);
@@ -69,176 +68,52 @@ function useKeyboardOpen() {
   return open;
 }
 
-/** Text for a failure, from its code alone: a code never carries what the person wrote. */
-function draftError(code: JournalErrorCode | undefined) {
-  return code === 'unreadable' ? sessionCopy.errors.unreadable : sessionCopy.errors.open;
-}
-
-type Props = {
-  variant: SessionVariant;
-  /** Opens in Speak. Without it, the mode chosen in onboarding decides. */
-  initialMode?: SessionMode;
-  /** Continues this draft. Without it, the newest draft resumes, or a new one begins. */
-  draftId?: string;
-};
+type Props = SessionOptions;
 
 /**
  * The writing session, used by First Echo and by the daily echo. Write or speak, seven minutes, and
- * a Reflect that waits until the entry is safely on the device.
+ * a Reflect that waits until the entry is safely on the device. What it does lives in
+ * useSessionController: this only chooses how it looks.
  */
-export function JournalSession({ variant, initialMode, draftId }: Props) {
-  const daily = variant === 'daily';
-  const target = TARGETS[variant];
-  const prompt = daily ? copy.home.prompt : copy.firstEcho.title;
-  const preferred = useOnboarding((state) => state.mode);
-  const [mode, setMode] = useState<SessionMode>(
-    initialMode ?? (preferred === 'speak' ? 'speak' : 'write'),
+export function JournalSession(props: Props) {
+  const session = useSessionController(props);
+  return IMMERSIVE[props.variant] ? (
+    <ImmersiveSession session={session} />
+  ) : (
+    <WrittenSession session={session} />
   );
-  const [permission, setPermission] = useState<'none' | 'explain' | 'denied'>('none');
-  const [problem, setProblem] = useState<string | null>(null);
+}
+
+/** First Echo's page: header, prompt, a glass writing surface, Write or Speak, and Reflect. */
+function WrittenSession({ session }: { session: SessionController }) {
+  const {
+    target,
+    prompt,
+    draft,
+    voice,
+    timer,
+    ready,
+    recordingBusy,
+    hasWork,
+    canReflect,
+    failedCode,
+    mode,
+    speakView,
+    failure,
+    notice,
+    retryable,
+    back,
+    change,
+    choose,
+    writeInstead,
+    record,
+    stop,
+    allowMicrophone,
+    openSettings,
+    reflect,
+  } = session;
   const [headingHeight, setHeadingHeight] = useState(0);
-  const reflecting = useRef(false);
-
-  const draft = useDraft({
-    draftId,
-    seed: {
-      mode: 'text',
-      promptId: daily ? 'daily' : 'first-echo',
-      promptText: prompt,
-      // The mood from Arrival belongs to the first echo, not to every day after it.
-      moodBefore: daily ? undefined : useOnboarding.getState().mood,
-    },
-  });
-  const voice = useVoiceRecorder(draft);
-  const [base, setBase] = useState(0);
-  const timer = useSessionTimer(base);
   const keyboardOpen = useKeyboardOpen();
-
-  const ready = draft.status === 'ready';
-  const recordingBusy =
-    voice.state === 'starting' || voice.state === 'recording' || voice.state === 'saving';
-  const hasWork = draft.hasContent || recordingBusy;
-  const canReflect = ready && draft.canReflect && !recordingBusy;
-
-  // Time already spent on a draft being continued, so the ring shows what remains of it.
-  const counted = useRef(false);
-  useEffect(() => {
-    if (!ready || counted.current) return;
-    counted.current = true;
-    setBase(draft.content.durationSeconds);
-  }, [ready, draft.content.durationSeconds]);
-  const { elapsed, start: startTimer } = timer;
-  useEffect(() => {
-    if (voice.state === 'recording') startTimer();
-  }, [voice.state, startTimer]);
-
-  // Opening a draft that no longer needs this screen.
-  const failedCode = draft.status === 'error' ? draft.error?.code : undefined;
-  useEffect(() => {
-    if (failedCode === 'not_found') go(target.back);
-    if (failedCode === 'not_draft') go(target.next);
-  }, [failedCode, target]);
-
-  const change = (body: string) => {
-    if (body.length > 0) startTimer();
-    setProblem(null);
-    draft.update({ body, durationSeconds: elapsed });
-  };
-
-  const choose = (next: SessionMode) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    if (next === 'speak') Keyboard.dismiss();
-    setMode(next);
-  };
-  const writeInstead = () => {
-    setPermission('none');
-    choose('write');
-  };
-
-  const beginRecording = async () => {
-    setPermission('none');
-    const code = await voice.start();
-    if (code === 'permission_required') setPermission('explain');
-  };
-  const record = () => {
-    if (!draft.audio) return void beginRecording();
-    Alert.alert(sessionCopy.speak.replaceTitle, sessionCopy.speak.replaceMessage, [
-      { text: sessionCopy.speak.cancel, style: 'cancel' },
-      { text: sessionCopy.speak.replace, onPress: () => void beginRecording() },
-    ]);
-  };
-  const stop = async () => {
-    const result = await voice.stop();
-    if (result.ok) draft.update({ durationSeconds: elapsed });
-  };
-  const allowMicrophone = async () => {
-    // The in-app explanation has been read: only now does the system ask.
-    const asked = await requestMicrophonePermission();
-    if (asked.status === 'granted') await beginRecording();
-    else setPermission('denied');
-  };
-
-  const reflect = async () => {
-    if (reflecting.current || !canReflect) return;
-    reflecting.current = true;
-    try {
-      const result = await draft.commit({ durationSeconds: elapsed });
-      // Only once the entry is durable. A failure leaves the draft whole, and Reflect ready to retry.
-      if (result.ok || result.error.code === 'not_draft') go(target.next);
-      else if (result.error.code === 'not_found') go(target.back);
-    } finally {
-      reflecting.current = false;
-    }
-  };
-
-  const keepDraft = async () => {
-    if (voice.state === 'recording') await voice.stop();
-    draft.update({ durationSeconds: elapsed });
-    const saved = await draft.flush();
-    if (saved.ok) go(target.back);
-    else setProblem(sessionCopy.errors.save);
-  };
-  const discardDraft = async () => {
-    if (voice.state === 'recording') await voice.cancel();
-    const removed = await draft.discard();
-    if (removed.ok) go(target.back);
-    else setProblem(sessionCopy.errors.save);
-  };
-  const back = () => {
-    if (!hasWork) {
-      void draft.discard();
-      go(target.back);
-      return;
-    }
-    const { title, message, keep, discard, stay } = sessionCopy.leave;
-    Alert.alert(title, message, [
-      { text: keep, onPress: () => void keepDraft() },
-      { text: discard, style: 'destructive', onPress: () => void discardDraft() },
-      { text: stay, style: 'cancel' },
-    ]);
-  };
-  const latestBack = useRef(back);
-  useEffect(() => {
-    latestBack.current = back;
-  });
-  useEffect(() => {
-    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      latestBack.current();
-      return true;
-    });
-    return () => subscription.remove();
-  }, []);
-
-  const speakView = ((): SpeakView => {
-    if (!voice.available || voice.error === 'unavailable') return 'unavailable';
-    if (permission !== 'none') return permission;
-    if (voice.state === 'starting' || voice.state === 'recording' || voice.state === 'saving') {
-      return voice.state;
-    }
-    if (voice.error === 'save_failed') return 'kept';
-    if (voice.error === 'start_failed') return 'failed';
-    return draft.audio ? 'recorded' : 'ready';
-  })();
 
   // Reflect and Back are never hidden by the keyboard: it lifts them, and the title folds away.
   const insets = useSafeAreaInsets();
@@ -262,12 +137,6 @@ export function JournalSession({ variant, initialMode, draftId }: Props) {
     const folded = Math.min(1, keyboard.height.get() / KEYBOARD_FOLD);
     return { minHeight: NOTICE.slot - (NOTICE.slot - NOTICE.compactSlot) * folded };
   });
-
-  const notice =
-    problem ??
-    (draft.commitState === 'error' ? sessionCopy.errors.commit : null) ??
-    (draft.saveState === 'error' ? sessionCopy.errors.save : null);
-  const retryable = draft.commitState === 'error';
 
   const surfaceProps = {
     value: draft.content.body,
@@ -306,7 +175,7 @@ export function JournalSession({ variant, initialMode, draftId }: Props) {
           <WritingSurface {...surfaceProps} hideField>
             <View style={styles.failure}>
               <EchoText variant="bodyM" align="center" accessibilityRole="alert">
-                {draftError(failedCode)}
+                {failure}
               </EchoText>
               {failedCode !== 'unreadable' && (
                 <TextAction label={sessionCopy.errors.retry} onPress={() => void draft.reload()} />
@@ -326,7 +195,7 @@ export function JournalSession({ variant, initialMode, draftId }: Props) {
               onRecord={record}
               onStop={() => void stop()}
               onAllow={() => void allowMicrophone()}
-              onSettings={() => void openAppSettings()}
+              onSettings={openSettings}
               onWrite={writeInstead}
             />
           </WritingSurface>

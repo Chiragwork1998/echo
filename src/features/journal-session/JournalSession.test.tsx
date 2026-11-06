@@ -24,6 +24,7 @@ jest.mock('expo-haptics', () => ({
 jest.mock('expo-router', () => ({
   router: { navigate: jest.fn() },
   Stack: { Screen: () => null },
+  usePathname: () => '/home/session',
 }));
 jest.mock(
   'react-native-safe-area-context',
@@ -99,9 +100,10 @@ describe('JournalSession layout and states', () => {
   });
 
   it('has no onboarding progress in the daily session, and asks the daily prompt', async () => {
-    await open('daily');
-    expect(screen.getByRole('header', { name: copy.home.prompt })).toBeTruthy();
+    const input = await open('daily');
+    expect(input().props.accessibilityLabel).toBe(copy.home.prompt);
     expect(screen.queryByRole('progressbar')).toBeNull();
+    expect(screen.queryByRole('header')).toBeNull();
   });
 
   it('turns off autofill, which sits outside encryption', async () => {
@@ -182,7 +184,9 @@ describe('JournalSession Reflect', () => {
   it('goes to /home/complete from the daily session', async () => {
     const input = await open('daily');
     await write(input);
-    await fireEvent.press(reflect());
+    // The controls come after a quiet moment: leaving the field is one.
+    await fireEvent(input(), 'blur');
+    await fireEvent.press(screen.getByTestId('quiet-reflect'));
     await waitFor(() => expect(router.navigate).toHaveBeenCalledWith('/home/complete'));
   });
 
@@ -219,8 +223,9 @@ describe('JournalSession Back', () => {
   });
 
   it('returns the daily session to Home', async () => {
-    await open('daily');
-    await fireEvent.press(back());
+    const input = await open('daily');
+    await fireEvent(input(), 'blur');
+    await fireEvent.press(screen.getByTestId('quiet-back'));
     expect(router.navigate).toHaveBeenCalledWith('/home');
   });
 

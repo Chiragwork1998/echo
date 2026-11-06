@@ -17,14 +17,10 @@ export const SESSION_PATH = '/home/session';
 export const ECHOES_PATH = '/home/echoes';
 export const YOU_PATH = '/home/you';
 
-// Routes owned by other agents or not yet generated into expo-router's types.
+// Routes owned by other agents or not yet generated into expo-router's types. The session is not
+// here: its entrances dissolve Home first, so they live in ../dissolve (useSessionEntry).
 export const go = (href: string | { pathname: string; params: Record<string, string> }) =>
   router.navigate(href as never);
-export const begin = () => router.push(SESSION_PATH as never);
-export const speakInstead = () =>
-  router.push({ pathname: SESSION_PATH, params: { mode: 'voice' } } as never);
-export const continueDraft = (draftId: string) =>
-  router.push({ pathname: SESSION_PATH, params: { draftId } } as never);
 export const openEntry = (entryId: string) =>
   router.navigate({ pathname: ECHOES_PATH, params: { entryId } } as never);
 

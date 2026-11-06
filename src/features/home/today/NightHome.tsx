@@ -16,20 +16,10 @@ import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 import type { HomeSummary } from '@/features/journal';
 
+import { useSessionEntry } from '../dissolve';
 import { dayLabel, entryDisplay, homeLabels, minutesOf } from './homeLabels';
 import { LimestoneStone } from './LimestoneStone';
-import {
-  begin,
-  CardSkeleton,
-  continueDraft,
-  ErrorNotice,
-  go,
-  openEntry,
-  PlateThumb,
-  speakInstead,
-  useClock,
-  YOU_PATH,
-} from './shared';
+import { CardSkeleton, ErrorNotice, go, openEntry, PlateThumb, useClock, YOU_PATH } from './shared';
 import { WeekRhythm } from './WeekRhythm';
 
 // Measured from the Night golden (868 x 1812, normalised to 393 x 852).
@@ -87,6 +77,7 @@ function Header({ inset }: { inset: number }) {
 }
 
 function SpeakInstead() {
+  const { speakInstead } = useSessionEntry();
   return (
     <Pressable
       accessibilityRole="button"
@@ -115,6 +106,7 @@ type CardProps = { summary: HomeSummary; strong: boolean };
 /** Continue an echo, or the latest entry when nothing is in progress, so the slot is never empty. */
 function EchoCard({ summary, strong }: CardProps) {
   const { colors } = useTheme();
+  const { continueDraft } = useSessionEntry();
   const { rhythm, recent } = summary;
   const draft = summary.continueDraft;
   const entry = draft ?? recent;
@@ -177,6 +169,7 @@ export function NightFloor() {
 /** Night: Living Landscape. The stone is the way in. */
 export function NightHome({ summary }: { summary: HomeSummary }) {
   const { accessibleLayout } = useLayout();
+  const { begin } = useSessionEntry();
   const { status, rhythm, recent } = summary;
   const loading = status === 'loading';
   const hasCard = summary.continueDraft !== null || recent !== null;

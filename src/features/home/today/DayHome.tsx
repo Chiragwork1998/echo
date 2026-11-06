@@ -13,10 +13,10 @@ import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 import type { HomeSummary } from '@/features/journal';
 
+import { useSessionEntry } from '../dissolve';
 import { dayLabel, entryDisplay, homeLabels, minutesOf } from './homeLabels';
 import {
   ArrowGlyph,
-  begin,
   CardSkeleton,
   ECHOES_PATH,
   ErrorNotice,
@@ -88,6 +88,7 @@ function Pebbles({ count }: { count: number }) {
 
 function BeginCta() {
   const { colors } = useTheme();
+  const { begin } = useSessionEntry();
   return (
     <Pressable
       accessibilityRole="button"

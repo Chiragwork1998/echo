@@ -21,6 +21,8 @@ import { useLayout } from '@/design/layout';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 
+import { useHomeDissolve } from '../dissolve';
+
 export const TAB_BAR_HEIGHT = tokens.size.tabBarHeight; // 72
 const BAR_RADIUS = 30;
 /**
@@ -101,6 +103,9 @@ export function HomeTabBar() {
   const visible = tabPaths.includes(pathname);
   const night = name === 'night';
   const shown = useSharedValue(visible ? 1 : 0);
+  // The bar melts away with Home when Begin is pressed, and comes back with it.
+  const { progress, phase } = useHomeDissolve();
+  const present = visible && phase === 'idle';
 
   useEffect(() => {
     shown.set(
@@ -110,13 +115,13 @@ export function HomeTabBar() {
       }),
     );
   }, [shown, visible]);
-  const fade = useAnimatedStyle(() => ({ opacity: shown.get() }));
+  const fade = useAnimatedStyle(() => ({ opacity: shown.get() * (1 - progress.get()) }));
 
   return (
     <Animated.View
-      pointerEvents={visible ? 'box-none' : 'none'}
-      accessibilityElementsHidden={!visible}
-      importantForAccessibility={visible ? 'auto' : 'no-hide-descendants'}
+      pointerEvents={present ? 'box-none' : 'none'}
+      accessibilityElementsHidden={!present}
+      importantForAccessibility={present ? 'auto' : 'no-hide-descendants'}
       style={[styles.dock, { bottom: place.bottom }, fade]}
     >
       <View style={[styles.bar, { width: place.barWidth }]}>
