@@ -61,7 +61,11 @@ export type Transcript = {
   seconds: number | null;
 };
 
-type VoiceErrorCode = 'upstream' | 'unsupported_audio' | 'empty';
+/**
+ * `busy` and `too_slow` are this server's own: the machine that converts Android audio was full, or did
+ * not finish in time. Neither is about the recording, so both are worth trying again.
+ */
+type VoiceErrorCode = 'upstream' | 'unsupported_audio' | 'empty' | 'busy' | 'too_slow';
 
 export class VoiceError extends Error {
   readonly code: VoiceErrorCode;

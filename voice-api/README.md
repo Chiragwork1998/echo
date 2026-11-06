@@ -45,10 +45,26 @@ The app cuts a long take into pieces and sends them up to three at a time: a liv
 at its quietest moments into pieces of about 4 MB (83 seconds), and a hidden take on Android is an ADTS
 `.aac`, cut between frames into pieces of 20 to 320 seconds that overlap by five seconds, whose words the
 app joins. Each piece is an ordinary request to `/api/transcribe`, and counts as one against the limit of 120
-per ten minutes per address: an hour of `.aac` is 13, an hour of WAV is 44.
+per ten minutes per address: an hour of `.aac` is 13, an hour of WAV is 44. A piece that comes back with no
+speech is sent a second time by the app before it counts as silence, so a silent piece costs two.
+
+ffmpeg is held to limits in `src/audio.ts`, because it runs for as long as a request lets it: a conversion is
+killed after 30 seconds (`503`, code `too_slow`, retryable), no more than four run at once on an instance (a fifth
+gets `503`, code `busy`, retryable), and one that writes more than 25 MiB, which OpenAI would refuse anyway, is
+stopped (`422`, `unsupported_audio`). A five minute piece converts in about a second. The limits are the
+constants in `LIMITS`.
+
+`/api/refine` takes up to 100,000 characters, which is an hour and a half of speech at a fast 200 words a
+minute. An hour is about 70,000.
+
+Every route counts a wrong token against the address that sent it: after 20 in ten minutes the address is
+answered `429` without its token being looked at, so a right guess is no more use than a wrong one. The count,
+like the rate limit, is held in memory per instance and is dropped when its window is over, with at most 5,000
+addresses remembered. It stops casual abuse and nothing more, as below.
 
 `ECHO_VOICE_TOKEN` ships inside the app, so it stops casual abuse only. Before public launch this
-needs App Attest and Play Integrity, or per-account auth, plus an OpenAI spend limit.
+needs App Attest and Play Integrity, or per-account auth, plus an OpenAI spend limit. See "Before public
+launch" in `docs/SPEC_CONFLICTS.md`.
 
 ## Pattern Cards
 

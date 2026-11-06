@@ -1,5 +1,5 @@
 import { normalise } from '../src/audio.js';
-import { clientIp, createLimiter, fail, json, logRoute, tokenMatches } from '../src/guard.js';
+import { createGate, fail, json, logRoute } from '../src/guard.js';
 import { run, styleOf, VoiceError, type Config } from '../src/pipeline.js';
 
 const MAX_BYTES = 4_400_000;
@@ -7,7 +7,7 @@ const ALLOWED = /\.(m4a|mp4|aac|mp3|wav|webm)$/i;
 const WINDOW_MS = 10 * 60 * 1000;
 // A long live take that has to be sent after it ends arrives in pieces, one request each.
 const WINDOW_LIMIT = 120;
-const limited = createLimiter(WINDOW_MS, WINDOW_LIMIT);
+const gate = createGate(WINDOW_MS, WINDOW_LIMIT);
 
 /**
  * `POST /api/transcribe`, multipart `file` and an optional `style`: 'exact' (the default) returns
@@ -18,10 +18,8 @@ export async function POST(request: Request) {
   const started = Date.now();
   const { OPENAI_API_KEY, ECHO_VOICE_TOKEN } = process.env;
   if (!OPENAI_API_KEY || !ECHO_VOICE_TOKEN) return fail(503, 'not_configured');
-  if (!tokenMatches(request.headers.get('x-echo-voice-token'), ECHO_VOICE_TOKEN)) {
-    return fail(401, 'unauthorized');
-  }
-  if (limited(clientIp(request), started)) return fail(429, 'rate_limited', true);
+  const turnedAway = gate(request, ECHO_VOICE_TOKEN, started);
+  if (turnedAway) return turnedAway;
   if (Number(request.headers.get('content-length') ?? 0) > MAX_BYTES + 2048) {
     return fail(413, 'too_long');
   }
@@ -51,7 +49,14 @@ export async function POST(request: Request) {
     return json(200, result);
   } catch (error) {
     const voice = error instanceof VoiceError ? error : null;
-    const status = voice ? (voice.code === 'upstream' ? 502 : 422) : 500;
+    // 502 is OpenAI's fault, 503 is this machine's (full, or too slow), and 422 is the recording's.
+    const status = !voice
+      ? 500
+      : voice.code === 'upstream'
+        ? 502
+        : voice.code === 'busy' || voice.code === 'too_slow'
+          ? 503
+          : 422;
     logRoute('transcribe', status, started);
     if (voice) return fail(status, voice.code, voice.retryable);
     return fail(status, 'internal', true);
