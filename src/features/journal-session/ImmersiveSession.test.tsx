@@ -105,7 +105,8 @@ afterEach(() => {
 });
 
 async function open(props = {}) {
-  await render(<JournalSession variant="daily" {...props} />);
+  // The open sky: D-003 as first built, and what DAILY_PAGE = 'sky' returns to.
+  await render(<JournalSession variant="daily" plain {...props} />);
   const input = () => screen.getByLabelText(copy.home.prompt);
   // The draft has opened once the scenery can be touched.
   await waitFor(() =>

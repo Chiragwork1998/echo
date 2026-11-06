@@ -1,6 +1,7 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
+import type { ComponentProps } from 'react';
 import { Alert, Text } from 'react-native';
 
 import { copy } from '@/content/copy';
@@ -17,7 +18,7 @@ import { initialOnboarding, useOnboarding } from '@/state/onboarding';
 import { usePreferences } from '@/state/preferences';
 import { render } from '@/testing/render';
 
-import { JournalSession, type SessionVariant } from './JournalSession';
+import { JournalSession as Session, type SessionVariant } from './JournalSession';
 import { sessionCopy } from './sessionCopy';
 
 jest.mock('expo-haptics', () => ({
@@ -50,6 +51,11 @@ jest.mock('@/services/permissions', () => ({
   requestMicrophonePermission: jest.fn(),
   openAppSettings: jest.fn(),
 }));
+
+/** These tests are of the session itself, on the surfaces it had before the book. */
+function JournalSession(props: ComponentProps<typeof Session>) {
+  return <Session plain {...props} />;
+}
 
 const BODY = 'something I have carried';
 const alert = jest.spyOn(Alert, 'alert');

@@ -1,6 +1,7 @@
 import { useWindowDimensions } from 'react-native';
 
 import { useTheme } from '@/design/theme';
+import { usePaperInk } from '@/features/book/paper';
 import { qa } from '@/testing/qa';
 
 // The open sky of the daily echo (D-003). Measured on the Home plate at the 393 x 852 reference: the
@@ -26,6 +27,8 @@ export const CONTROLS = { aboveKeyboard: 16, aboveEdge: 26, height: 44 };
  */
 export function useSkyInk() {
   const { name, colors } = useTheme();
+  // Words drawn on a page (D-004) take the page's own ink: it is the page, not the sky, behind them.
+  const page = usePaperInk();
   const day = name === 'day';
   const shadow = day
     ? {
@@ -38,6 +41,7 @@ export function useSkyInk() {
         textShadowRadius: 8,
         textShadowOffset: { width: 0, height: 1 },
       };
+  if (page) return { text: page.ink, quiet: page.muted, glow: page.glow, shadow: {} } as const;
   return {
     text: day ? '#FFFDF8' : colors.textPrimary,
     quiet: day ? 'rgba(255,253,248,0.9)' : 'rgba(247,243,235,0.82)',
