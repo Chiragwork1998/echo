@@ -8,6 +8,16 @@ export const json = (status: number, body: unknown) =>
     headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
   });
 
+/**
+ * The only line a route that handles a journal writes: which route, what it answered, how large the
+ * request was, and how long it took. Nothing about what was in it, and nothing derived from it:
+ * not the words, not the language, not whether a step changed them.
+ */
+export const logRoute = (route: string, status: number, started: number, bytes?: number) =>
+  console.log(
+    JSON.stringify({ route, status, ...(bytes === undefined ? {} : { bytes }), ms: Date.now() - started }),
+  );
+
 export const fail = (status: number, code: string, retryable = false) =>
   json(status, { code, retryable });
 

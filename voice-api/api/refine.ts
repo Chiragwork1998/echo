@@ -1,4 +1,4 @@
-import { clientIp, createLimiter, fail, json, tokenMatches } from '../src/guard.js';
+import { clientIp, createLimiter, fail, json, logRoute, tokenMatches } from '../src/guard.js';
 import { finish, styleOf, type Config } from '../src/pipeline.js';
 
 // Every character costs up to three bytes, and Vercel itself refuses more than 4.5 MB.
@@ -45,19 +45,10 @@ export async function POST(request: Request) {
       fetch,
     };
     const done = await finish(text, style, config);
-    console.log(
-      JSON.stringify({
-        route: 'refine',
-        chars: text.length,
-        ms: Date.now() - started,
-        style,
-        polished: done.polished,
-        romanised: done.romanised,
-      }),
-    );
+    logRoute('refine', 200, started, Buffer.byteLength(raw));
     return json(200, { ...done, style });
   } catch {
-    console.log(JSON.stringify({ route: 'refine', failed: 'internal', ms: Date.now() - started }));
+    logRoute('refine', 500, started);
     return fail(500, 'internal', true);
   }
 }

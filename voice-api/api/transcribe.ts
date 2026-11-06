@@ -1,5 +1,5 @@
 import { normalise } from '../src/audio.js';
-import { clientIp, createLimiter, fail, json, tokenMatches } from '../src/guard.js';
+import { clientIp, createLimiter, fail, json, logRoute, tokenMatches } from '../src/guard.js';
 import { run, styleOf, VoiceError, type Config } from '../src/pipeline.js';
 
 const MAX_BYTES = 4_400_000;
@@ -46,22 +46,14 @@ export async function POST(request: Request) {
       fetch,
     };
     const result = await run(audio, config, style);
-    // Sizes, timing and which steps ran. Never audio, text, or anything derived from them.
-    console.log(
-      JSON.stringify({
-        route: 'transcribe',
-        bytes: file.size,
-        ms: Date.now() - started,
-        style,
-        polished: result.polished,
-        romanised: result.romanised,
-      }),
-    );
+    // Size and timing. Never audio, text, or anything derived from them, which includes which steps ran.
+    logRoute('transcribe', 200, started, file.size);
     return json(200, result);
   } catch (error) {
     const voice = error instanceof VoiceError ? error : null;
-    console.log(JSON.stringify({ route: 'transcribe', failed: voice?.code ?? 'internal', ms: Date.now() - started }));
-    if (voice) return fail(voice.code === 'upstream' ? 502 : 422, voice.code, voice.retryable);
-    return fail(500, 'internal', true);
+    const status = voice ? (voice.code === 'upstream' ? 502 : 422) : 500;
+    logRoute('transcribe', status, started);
+    if (voice) return fail(status, voice.code, voice.retryable);
+    return fail(status, 'internal', true);
   }
 }
