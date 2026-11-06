@@ -41,6 +41,37 @@ describe('utf8', () => {
   });
 });
 
+describe('bytesEqual', () => {
+  const sequence = (length: number) => Uint8Array.from({ length }, (_, index) => (index * 5) % 251);
+
+  it('tells equal bytes from different ones at every length and every position', () => {
+    for (const length of [0, 1, 3, 4, 5, 7, 8, 9, 31, 32, 33]) {
+      const a = sequence(length);
+      expect(bytesEqual(a, a.slice())).toBe(true);
+      for (let at = 0; at < length; at += 1) {
+        const b = a.slice();
+        b[at] = (b[at] ?? 0) ^ 0x80;
+        expect(bytesEqual(a, b)).toBe(false);
+      }
+      expect(bytesEqual(a, sequence(length + 1))).toBe(false);
+    }
+  });
+
+  it('compares views that do not start on a four-byte boundary', () => {
+    const backing = Uint8Array.from({ length: 64 }, (_, index) => index);
+    for (let offsetA = 0; offsetA < 4; offsetA += 1) {
+      for (let offsetB = 0; offsetB < 4; offsetB += 1) {
+        const a = backing.subarray(offsetA, offsetA + 20);
+        const b = new Uint8Array(24).subarray(offsetB, offsetB + 20);
+        b.set(a);
+        expect(bytesEqual(a, b)).toBe(true);
+        b[19] = (b[19] ?? 0) ^ 1;
+        expect(bytesEqual(a, b)).toBe(false);
+      }
+    }
+  });
+});
+
 describe('sealed objects', () => {
   it('round trips text and binary', async () => {
     const key = await freshKey();

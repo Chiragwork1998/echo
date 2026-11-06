@@ -202,26 +202,32 @@ describe('launch sweep', () => {
   });
 
   it('keeps the plaintext and tries again when sealing fails', async () => {
-    const failing: FilePort = {
+    let diskFull = true;
+    const flaky: FilePort = {
       ...nodeFiles,
-      writeAtomic: () => Promise.reject(new Error('disk full')),
+      openWriter: (uri) => {
+        if (diskFull) throw new Error('disk full');
+        return nodeFiles.openWriter(uri);
+      },
     };
-    const context = await setup(failing);
+    const context = await setup(flaky);
     const uri = leaveRecording(context, 'stranded.m4a');
 
     expect((await context.journal.recoverLeftovers()).failed).toBe(1);
     expect(existsSync(uri)).toBe(true);
 
-    const healthy = createSqlJournal({ ...context.rt, files: nodeFiles });
-    expect((await healthy.recoverLeftovers()).recovered).toBe(1);
+    diskFull = false;
+    expect((await context.journal.recoverLeftovers()).recovered).toBe(1);
     expect(existsSync(uri)).toBe(false);
   });
 
   it('carries on past one failure to recover the others', async () => {
     const broken: FilePort = {
       ...nodeFiles,
-      read: (uri) =>
-        uri.endsWith('bad.m4a') ? Promise.reject(new Error('unreadable')) : nodeFiles.read(uri),
+      openReader: (uri) => {
+        if (uri.endsWith('bad.m4a')) throw new Error('unreadable');
+        return nodeFiles.openReader(uri);
+      },
     };
     const context = await setup(broken);
     leaveRecording(context, 'bad.m4a');
@@ -324,7 +330,7 @@ describe('launch sweep', () => {
       const { journal, rt } = context;
       const { recordingId } = unwrap(await journal.beginRecording(draftId));
       const uri = leaveRecording(context, `${recordingId}.m4a`);
-      const seal = jest.spyOn(rt.vault, 'sealBytes').mockRejectedValueOnce(new Error('no'));
+      const seal = jest.spyOn(rt.vault, 'sealAudioFile').mockRejectedValueOnce(new Error('no'));
       const attached = await journal.attachRecording({
         recordingId,
         uri,

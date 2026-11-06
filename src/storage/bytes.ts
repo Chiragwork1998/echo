@@ -88,8 +88,27 @@ export function concatBytes(...parts: Uint8Array[]): Uint8Array {
   return out;
 }
 
+/**
+ * The same bytes in a buffer of exactly their length. Native modules take a buffer whole, so a view
+ * into a larger one would hand them everything around it. A copy only when that is the case.
+ */
+export function tight(bytes: Uint8Array): Uint8Array {
+  return bytes.byteOffset === 0 && bytes.buffer.byteLength === bytes.length ? bytes : bytes.slice();
+}
+
 export function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
   if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i += 1) if (a[i] !== b[i]) return false;
+  let start = 0;
+  // Four bytes at a time where both start on a four-byte boundary, as buffers from native modules
+  // do. Verifying a 4 MB audio frame is otherwise four million trips round a loop on Hermes, which
+  // has no JIT, with the screen waiting on it.
+  if (a.byteOffset % 4 === 0 && b.byteOffset % 4 === 0) {
+    const words = a.length >>> 2;
+    const x = new Uint32Array(a.buffer, a.byteOffset, words);
+    const y = new Uint32Array(b.buffer, b.byteOffset, words);
+    for (let i = 0; i < words; i += 1) if (x[i] !== y[i]) return false;
+    start = words * 4;
+  }
+  for (let i = start; i < a.length; i += 1) if (a[i] !== b[i]) return false;
   return true;
 }

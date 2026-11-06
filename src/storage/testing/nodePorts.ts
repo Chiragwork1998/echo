@@ -4,11 +4,13 @@ import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'node:
 import {
   closeSync,
   existsSync,
+  fstatSync,
   mkdirSync,
   mkdtempSync,
   openSync,
   readdirSync,
   readFileSync,
+  readSync,
   renameSync,
   rmSync,
   statSync,
@@ -131,6 +133,34 @@ export function openTestDb(file: string): TestDb {
 
 export const nodeFiles: FilePort = {
   read: async (uri) => new Uint8Array(readFileSync(uri)),
+  size: (uri) => statSync(uri).size,
+  openReader(uri) {
+    const descriptor = openSync(uri, 'r');
+    const size = fstatSync(descriptor).size;
+    let open = true;
+    return {
+      size,
+      read: async (offset, length) => {
+        const out = new Uint8Array(length);
+        let have = 0;
+        while (have < length) {
+          const got = readSync(descriptor, out, have, length - have, offset + have);
+          if (got === 0) break;
+          have += got;
+        }
+        return have === length ? out : out.slice(0, have);
+      },
+      close: () => {
+        // Like the device's handles, closing twice is not an error.
+        if (open) closeSync(descriptor);
+        open = false;
+      },
+    };
+  },
+  async move(from, to) {
+    mkdirSync(join(to, '..'), { recursive: true });
+    renameSync(from, to);
+  },
   async writeAtomic(uri, bytes) {
     mkdirSync(join(uri, '..'), { recursive: true });
     writeFileSync(`${uri}.tmp`, bytes);
@@ -149,12 +179,19 @@ export const nodeFiles: FilePort = {
     mkdirSync(directory, { recursive: true });
   },
   openWriter(uri) {
+    mkdirSync(join(uri, '..'), { recursive: true });
     const descriptor = openSync(uri, 'w');
+    let open = true;
     return {
       write: async (bytes) => {
-        writeSync(descriptor, bytes);
+        for (let done = 0; done < bytes.length;) {
+          done += writeSync(descriptor, bytes, done, bytes.length - done);
+        }
       },
-      close: () => closeSync(descriptor),
+      close: () => {
+        if (open) closeSync(descriptor);
+        open = false;
+      },
     };
   },
 };

@@ -11,19 +11,21 @@ import { Directory, File, FileMode, Paths } from 'expo-file-system';
 import * as SecureStore from 'expo-secure-store';
 import { openDatabaseAsync } from 'expo-sqlite';
 
-import type {
-  AesKey,
-  AesPort,
-  FilePort,
-  SecretStore,
-  SqlDb,
-  SqlValue,
-  StoragePaths,
+import {
+  AES_NONCE_BYTES,
+  AES_TAG_BYTES,
+  type AesKey,
+  type AesPort,
+  type FilePort,
+  type SecretStore,
+  type SqlDb,
+  type SqlValue,
+  type StoragePaths,
 } from './ports';
 
 const DATABASE_NAME = 'echo.db';
-const NONCE_BYTES = 12;
-const TAG_BYTES = 16;
+const NONCE_BYTES = AES_NONCE_BYTES;
+const TAG_BYTES = AES_TAG_BYTES;
 
 type NativeKey = Awaited<ReturnType<typeof AESEncryptionKey.import>>;
 const toNative = (key: AesKey) => key as unknown as NativeKey;
@@ -91,6 +93,48 @@ export async function openNativeDatabase(): Promise<SqlDb> {
 
 export const expoFiles: FilePort = {
   read: (uri) => new File(uri).bytes(),
+  size(uri) {
+    const file = new File(uri);
+    if (!file.exists) throw new Error('no such file');
+    return file.size;
+  },
+  // A handle and a seek per read, because expo-file-system has no positional read. Each call is
+  // awaited by the caller before the next: the handle's offset is shared, and its async calls are not
+  // ordered among themselves.
+  openReader(uri) {
+    const handle = new File(uri).open(FileMode.ReadOnly);
+    const size = handle.size;
+    if (size === null) {
+      handle.close();
+      throw new Error('file is not readable');
+    }
+    return {
+      size,
+      async read(offset, length) {
+        if (length <= 0) return new Uint8Array(0);
+        handle.offset = offset;
+        const first = await handle.readBytes(length);
+        if (first.length === length || first.length === 0) return first;
+        // Short of what was asked and not at the end: keep going until it is whole or the file ends.
+        const whole = new Uint8Array(length);
+        whole.set(first);
+        let have = first.length;
+        while (have < length) {
+          const next = await handle.readBytes(length - have);
+          if (next.length === 0) break;
+          whole.set(next, have);
+          have += next.length;
+        }
+        return have === length ? whole : whole.slice(0, have);
+      },
+      close: () => handle.close(),
+    };
+  },
+  async move(from, to) {
+    const target = new File(to);
+    target.parentDirectory.create({ idempotent: true, intermediates: true });
+    await new File(from).move(target, { overwrite: true });
+  },
   // Honest limit: expo-file-system has no fsync on either platform, so the bytes and the rename can
   // both still be in the OS cache when this resolves. That survives an app crash, not a power loss.
   // sealRecording's read-back is served from the same cache, so it cannot prove more than that.
@@ -123,6 +167,7 @@ export const expoFiles: FilePort = {
   },
   openWriter(uri) {
     const file = new File(uri);
+    file.parentDirectory.create({ idempotent: true, intermediates: true });
     file.create({ overwrite: true });
     const handle = file.open(FileMode.WriteOnly);
     return { write: (bytes) => handle.writeBytes(bytes), close: () => handle.close() };
