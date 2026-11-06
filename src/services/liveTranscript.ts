@@ -26,6 +26,8 @@ export type LiveTranscript = {
   hasWords(): boolean;
   /** Words have arrived that no commit has ended yet. */
   hasOpenWords(): boolean;
+  /** How many commits the model has acknowledged. A commit sent and not yet acknowledged is not here. */
+  committed(): number;
 };
 
 export function createLiveTranscript(): LiveTranscript {
@@ -80,5 +82,6 @@ export function createLiveTranscript(): LiveTranscript {
     hasWords: () => [...items.values()].some((item) => wordsOf(item).length > 0),
     hasOpenWords: () =>
       [...items.values()].some((item) => item.commit === null && wordsOf(item).length > 0),
+    committed: () => commits,
   };
 }

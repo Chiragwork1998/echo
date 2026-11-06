@@ -38,6 +38,8 @@ export function createLiveTake(deps: LiveTakeDeps, onChange: () => void): LiveTa
   const transcript = createLiveTranscript();
   const outbox: Op[] = [];
   let waiting = 0;
+  /** Commits that went out on the connection. Each one is owed an acknowledgement, and a turn. */
+  let commitsSent = 0;
   let socket: LiveSocket | null = null;
   let started = false;
   let ended = false;
@@ -73,9 +75,15 @@ export function createLiveTake(deps: LiveTakeDeps, onChange: () => void): LiveTa
   };
 
   const emit = (op: Op) => {
+    if (!socket) return;
     try {
-      if (op.kind === 'audio') socket?.appendAudio(pcmToBase64(op.samples));
-      else socket?.commit();
+      if (op.kind === 'audio') {
+        socket.appendAudio(pcmToBase64(op.samples));
+      } else {
+        // Counted before it goes: a connection may answer before commit() returns.
+        commitsSent += 1;
+        socket.commit();
+      }
     } catch {
       fail();
     }
@@ -93,7 +101,15 @@ export function createLiveTake(deps: LiveTakeDeps, onChange: () => void): LiveTa
   const check = () => {
     if (done || !ended) return;
     if (transcript.failed()) return fail();
-    if (socket && outbox.length === 0 && transcript.settled()) {
+    // Whole means: everything asked for was sent, every commit came back as a turn, and every turn
+    // has its final words. A commit that has not been answered yet is words that have not arrived,
+    // however finished everything else looks.
+    if (
+      socket &&
+      outbox.length === 0 &&
+      transcript.committed() >= commitsSent &&
+      transcript.settled()
+    ) {
       conclude({ ok: true, text: transcript.text() });
     }
   };
@@ -138,15 +154,11 @@ export function createLiveTake(deps: LiveTakeDeps, onChange: () => void): LiveTa
     if (!started) return conclude({ ok: false });
     if (done) return;
     if (detector.pending() || transcript.hasOpenWords()) send({ kind: 'commit' });
-    // The last words are waited for, but not for ever: what has arrived is then what there is.
-    timer = setTimeout(() => {
-      if (done) return;
-      if (socket && transcript.hasWords() && !transcript.failed()) {
-        conclude({ ok: true, text: transcript.text() });
-      } else {
-        fail();
-      }
-    }, FINISH_MS);
+    if (done) return;
+    // The last words are waited for, but not for ever. When the time is up and they are not all in,
+    // the take is not whole, and the sealed recording is what gets sent: partial words would be
+    // taken for the whole of what was said.
+    timer = setTimeout(fail, FINISH_MS);
     check();
   };
 
