@@ -110,11 +110,11 @@ function StoneArt({ arc, caption }: { arc: string; caption: string }) {
     <Svg width={CANVAS} height={CANVAS} viewBox={`0 0 ${CANVAS} ${CANVAS}`}>
       <Defs>
         <RadialGradient id={`body${id}`} cx="0.4" cy="0.3" r="0.82" fx="0.36" fy="0.26">
-          <Stop offset="0" stopColor="#FBF1E1" />
-          <Stop offset="0.36" stopColor="#F2E3CD" />
-          <Stop offset="0.7" stopColor="#E5D0B3" />
-          <Stop offset="0.9" stopColor="#D2B995" />
-          <Stop offset="1" stopColor="#BCA07C" />
+          <Stop offset="0" stopColor="#EFE9DE" />
+          <Stop offset="0.36" stopColor="#E5DDCF" />
+          <Stop offset="0.7" stopColor="#D6CCBB" />
+          <Stop offset="0.9" stopColor="#C2B6A3" />
+          <Stop offset="1" stopColor="#A89B88" />
         </RadialGradient>
         <RadialGradient id={`falloff${id}`} cx="0.5" cy="0.5" r="0.5">
           <Stop offset="0" stopColor="#6A4A2E" stopOpacity={0} />
@@ -128,7 +128,7 @@ function StoneArt({ arc, caption }: { arc: string; caption: string }) {
           <Stop offset="1" stopColor="#2B1B0C" stopOpacity={0.3} />
         </LinearGradient>
         <RadialGradient id={`shine${id}`} cx="0.5" cy="0.5" r="0.5">
-          <Stop offset="0" stopColor="#FFFFFF" stopOpacity={0.34} />
+          <Stop offset="0" stopColor="#FFFFFF" stopOpacity={0.14} />
           <Stop offset="1" stopColor="#FFFFFF" stopOpacity={0} />
         </RadialGradient>
         <RadialGradient id={`blotDark${id}`} cx="0.5" cy="0.5" r="0.5">
@@ -140,8 +140,8 @@ function StoneArt({ arc, caption }: { arc: string; caption: string }) {
           <Stop offset="1" stopColor="#FFFBF0" stopOpacity={0} />
         </RadialGradient>
         <LinearGradient id={`rim${id}`} x1="0.08" y1="0.12" x2="0.92" y2="0.9">
-          <Stop offset="0" stopColor="#FFF3D6" stopOpacity={0.95} />
-          <Stop offset="0.3" stopColor="#FFEFCB" stopOpacity={0.42} />
+          <Stop offset="0" stopColor="#FFF3D6" stopOpacity={0.55} />
+          <Stop offset="0.3" stopColor="#FFEFCB" stopOpacity={0.2} />
           <Stop offset="0.62" stopColor="#FFE9C2" stopOpacity={0.06} />
           <Stop offset="1" stopColor="#9FC4EA" stopOpacity={0.12} />
         </LinearGradient>

@@ -163,10 +163,12 @@ export function HomeTabBar() {
                         pointerEvents="none"
                       />
                     )}
-                    <TabIcon name={night ? tab.night : tab.day} color={tint} />
+                    <View style={!selected && styles.idle}>
+                      <TabIcon name={night ? tab.night : tab.day} color={tint} />
+                    </View>
                     <EchoText
                       variant="caption"
-                      style={[styles.label, { color: tint }]}
+                      style={[styles.label, { color: tint }, !selected && styles.idle]}
                       maxFontSizeMultiplier={1.2}
                       numberOfLines={1}
                     >
@@ -200,6 +202,8 @@ const styles = StyleSheet.create({
     borderRadius: 26,
   },
   pressed: { opacity: 0.7 },
+  // The goldens recede unselected tabs, so the current place reads at a glance.
+  idle: { opacity: 0.62 },
   pill: {
     position: 'absolute',
     left: 2,
