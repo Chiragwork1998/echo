@@ -29,27 +29,27 @@ export const backgroundSources = {
 
 export const backgroundColours = {
   "day": {
-    "landing": "rgb(8,8,8)",
-    "intent": "rgb(8,88,152)",
-    "horizon": "rgb(24,120,200)",
-    "voice": "rgb(8,88,168)",
-    "rhythm": "rgb(24,120,200)",
-    "privacy": "rgb(72,104,152)",
-    "arrival": "rgb(24,104,184)",
-    "first-echo": "rgb(40,88,136)",
-    "completion": "rgb(56,104,168)",
-    "home": "rgb(56,136,200)"
+    "landing": "rgb(123,118,112)",
+    "intent": "rgb(105,123,134)",
+    "horizon": "rgb(94,117,138)",
+    "voice": "rgb(102,113,123)",
+    "rhythm": "rgb(121,125,124)",
+    "privacy": "rgb(120,142,171)",
+    "arrival": "rgb(112,134,145)",
+    "first-echo": "rgb(115,121,124)",
+    "completion": "rgb(123,108,95)",
+    "home": "rgb(110,113,105)"
   },
   "night": {
-    "landing": "rgb(8,24,56)",
-    "intent": "rgb(8,24,56)",
-    "horizon": "rgb(8,24,56)",
-    "voice": "rgb(8,24,56)",
-    "rhythm": "rgb(8,24,56)",
-    "privacy": "rgb(8,24,56)",
-    "arrival": "rgb(8,40,88)",
-    "first-echo": "rgb(8,24,56)",
-    "completion": "rgb(8,24,56)",
-    "home": "rgb(8,24,56)"
+    "landing": "rgb(37,46,64)",
+    "intent": "rgb(40,55,79)",
+    "horizon": "rgb(30,44,69)",
+    "voice": "rgb(43,51,66)",
+    "rhythm": "rgb(37,55,79)",
+    "privacy": "rgb(50,69,103)",
+    "arrival": "rgb(53,71,95)",
+    "first-echo": "rgb(31,46,66)",
+    "completion": "rgb(38,47,64)",
+    "home": "rgb(30,40,55)"
   }
 } as const;

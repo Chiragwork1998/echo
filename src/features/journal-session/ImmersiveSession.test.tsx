@@ -22,11 +22,16 @@ jest.mock('expo-haptics', () => ({
   impactAsync: jest.fn(),
   ImpactFeedbackStyle: { Light: 'light' },
 }));
-jest.mock('expo-router', () => ({
-  router: { navigate: jest.fn() },
-  Stack: { Screen: () => null },
-  usePathname: () => '/home/session',
-}));
+jest.mock('expo-router', () => {
+  const { useEffect } = jest.requireActual('react');
+  return {
+    router: { navigate: jest.fn() },
+    Stack: { Screen: () => null },
+    usePathname: () => '/home/session',
+    // The screen is always focused here: run the effect on mount, and clean it up on unmount.
+    useFocusEffect: (effect: () => void | (() => void)) => useEffect(effect, [effect]),
+  };
+});
 jest.mock(
   'react-native-safe-area-context',
   () => jest.requireActual('react-native-safe-area-context/jest/mock').default,
