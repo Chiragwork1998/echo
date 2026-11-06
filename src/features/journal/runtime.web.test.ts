@@ -54,6 +54,13 @@ describe('the web preview journal', () => {
     mockQa.fixture = 'home';
   });
 
+  it('gives Completion a seven minute entry, as its golden reads', async () => {
+    mockQa.fixture = 'completion';
+    const latest = unwrap(await (await getJournal()).latestEntry());
+    expect(latest?.durationSeconds).toBe(420);
+    mockQa.fixture = 'home';
+  });
+
   it('starts empty for every other screen', async () => {
     mockQa.fixture = 'first-echo';
     const journal = await getJournal();

@@ -28,12 +28,16 @@ function qaSeed(): MemorySeed {
     ...patch,
   });
   const { recent, draft } = example.home;
+  const first = example.firstEntry;
+  // Home's golden shows the recent entry at six minutes. Completion's shows the newest commit, which
+  // is the entry just written, at seven. Both goldens read this same newest entry.
+  const newestMinutes =
+    qa.fixture === 'completion' ? first.durationMinutes : recent.durationMinutes;
   const recentContent = {
     title: recent.title,
     body: recent.excerpt,
-    durationSeconds: recent.durationMinutes * 60,
+    durationSeconds: newestMinutes * 60,
   };
-  const first = example.firstEntry;
   return {
     entries: [
       entry('qa-1', -3, { body: example.firstEntry.prompt }),
