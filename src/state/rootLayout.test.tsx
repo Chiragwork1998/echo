@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import { router, usePathname } from 'expo-router';
+import * as ScreenCapture from 'expo-screen-capture';
 import * as SplashScreen from 'expo-splash-screen';
-import { Alert, AppState } from 'react-native';
+import { Alert, AppState, Platform } from 'react-native';
 
 import { deleteAllLocal } from '@/services/deleteAllLocal';
 import { getLockMethod } from '@/services/biometric';
@@ -28,6 +29,10 @@ jest.mock('expo-font', () => ({ useFonts: () => [true, null], isLoaded: () => tr
 jest.mock('expo-splash-screen', () => ({
   preventAutoHideAsync: jest.fn(),
   hideAsync: jest.fn(),
+}));
+jest.mock('expo-screen-capture', () => ({
+  preventScreenCaptureAsync: jest.fn(async () => undefined),
+  allowScreenCaptureAsync: jest.fn(async () => undefined),
 }));
 jest.mock('expo-status-bar', () => ({ StatusBar: () => null }));
 jest.mock('react-native-gesture-handler', () => ({
@@ -58,6 +63,8 @@ jest.mock('@/services/biometric', () => ({
 const replace = jest.mocked(router.replace);
 const pathname = jest.mocked(usePathname);
 const hideSplash = jest.mocked(SplashScreen.hideAsync);
+const preventCapture = jest.mocked(ScreenCapture.preventScreenCaptureAsync);
+const allowCapture = jest.mocked(ScreenCapture.allowScreenCaptureAsync);
 
 let appState: ((state: string) => void)[];
 
@@ -242,6 +249,60 @@ describe('the lock', () => {
     expect(screen.getByText(gateCopy.lock.disable)).toBeTruthy();
     expect(screen.queryByText(gateCopy.lock.unlock)).toBeNull();
     expect(unlock).not.toHaveBeenCalled();
+  });
+});
+
+describe('Android screen capture', () => {
+  const lockOn = { privacy: { biometricLock: true, privateBackup: false } };
+  const lockOff = { privacy: { biometricLock: false, privateBackup: false } };
+  const onboarding = (state: typeof lockOn) => act(async () => useOnboarding.setState(state));
+
+  beforeEach(() => {
+    jest.replaceProperty(Platform, 'OS', 'android');
+  });
+
+  it('is prevented while the lock is on, so recents has no thumbnail to show', async () => {
+    useOnboarding.setState(lockOn);
+    await render(<RootLayout />);
+    expect(preventCapture).toHaveBeenCalledTimes(1);
+    expect(allowCapture).not.toHaveBeenCalled();
+  });
+
+  it('starts as soon as the lock is turned on', async () => {
+    await render(<RootLayout />);
+    await onboarding(lockOn);
+    expect(preventCapture).toHaveBeenCalledTimes(1);
+  });
+
+  it('is allowed again once the lock is turned off', async () => {
+    useOnboarding.setState(lockOn);
+    await render(<RootLayout />);
+    await onboarding(lockOff);
+    expect(allowCapture).toHaveBeenCalledTimes(1);
+  });
+
+  it('changes nothing with the lock off', async () => {
+    await render(<RootLayout />);
+    await setGate({ status: { kind: 'ready', resume: '/' } });
+    expect(preventCapture).not.toHaveBeenCalled();
+    expect(allowCapture).not.toHaveBeenCalled();
+  });
+
+  it('does not bring the app down if the native call fails', async () => {
+    preventCapture.mockRejectedValueOnce(new Error('no activity'));
+    useOnboarding.setState(lockOn);
+    await render(<RootLayout />);
+    await setGate({ status: { kind: 'ready', resume: '/' } });
+    expect(screen.queryByTestId(NAVIGATOR)).toBeTruthy();
+  });
+
+  it('is never touched on iOS, whatever the lock says', async () => {
+    jest.replaceProperty(Platform, 'OS', 'ios');
+    useOnboarding.setState(lockOn);
+    await render(<RootLayout />);
+    await onboarding(lockOff);
+    expect(preventCapture).not.toHaveBeenCalled();
+    expect(allowCapture).not.toHaveBeenCalled();
   });
 });
 

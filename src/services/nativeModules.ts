@@ -8,4 +8,7 @@ export const loadAudio = () => require('expo-audio') as typeof import('expo-audi
 export const loadNotifications = () =>
   require('expo-notifications') as typeof import('expo-notifications');
 
+export const loadScreenCapture = () =>
+  require('expo-screen-capture') as typeof import('expo-screen-capture');
+
 export const loadSharing = () => require('expo-sharing') as typeof import('expo-sharing');

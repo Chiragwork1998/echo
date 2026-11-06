@@ -252,13 +252,15 @@ Native behaviour cannot be proved in Jest. Each of these needs a real device.
 
 **Privacy cover**
 
-14. Open recents with an entry on screen. **On Android this is best effort**: see below.
-15. Background and return. The cover lifts and nothing was lost.
+14. Open recents with an entry on screen, lock on. The thumbnail is blank on both platforms. On Android this is `FLAG_SECURE`, so screenshots and screen recording are blocked too.
+15. Same with the lock off. iOS shows the cover. **On Android this is best effort**: the thumbnail races the cover, and a screenshot works.
+16. On Android with the lock on, rotate, change the system theme, and split the screen, then open recents. The thumbnail is still blank.
+17. Background and return. The cover lifts and nothing was lost.
 
 **Other**
 
-16. Schedule a reminder two minutes ahead with the app killed. The body is exactly the fixed line.
-17. Change timezone with the reminder set. It stays at the local time.
-18. Export to Files and to an email app. The zip opens with `entries.json`, `entries.md`, and `audio/`. On Android, check `cache/echo-temp` three ways. Stay in the app: empty a minute later. Background the app inside that minute and return after it: empty on return, and not before. Background it, then force stop: empty after the next launch.
-19. Delete all. The app returns to Landing, and `files/echo` is gone.
-20. Change the timezone, and confirm past days in the week strip do not move.
+18. Schedule a reminder two minutes ahead with the app killed. The body is exactly the fixed line.
+19. Change timezone with the reminder set. It stays at the local time.
+20. Export to Files and to an email app. The zip opens with `entries.json`, `entries.md`, and `audio/`. On Android, check `cache/echo-temp` three ways. Stay in the app: empty a minute later. Background the app inside that minute and return after it: empty on return, and not before. Background it, then force stop: empty after the next launch.
+21. Delete all. The app returns to Landing, and `files/echo` is gone.
+22. Change the timezone, and confirm past days in the week strip do not move.

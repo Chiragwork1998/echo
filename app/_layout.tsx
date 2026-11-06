@@ -3,7 +3,7 @@ import { router, Stack, usePathname } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState, type PropsWithChildren } from 'react';
-import { Alert, AppState, StyleSheet, View } from 'react-native';
+import { Alert, AppState, Platform, StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaInsetsContext, SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -14,6 +14,7 @@ import { fontMap } from '@/design/fonts';
 import { ThemeProvider, useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 import { deleteAllLocal } from '@/services/deleteAllLocal';
+import { loadScreenCapture } from '@/services/nativeModules';
 import {
   bootApp,
   disableLock,
@@ -39,6 +40,7 @@ const PANEL_INSET = tokens.space['24'];
 const PANEL_GAP = tokens.space['16'];
 /** A splash that never lifts would lock someone out as surely as a lost key. */
 const SPLASH_LIMIT_MS = 3000;
+const SECURE_WINDOW_KEY = 'echo-lock';
 
 /** The harness has no notch, so it supplies the reference device's insets. */
 function SafeArea({ children }: PropsWithChildren) {
@@ -205,9 +207,27 @@ function useAppCovered(): boolean {
 }
 
 /**
+ * Android's recents thumbnail races PrivacyCover, so with the lock on the window is marked secure
+ * instead, and the thumbnail is blank. That also blocks screenshots and screen recording while the
+ * app is open, which is why it follows the lock and nothing changes with the lock off.
+ */
+function useSecureWindowWhileLocked() {
+  const lockEnabled = useOnboarding((state) => state.privacy.biometricLock);
+  useEffect(() => {
+    if (gateBypassed || Platform.OS !== 'android' || !lockEnabled) return;
+    const { preventScreenCaptureAsync, allowScreenCaptureAsync } = loadScreenCapture();
+    // PrivacyCover still stands if this fails, and a failed flag must not stop anyone writing.
+    preventScreenCaptureAsync(SECURE_WINDOW_KEY).catch(() => undefined);
+    return () => {
+      allowScreenCaptureAsync(SECURE_WINDOW_KEY).catch(() => undefined);
+    };
+  }, [lockEnabled]);
+}
+
+/**
  * Hides content from the app switcher. iOS takes its snapshot after 'inactive', so this reliably wins
- * there. Android's thumbnail races this render, so it is best effort until FLAG_SECURE is available:
- * see the device checks in docs/DATA_CONTRACT.md.
+ * there. Android's thumbnail races this render, so there it is best effort unless the lock is on:
+ * see useSecureWindowWhileLocked.
  */
 function PrivacyCover() {
   const { colors } = useTheme();
@@ -222,6 +242,7 @@ function Content({ status, onSettled }: { status: GateStatus; onSettled: () => v
   const lock = useGate((state) => state.lock);
   const covered = useAppCovered();
   const hidden = covered || lock.kind === 'locked';
+  useSecureWindowWhileLocked();
 
   return (
     <View style={styles.root}>
