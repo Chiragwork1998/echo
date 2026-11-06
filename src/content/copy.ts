@@ -1,0 +1,88 @@
+// Locked copy from product-handoff/specs/COPY_DECK.md. src/content/copy.test.ts fails on any drift.
+// Screens must read strings from here and never retype them.
+export const copy = {
+  landing: {
+    wordmark: 'ECHO',
+    tagline: 'Meet the hidden parts of you.',
+    cta: 'BEGIN',
+    caption: 'SEVEN MINUTES, ONCE A DAY',
+  },
+  intent: {
+    title: 'What brought you here?',
+    subtitle: 'Choose what feels closest today.',
+    options: ['Quiet the noise', 'Understand myself', 'Hold onto moments', 'Find my direction'],
+    cta: 'Begin with this',
+  },
+  horizon: {
+    title: 'Which horizon needs your attention?',
+    subtitle: 'We’ll shape your first questions around it.',
+    options: [
+      { title: 'Behind me', detail: 'A memory or something unfinished' },
+      { title: 'Where I am', detail: 'What I’m feeling now' },
+      { title: 'Ahead of me', detail: 'A choice or what comes next' },
+    ],
+    cta: 'Start here',
+  },
+  voice: {
+    title: 'How should ECHO meet you?',
+    subtitle: 'Choose the kind of space you need.',
+    options: [
+      { title: 'Guide me', detail: 'One question at a time' },
+      { title: 'Give me space', detail: 'A quiet blank page' },
+      { title: 'Let me speak', detail: 'Voice, without editing' },
+    ],
+    cta: 'Walk this way',
+  },
+  rhythm: {
+    title: 'When can we meet you?',
+    subtitle: 'A small daily ritual works best when it has a place in your day.',
+    presets: ['Morning', 'Evening', 'Before sleep'],
+    reminder: 'Gentle reminder',
+    dialCaption: 'A calmer you tomorrow',
+    cta: 'Set my rhythm',
+  },
+  privacy: {
+    title: 'Leave no trace.',
+    subtitle: 'What you write belongs to you.',
+    lockIos: 'Lock with Face ID',
+    lockAndroid: 'Lock with biometrics',
+    backup: 'Keep a private backup',
+    caption: 'Encrypted before it leaves your phone.',
+    cta: 'Protect my journal',
+  },
+  arrival: {
+    title: 'Arrive as you are.',
+    subtitle: 'What has today felt like?',
+    moods: ['Light', 'Steady', 'Unsettled', 'Heavy', 'Numb'],
+    skip: 'Skip',
+    cta: 'That’s close',
+  },
+  firstEcho: {
+    title: 'What are you carrying that no one can see?',
+    placeholder: 'Start wherever it feels true…',
+    write: 'Write',
+    speak: 'Speak',
+    caption: 'There is no right way to say it.',
+    cta: 'Reflect',
+  },
+  completion: {
+    title: 'You made space for yourself.',
+    subtitle: 'That is the whole practice.',
+    cardTitle: 'Today’s echo',
+    saved: 'Saved privately · 7 minutes',
+    cta: 'Enter your space',
+  },
+  home: {
+    dayGreeting: 'Good morning.',
+    dayHeadline: 'There is room for you here.',
+    nightHeadline: 'Where are you, really?',
+    nightSubtitle: 'One honest answer is enough.',
+    eyebrow: 'Today · 7 min',
+    prompt: 'What is asking for your attention?',
+    begin: 'Begin today’s echo',
+    recentTitle: 'From your path',
+    thisWeek: 'This week',
+    continueEcho: 'Continue an echo',
+    tabs: ['Today', 'Echoes', 'Patterns', 'You'],
+  },
+} as const;

@@ -1,0 +1,106 @@
+{
+  "day": {
+    "landing": {
+      "scale": 1.03,
+      "dx": -4,
+      "dy": 4
+    },
+    "intent": {
+      "scale": 1,
+      "dx": 0,
+      "dy": 44
+    },
+    "horizon": {
+      "scale": 1,
+      "dx": 0,
+      "dy": 40
+    },
+    "voice": {
+      "scale": 1,
+      "dx": 0,
+      "dy": 20
+    },
+    "rhythm": {
+      "scale": 1,
+      "dx": 0,
+      "dy": 8
+    },
+    "privacy": {
+      "scale": 1,
+      "dx": 0,
+      "dy": 24
+    },
+    "arrival": {
+      "scale": 1,
+      "dx": 0,
+      "dy": 20
+    },
+    "first-echo": {
+      "scale": 1.02,
+      "dx": 0,
+      "dy": 32
+    },
+    "completion": {
+      "scale": 1,
+      "dx": 0,
+      "dy": 8
+    },
+    "home": {
+      "scale": 1,
+      "dx": 0,
+      "dy": 0
+    }
+  },
+  "night": {
+    "landing": {
+      "scale": 1.09,
+      "dx": -8,
+      "dy": 16
+    },
+    "intent": {
+      "scale": 1,
+      "dx": 0,
+      "dy": 12
+    },
+    "horizon": {
+      "scale": 1,
+      "dx": 0,
+      "dy": 8
+    },
+    "voice": {
+      "scale": 1,
+      "dx": 0,
+      "dy": 12
+    },
+    "rhythm": {
+      "scale": 1,
+      "dx": 0,
+      "dy": 12
+    },
+    "privacy": {
+      "scale": 1,
+      "dx": 0,
+      "dy": 20
+    },
+    "arrival": {
+      "scale": 1,
+      "dx": 0,
+      "dy": 0
+    },
+    "first-echo": {
+      "scale": 1.01,
+      "dx": -4,
+      "dy": 28
+    },
+    "completion": {
+      "scale": 1,
+      "dx": 0,
+      "dy": 4
+    },
+    "home": {
+      "scale": 1,
+      "dx": 0,
+      "dy": 0
+    }
+  }
+}

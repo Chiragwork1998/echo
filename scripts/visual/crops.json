@@ -1,0 +1,147 @@
+{
+  "day": {
+    "landing": {
+      "x": 47,
+      "y": 85,
+      "width": 770,
+      "height": 1673,
+      "kind": "card"
+    },
+    "intent": {
+      "x": 74,
+      "y": 97,
+      "width": 721,
+      "height": 1591,
+      "kind": "bezel"
+    },
+    "horizon": {
+      "x": 74,
+      "y": 97,
+      "width": 721,
+      "height": 1591,
+      "kind": "bezel"
+    },
+    "voice": {
+      "x": 74,
+      "y": 97,
+      "width": 721,
+      "height": 1591,
+      "kind": "bezel"
+    },
+    "rhythm": {
+      "x": 74,
+      "y": 97,
+      "width": 721,
+      "height": 1591,
+      "kind": "bezel"
+    },
+    "privacy": {
+      "x": 74,
+      "y": 97,
+      "width": 721,
+      "height": 1591,
+      "kind": "bezel"
+    },
+    "arrival": {
+      "x": 74,
+      "y": 97,
+      "width": 721,
+      "height": 1591,
+      "kind": "bezel"
+    },
+    "first-echo": {
+      "x": 74,
+      "y": 97,
+      "width": 721,
+      "height": 1591,
+      "kind": "bezel"
+    },
+    "completion": {
+      "x": 74,
+      "y": 97,
+      "width": 721,
+      "height": 1591,
+      "kind": "bezel"
+    },
+    "home": {
+      "x": 0,
+      "y": 0,
+      "width": 868,
+      "height": 1812,
+      "kind": "full-bleed"
+    }
+  },
+  "night": {
+    "landing": {
+      "x": 48,
+      "y": 41,
+      "width": 768,
+      "height": 1661,
+      "kind": "card"
+    },
+    "intent": {
+      "x": 74,
+      "y": 97,
+      "width": 721,
+      "height": 1591,
+      "kind": "bezel"
+    },
+    "horizon": {
+      "x": 74,
+      "y": 97,
+      "width": 721,
+      "height": 1591,
+      "kind": "bezel"
+    },
+    "voice": {
+      "x": 74,
+      "y": 97,
+      "width": 721,
+      "height": 1591,
+      "kind": "bezel"
+    },
+    "rhythm": {
+      "source": "golden/day/04-rhythm.png",
+      "x": 74,
+      "y": 97,
+      "width": 721,
+      "height": 1591,
+      "kind": "bezel-day-geometry"
+    },
+    "privacy": {
+      "x": 74,
+      "y": 97,
+      "width": 721,
+      "height": 1591,
+      "kind": "bezel"
+    },
+    "arrival": {
+      "x": 74,
+      "y": 97,
+      "width": 721,
+      "height": 1591,
+      "kind": "bezel"
+    },
+    "first-echo": {
+      "x": 74,
+      "y": 97,
+      "width": 721,
+      "height": 1591,
+      "kind": "bezel"
+    },
+    "completion": {
+      "x": 74,
+      "y": 97,
+      "width": 721,
+      "height": 1591,
+      "kind": "bezel"
+    },
+    "home": {
+      "x": 0,
+      "y": 0,
+      "width": 868,
+      "height": 1812,
+      "kind": "full-bleed"
+    }
+  }
+}

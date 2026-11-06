@@ -1,0 +1,7 @@
+product-handoff
+dist
+.artifacts
+.expo
+src/design/generated
+package-lock.json
+*.md
