@@ -123,7 +123,7 @@ Saving happens by itself: every 600 ms while typing, on leaving the screen, and 
 
 ## Voice to words
 
-D-005 and D-006: ECHO is voice first, and a spoken take becomes text. `src/services/transcription.ts` uploads a sealed recording to the voice server, and never throws.
+D-005, D-006 and D-008: ECHO is voice first, and a spoken take becomes text, in the person's exact words unless they turned on Tidy my words. `src/services/transcription.ts` uploads a sealed recording to the voice server, and never throws.
 
 ```ts
 const result = await transcribeEntryAudio(draftId, { signal });
@@ -131,13 +131,17 @@ const result = await transcribeEntryAudio(draftId, { signal });
 // { ok: false, error: { code, retryable } }
 ```
 
+The request carries `style`: `exact` (the default: every filler and self-correction stays, and the only second step is writing Hindi in Roman script) or `tidy` (`usePreferences().tidyWords`). A WAV longer than the server takes, which is what a live take is, is cut at its quietest moments into pieces of about 4 MB, sent in order, and joined.
+
 | `error.code`        | Meaning                                                      | What the person sees                         |
 | ------------------- | ------------------------------------------------------------ | -------------------------------------------- |
 | `consent_required`  | Not asked yet, or Keep my voice only. **Nothing was sent**   | The consent sheet, or nothing                |
 | `not_configured`    | No address or token, a non-HTTPS remote address, or 503      | Unavailable, recording is safe, Write instead |
 | `unauthorized`      | 401: the token was not accepted                              | Unavailable, recording is safe, Write instead |
-| `offline`, `timeout`| No reply, or none within 100 s                               | Recording is safe, Try again                 |
-| `too_long`          | 413: the server takes about 14 minutes at 40 kbps            | Recording is safe, Try again                 |
+| `offline`           | The phone itself reports no connection. Said only when true  | Recording is safe, Try again                 |
+| `unexpected`        | The request could not be built or sent, and the phone does not say it is offline | Something went wrong, recording is safe, Try again |
+| `timeout`           | No reply within 100 s                                        | Recording is safe, Try again                 |
+| `too_long`          | 413, or an AAC/M4A past about 14 minutes at 40 kbps. A WAV is split instead | Recording is safe, Write instead |
 | `no_speech`         | 422: nothing was heard                                       | Recording is safe, Try again                 |
 | `unsupported`       | 415, or 422 `unsupported_audio`                              | Recording is safe, Try again                 |
 | `rate_limited`, `server`, `invalid_response` | 429, 5xx, or a reply that is not the contract | Recording is safe, Try again       |
@@ -150,6 +154,22 @@ const result = await transcribeEntryAudio(draftId, { signal });
 - `content.transcribedAudioId` names the recording whose words are already in `body`. A draft whose `audio.id` is something else has a recording with no words yet, and a reopened session offers to turn it into words.
 - The words join `body` after a paragraph break and are saved at once. A session that closes mid-request still delivers them into the stored draft.
 - The draft keeps one recording. A new recording replaces the sealed one, so a take that is still waiting for its words keeps a decrypted copy until it is done. If that copy could not be made, the take cannot be retried, and the session says so.
+
+## Live words
+
+D-007 and D-008. Words are hidden by default: a spoken session shows the photograph and one breathing light, the take is recorded to a file as before, and it is sent after it ends. Nothing opens a socket.
+
+`usePreferences().wordsShown` turns on live words, and the first time it is turned on the person agrees to a separate note (`voiceConsent.live`, in the same record and under the same `VOICE_POLICY_VERSION`, see `liveAllowed`): the voice streams to OpenAI as it is spoken, which OpenAI may keep for up to 30 days. Only the daily echo streams.
+
+Session fields for a page to draw: `wordsShown`, `liveText` (words heard live and not yet in the draft), `bodyVisible` (false while speaking with words hidden), `wordsLabel` and `toggleWords` for the quiet row, `quietLine` (`…listening` only when words are shown, or the calm note that live words stopped), `consentOpen` with `consentKind` (`voice` or `live`, for `VoiceConsentSheet`), and `touchSky()` for a touch on the scenery.
+
+How a live take works:
+
+- `POST /api/live-session` on the voice server returns a secret that lives for a minute and opens one transcription session. The OpenAI key never reaches the phone, and no audio passes through ECHO's server.
+- The microphone is expo-audio's `useAudioStream` (24 kHz, mono, int16, resampled if the device gives another rate). It also writes the take as a WAV to `cache/Audio/<ledger id>.wav` with `startFileRecordingAsync`, so the recording is sealed and swept like any other. Only one of the file recorder and the stream owns the microphone for a take.
+- `src/services/liveTake.ts` sends the audio, finds pauses with simple voice detection and commits each turn, and orders turns by commit with completions matched by `item_id`.
+- When the take stops, the words go through the same rules as any other take (`refineWords`: exact words are kept, Devanagari is written in Roman script, tidy polishes), and join `body`.
+- If the connection cannot open, drops at any moment, or a turn fails, recording carries on, the person is told calmly, and the sealed recording is sent after it ends as usual. A hidden take never uses any of this.
 
 ## Completion
 

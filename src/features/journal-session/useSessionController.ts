@@ -129,6 +129,7 @@ export function useSessionController({ variant, initialMode, draftId }: SessionO
   // The take being recorded that is also being heard live, and the question that Show words asks.
   const liveTake = useRef<LiveHandle | null>(null);
   const stopping = useRef(false);
+  const beginning = useRef(false);
   const [liveAsk, setLiveAsk] = useState<'toggle' | 'record' | null>(null);
   // Speak, unless the person last chose to write. Where there is no microphone to speak into, the
   // page they can use opens instead.
@@ -198,6 +199,16 @@ export function useSessionController({ variant, initialMode, draftId }: SessionO
     take?.settle();
   };
   const beginRecording = async () => {
+    // A second touch while the first is still starting would open a second connection for one take.
+    if (beginning.current || liveTake.current) return;
+    beginning.current = true;
+    try {
+      await begin();
+    } finally {
+      beginning.current = false;
+    }
+  };
+  const begin = async () => {
     setPermission('none');
     const { wordsShown: shown, voiceConsent } = usePreferences.getState();
     // Hidden words never open a connection. Live needs the stream, the person's agreement to it, and
@@ -483,8 +494,11 @@ export function useSessionController({ variant, initialMode, draftId }: SessionO
     wordsShown,
     /** Words heard live and not yet in the draft. Always empty unless words are shown. */
     liveText: wordsShown ? liveWords.text : '',
-    /** The draft's words are on the screen: always when writing, and when spoken words are shown. */
-    bodyVisible: mode === 'write' || wordsShown,
+    /**
+     * The draft's words are on the screen: always when writing, and when spoken words are shown.
+     * First Echo keeps its page: its words come to the page as they land.
+     */
+    bodyVisible: !daily || mode === 'write' || wordsShown,
     /** The quiet word for the words: what a tap will do. */
     wordsLabel: wordsShown ? sessionCopy.words.hide : sessionCopy.words.show,
     toggleWords,

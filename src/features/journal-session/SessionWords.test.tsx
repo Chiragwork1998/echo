@@ -157,7 +157,7 @@ const tick = (ms: number) => act(() => void jest.advanceTimersByTime(ms));
 const settle = () => act(async () => void (await Promise.resolve()));
 
 async function open() {
-  await render(<JournalSession variant="daily" />);
+  await render(<JournalSession variant="daily" plain />);
   await waitFor(() => expect(scenery().props.accessibilityState.disabled).toBe(false));
 }
 /** Begins a take, and speaks into it so the page has seen the recording start. */
