@@ -1,8 +1,6 @@
-import { copy } from '@/content/copy';
-import { PlaceholderStep } from '@/features/onboarding/PlaceholderStep';
+import { JournalSession } from '@/features/journal-session/JournalSession';
 
+/** Step 7. The same session as the daily echo, with the onboarding header and Completion next. */
 export function FirstEchoScreen() {
-  return (
-    <PlaceholderStep screen="first-echo" title={copy.firstEcho.title} cta={copy.firstEcho.cta} />
-  );
+  return <JournalSession variant="onboarding" />;
 }
