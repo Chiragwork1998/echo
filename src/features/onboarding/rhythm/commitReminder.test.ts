@@ -60,6 +60,28 @@ describe('commitReminder', () => {
     expect(scheduleReminder).toHaveBeenCalledWith('08:00');
   });
 
+  // Android 13 and later report a permission that was never asked as `denied`, with canAskAgain true,
+  // because notifications count as off until it is granted (expo-notifications reads
+  // areNotificationsEnabled before the status). Waiting for `undetermined` meant the system prompt never
+  // came on a real phone, and a reminder could never be turned on. Expo Go hides it. Seen on the
+  // installed release build: the switch went on, the page said notifications were off, no prompt.
+  it('asks when the phone reports denied but the prompt has not been used up', async () => {
+    current.mockResolvedValue({ status: 'denied', canAskAgain: true });
+    request.mockResolvedValue({ status: 'granted', canAskAgain: true });
+    answer('Allow');
+    expect(await commitReminder('08:00', true)).toEqual({ status: 'scheduled', time: '08:00' });
+    expect(Alert.alert).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not ask again once the system will no longer show its prompt', async () => {
+    current.mockResolvedValue({ status: 'denied', canAskAgain: false });
+    expect(await commitReminder('08:00', true)).toEqual({ status: 'not_allowed' });
+    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(request).not.toHaveBeenCalled();
+    expect(scheduleReminder).not.toHaveBeenCalled();
+  });
+
   it('never shows the OS prompt when the person says not now', async () => {
     current.mockResolvedValue({ status: 'undetermined', canAskAgain: true });
     answer('Not now');

@@ -41,7 +41,14 @@ export async function commitReminder(time: string, enabled: boolean): Promise<Re
     return { status: 'off' };
   }
   let permission = await getNotificationPermission();
-  if (permission.status === 'undetermined' && (await ask(EXPLANATION, 'Allow'))) {
+  // Ask whenever the system will still show its prompt. That is `undetermined` on iOS, and on Android 13
+  // and later it is `denied` with canAskAgain true: a permission never asked looks denied there, because
+  // notifications count as off until it is granted. A person who refused for good (canAskAgain false)
+  // is not asked again, and is sent to Settings by the page instead.
+  const mayAsk =
+    permission.status === 'undetermined' ||
+    (permission.status === 'denied' && permission.canAskAgain);
+  if (mayAsk && (await ask(EXPLANATION, 'Allow'))) {
     permission = await requestNotificationPermission();
     if (permission.status === 'denied' && (await ask(EXPLANATION, 'Enable in Settings'))) {
       await openAppSettings();

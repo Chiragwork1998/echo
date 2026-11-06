@@ -1,4 +1,4 @@
-appId: host.exp.exponent
+appId: com.thesaturnlabs.echo
 name: Fresh start, onboarding to First Echo, to Home
 # e2e: reduce-motion
 # Start: E2E_LAUNCH=fresh .maestro/run.sh 01-fresh-start.yaml (clears Expo Go, then starts ECHO).
