@@ -22,17 +22,13 @@ const CREAM_STOPS = ['#FBF8F2', '#EDE6DC'] as const; // tokens.gradient.creamBut
 type Props = {
   label: string;
   onPress?: () => void;
-  /** cream is the filled default. glass is the outlined style on Landing and disabled Reflect. */
+  /** cream is the filled default. glass is the outlined style for disabled Reflect. */
   variant?: 'cream' | 'glass';
   arrow?: boolean;
   disabled?: boolean;
   /** Explains what is needed to enable the button, for screen readers. */
   disabledHint?: string;
   loading?: boolean;
-  /** Only for goldens that show a narrower button than the shared width, such as Landing. */
-  width?: number;
-  /** Landing's all-caps BEGIN is tracked wider than sentence-case labels. */
-  tracking?: number;
 };
 
 export function PrimaryCTA({
@@ -43,8 +39,6 @@ export function PrimaryCTA({
   disabled = false,
   disabledHint,
   loading = false,
-  width,
-  tracking,
 }: Props) {
   const { colors } = useTheme();
   const { ctaWidth } = useLayout();
@@ -64,11 +58,7 @@ export function PrimaryCTA({
         <>
           <EchoText
             variant="button"
-            style={[
-              styles.label,
-              { color: labelColor },
-              tracking != null && { letterSpacing: tracking },
-            ]}
+            style={[styles.label, { color: labelColor }]}
             numberOfLines={1}
             adjustsFontSizeToFit
             minimumFontScale={0.8}
@@ -84,7 +74,7 @@ export function PrimaryCTA({
   return (
     <Animated.View
       style={[
-        { width: width ?? ctaWidth, opacity: disabled ? DISABLED_OPACITY : 1, alignSelf: 'center' },
+        { width: ctaWidth, opacity: disabled ? DISABLED_OPACITY : 1, alignSelf: 'center' },
         animated,
       ]}
     >

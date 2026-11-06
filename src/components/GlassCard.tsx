@@ -1,4 +1,4 @@
-import { BlurTargetView, BlurView } from 'expo-blur';
+import { BlurTargetView, BlurView, type BlurTint } from 'expo-blur';
 import {
   createContext,
   useContext,
@@ -55,6 +55,26 @@ function useReduceTransparency() {
 /** expo-blur maps intensity to radius differently per platform; these match the 24/32 pt tokens. */
 const intensityFor = (radius: number) => Math.min(100, Math.round(radius * 2.5));
 
+/** Backdrop blur tied to the screen's plate. For custom glass shapes that GlassCard cannot express. */
+export function GlassBlur({
+  radius = tokens.blur.glass,
+  tint = 'default',
+}: {
+  radius?: number;
+  tint?: BlurTint;
+}) {
+  const target = useContext(BlurTargetContext);
+  return (
+    <BlurView
+      style={StyleSheet.absoluteFill}
+      intensity={intensityFor(radius)}
+      tint={tint}
+      blurMethod="dimezisBlurView"
+      blurTarget={target ?? undefined}
+    />
+  );
+}
+
 type Props = PropsWithChildren<{
   strength?: 'regular' | 'strong';
   radius?: number;
@@ -64,7 +84,6 @@ type Props = PropsWithChildren<{
 
 export function GlassCard({ strength = 'regular', radius, style, contentStyle, children }: Props) {
   const { colors } = useTheme();
-  const target = useContext(BlurTargetContext);
   const reduceTransparency = useReduceTransparency();
   const strong = strength === 'strong' || reduceTransparency;
   const borderRadius = radius ?? tokens.radius.card;
@@ -73,15 +92,7 @@ export function GlassCard({ strength = 'regular', radius, style, contentStyle, c
     <View style={[{ borderRadius, boxShadow: tokens.shadow.glass }, style]}>
       <View style={[styles.clip, { borderRadius, borderColor: colors.borderGlass }]}>
         {!reduceTransparency && (
-          <BlurView
-            style={StyleSheet.absoluteFill}
-            intensity={intensityFor(
-              strength === 'strong' ? tokens.blur.glassStrong : tokens.blur.glass,
-            )}
-            tint="default"
-            blurMethod="dimezisBlurView"
-            blurTarget={target ?? undefined}
-          />
+          <GlassBlur radius={strength === 'strong' ? tokens.blur.glassStrong : tokens.blur.glass} />
         )}
         <View
           style={[

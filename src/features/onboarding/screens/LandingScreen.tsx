@@ -3,13 +3,12 @@ import { StyleSheet, View } from 'react-native';
 
 import { EchoText } from '@/components/EchoText';
 import { EchoWordmark } from '@/components/EchoWordmark';
-import { PrimaryCTA } from '@/components/PrimaryCTA';
 import { ScreenShell } from '@/components/ScreenShell';
 import { copy } from '@/content/copy';
 import { useLayout } from '@/design/layout';
 import { nextPath } from '@/features/onboarding/flow';
+import { BeginButton } from '@/features/onboarding/landing/BeginButton';
 
-const GOLDEN_CTA_WIDTH = 316; // docs/SPEC_CONFLICTS.md, C-04
 const HERO_TOP = 54;
 
 /** Reference screen for agents: copy from src/content, tokens through shared components. */
@@ -20,11 +19,8 @@ export function LandingScreen() {
       screen="landing"
       footer={
         <View style={styles.footer}>
-          <PrimaryCTA
-            variant="glass"
+          <BeginButton
             label={copy.landing.cta}
-            width={GOLDEN_CTA_WIDTH}
-            tracking={5.5}
             onPress={() => router.navigate(nextPath('landing') as never)}
           />
           <EchoText variant="caption" align="center" color="textSecondary" style={styles.caption}>

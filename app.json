@@ -17,7 +17,33 @@
       "bundler": "metro",
       "output": "single"
     },
-    "plugins": ["expo-router", "expo-status-bar", "expo-font", "expo-image", "expo-splash-screen"],
+    "plugins": [
+      "expo-router",
+      "expo-status-bar",
+      "expo-font",
+      "expo-image",
+      "expo-splash-screen",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "ECHO uses the microphone only when you choose to speak an entry."
+        }
+      ],
+      "expo-sharing",
+      "expo-sqlite",
+      "expo-secure-store",
+      "expo-localization",
+      "expo-web-browser",
+      "@react-native-community/datetimepicker",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Use Face ID or your device biometric to keep your journal private."
+        }
+      ],
+      "expo-notifications",
+      "expo-asset"
+    ],
     "experiments": {
       "typedRoutes": true
     }

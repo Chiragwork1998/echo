@@ -18,7 +18,8 @@ const ThemeContext = createContext<ThemeValue | null>(null);
 
 export function ThemeProvider({ children }: PropsWithChildren) {
   const system = useColorScheme();
-  const [preference, setPreference] = useState<ThemePreference>('automatic');
+  // Night is the owner's chosen default (docs/OWNER_DECISIONS.md, D-001).
+  const [preference, setPreference] = useState<ThemePreference>('night');
   const automatic: ThemeName = system === 'dark' ? 'night' : 'day';
   const name = qa.theme ?? (preference === 'automatic' ? automatic : preference);
 

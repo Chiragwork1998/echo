@@ -7,7 +7,7 @@ You own one screen of ECHO. The bar is a thing of beauty: your screen should be 
 1. `AGENTS.md`
 2. `product-handoff/specs/SCREEN_SPECS.md`, your section
 3. `product-handoff/specs/INTERACTIONS_AND_STATES.md` and `RESPONSIVE_ACCESSIBILITY.md`
-4. `docs/SPEC_CONFLICTS.md`, where the goldens override the written spec
+4. `docs/OWNER_DECISIONS.md` and `docs/SPEC_CONFLICTS.md`, which override the handoff
 5. `src/features/onboarding/screens/LandingScreen.tsx`, the reference screen
 6. Your goldens: open `product-handoff/golden/day/` and `night/` and look at them closely
 
@@ -26,9 +26,13 @@ You may edit only:
 ## Rules
 
 - Text comes from `copy` in `src/content/copy.ts`, or `goldenCopy` if it is not in the deck. Never retype a string.
-- Use shared components first: `ScreenShell`, `OnboardingHeader`, `PrimaryCTA`, `GlassCard`, `EchoText`, `ChoiceMarker`, `ToggleRow`, `Icon`.
+- Use shared components first: `ScreenShell`, `OnboardingHeader`, `PrimaryCTA`, `GlassCard`, `EchoText`, `TrackedText`, `ChoiceMarker`, `ToggleRow`, `Icon`.
+- Night is the default theme and the first impression (D-001), so perfect Night first, then confirm Day.
+- Controls that sit on scenery go in `ScreenShell`'s `plateOverlay` prop and are positioned with `usePlatePoint` from `@/design/usePlatePoint`, so they stay on their rock or river bend on every phone.
+- Android and iOS space letters differently. Use `TrackedText` for short, widely tracked words, not `letterSpacing`.
 - Colours, spacing, radii, and motion come from `tokens`. A number measured from a golden goes in a named constant at the top of the file.
 - Never hardcode a font. Use `EchoText`.
+- Tests use `render` from `@/testing/render`, and `render` and `fireEvent` must be awaited. See `src/components/PrimaryCTA.test.tsx`. Mock `expo-haptics` as in `src/features/onboarding/landing/BeginButton.test.tsx`.
 - Selection must show through shape as well as colour, with a 44 pt minimum target and correct accessibility role, label, and state.
 - Honour Reduce Motion through Reanimated's `ReduceMotion.System`.
 - No journal content in logs. No `console.log` left behind.
@@ -48,7 +52,7 @@ npm run visual -- --screen <id> --theme day          # build, render, compare
 npm run visual -- --screen <id> --skip-build         # faster when only comparing again
 ```
 
-Then **open `.artifacts/visual/<theme>-<id>.png` and look at it.** It has four panels: Golden, Ours, Overlay, Diff. Fix what you see and repeat until Overlay shows no ghosting on any UI element. Check both Day and Night.
+Read images with your file-reading tool. Then **open `.artifacts/visual/<theme>-<id>.png` and look at it.** It has four panels: Golden, Ours, Overlay, Diff. Fix what you see and repeat until Overlay shows no ghosting on any UI element. Check both Day and Night.
 
 The mismatch percentage will not reach zero, because the photography differs slightly. Do not chase the number. Judge alignment, type size, weight, colour, and glass by eye. Bounds should be within 2 pt, baselines within 3 pt.
 
@@ -70,4 +74,4 @@ There is no Night Rhythm golden. Match the Day golden's geometry, and take the n
 
 ## Screen ids
 
-`landing` is done. Assign from: `intent`, `horizon`, `voice`, `rhythm`, `privacy`, `arrival`, `first-echo`, `completion`, `home`.
+`landing` is done, and its BEGIN button is an owner-approved redesign, so it intentionally differs from the golden. Assign from: `intent`, `horizon`, `voice`, `rhythm`, `privacy`, `arrival`, `first-echo`, `completion`, `home`.

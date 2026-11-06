@@ -4,7 +4,7 @@ import { copy } from '@/content/copy';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 
-import { EchoText } from './EchoText';
+import { TrackedText } from './TrackedText';
 
 const { size, tracking, lineHeight } = tokens.typography.wordmark;
 const HEADER_SCALE = 0.93;
@@ -23,19 +23,13 @@ export function EchoWordmark({ hero = false, ink = false }: { hero?: boolean; in
       accessibilityRole="header"
       accessibilityLabel={copy.landing.wordmark}
     >
-      <EchoText
+      <TrackedText
+        text={copy.landing.wordmark}
+        tracking={letterSpacing}
         variant="wordmark"
         color={ink ? 'textInk' : 'textPrimary'}
-        // Trailing letterspacing would push the word left of centre, so it is balanced here.
-        style={{
-          fontSize: size * scale,
-          lineHeight: lineHeight * scale,
-          letterSpacing,
-          marginRight: -letterSpacing,
-        }}
-      >
-        {copy.landing.wordmark}
-      </EchoText>
+        style={{ fontSize: size * scale, lineHeight: lineHeight * scale }}
+      />
       <View
         style={[
           styles.rule,

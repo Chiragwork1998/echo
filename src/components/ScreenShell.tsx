@@ -18,27 +18,40 @@ type Props = PropsWithChildren<{
   header?: ReactNode;
   /** Pinned to the bottom. Primary CTA goes here. */
   footer?: ReactNode;
+  /**
+   * Full-screen layer pinned to the photograph, for controls that sit on scenery such as the river
+   * points on Intent or the stones on Arrival. Position children with usePlatePoint.
+   */
+  plateOverlay?: ReactNode;
 }>;
 
 /**
  * Every screen: full-bleed plate, safe-area UI layer, gutters, tablet column, and the scrolling
  * accessible layout at large text sizes. Screens only supply their content.
  */
-export function ScreenShell({ screen, header, footer, children }: Props) {
+export function ScreenShell({ screen, header, footer, plateOverlay, children }: Props) {
   const insets = useSafeAreaInsets();
   const { gutter, width, accessibleLayout } = useLayout();
 
   const body = (
-    <View style={[styles.column, { width, paddingHorizontal: gutter }]}>
+    <View style={[styles.column, { width, paddingHorizontal: gutter }]} pointerEvents="box-none">
       {header}
-      <View style={styles.content}>{children}</View>
+      <View style={styles.content} pointerEvents="box-none">
+        {children}
+      </View>
     </View>
   );
 
   return (
     <View style={styles.root}>
       <BlurSurface backdrop={<EchoBackground screen={screen} />}>
+        {plateOverlay && (
+          <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+            {plateOverlay}
+          </View>
+        )}
         <View
+          pointerEvents="box-none"
           style={[
             styles.layer,
             {
