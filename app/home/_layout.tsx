@@ -1,5 +1,5 @@
-import { Stack } from 'expo-router';
-import { StyleSheet, View } from 'react-native';
+import { DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+import { Platform, StyleSheet, View } from 'react-native';
 
 import { EchoBackground } from '@/components/EchoBackground';
 import { BlurSurface } from '@/components/GlassCard';
@@ -17,6 +17,14 @@ import { useGate } from '@/state/gate';
 const OTHER_PLATE: Record<string, string> = { complete: 'completion' };
 /** Home itself: it draws no photograph, so the one beneath the stack shows through. */
 const TRANSPARENT_ROUTES: readonly string[] = ['index'];
+/**
+ * The web navigator paints its theme's background over everything beneath it, so the visual harness
+ * would compare Home against a white page. Native honours contentStyle and needs none of this.
+ */
+const CLEAR_NAVIGATOR = {
+  ...DefaultTheme,
+  colors: { ...DefaultTheme.colors, background: 'transparent' },
+};
 
 /**
  * Today, Echoes, Patterns and You share one tab bar, drawn above the stack. It shows on those four
@@ -33,34 +41,41 @@ export default function HomeLayout() {
   const reduced = useReduceMotion();
   // The lock panel is opaque and sits above everything: nothing should play behind it.
   const locked = useGate((state) => state.lock.kind === 'locked');
+  const stack = (
+    <Stack
+      screenOptions={({ route }) => ({
+        headerShown: false,
+        animation: 'fade',
+        animationDuration: reduced ? tokens.motion.fast : tokens.motion.standard,
+        contentStyle: {
+          backgroundColor: TRANSPARENT_ROUTES.includes(route.name)
+            ? 'transparent'
+            : plateColour(target, OTHER_PLATE[route.name] ?? 'home', colors.textInk),
+        },
+      })}
+    >
+      {/* Reached by dissolve, so it swaps in with no animation and no screen colour of its own. */}
+      <Stack.Screen
+        name="session"
+        options={{
+          animation: 'none',
+          gestureEnabled: false,
+          contentStyle: { backgroundColor: 'transparent' },
+        }}
+      />
+    </Stack>
+  );
   return (
     <HomeDissolveProvider>
       <View style={styles.root}>
         <BlurSurface
           backdrop={<EchoBackground screen="home" overlay={<NightHomeLoop suspended={locked} />} />}
         >
-          <Stack
-            screenOptions={({ route }) => ({
-              headerShown: false,
-              animation: 'fade',
-              animationDuration: reduced ? tokens.motion.fast : tokens.motion.standard,
-              contentStyle: {
-                backgroundColor: TRANSPARENT_ROUTES.includes(route.name)
-                  ? 'transparent'
-                  : plateColour(target, OTHER_PLATE[route.name] ?? 'home', colors.textInk),
-              },
-            })}
-          >
-            {/* Reached by dissolve, so it swaps in with no animation and no screen colour of its own. */}
-            <Stack.Screen
-              name="session"
-              options={{
-                animation: 'none',
-                gestureEnabled: false,
-                contentStyle: { backgroundColor: 'transparent' },
-              }}
-            />
-          </Stack>
+          {Platform.OS === 'web' ? (
+            <ThemeProvider value={CLEAR_NAVIGATOR}>{stack}</ThemeProvider>
+          ) : (
+            stack
+          )}
           <HomeTabBar />
         </BlurSurface>
       </View>
