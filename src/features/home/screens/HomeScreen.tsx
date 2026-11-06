@@ -3,8 +3,6 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { EchoBackground } from '@/components/EchoBackground';
-import { BlurSurface } from '@/components/GlassCard';
 import { useLayout } from '@/design/layout';
 import { useTheme } from '@/design/theme';
 import { useHomeSummary } from '@/features/journal';
@@ -21,8 +19,9 @@ const ABOVE_TAB_BAR = { night: 18, day: 8 } as const;
 
 /**
  * Home. Night and Day are two compositions, both intentional (docs/SPEC_CONFLICTS.md, C-09). The
- * plate, scroll view and data live above the choice, so changing theme swaps what is drawn and
- * keeps the scroll position and everything the data hook holds.
+ * scroll view and data live above the choice, so changing theme swaps what is drawn and keeps the
+ * scroll position and everything the data hook holds. The photograph is not here: the layout draws
+ * it once, beneath the stack.
  */
 export function HomeScreen() {
   const { name } = useTheme();
@@ -42,34 +41,35 @@ export function HomeScreen() {
     <View style={styles.root}>
       {/* Gone with the rest of the chrome, and back with it. Nothing else here touches it. */}
       <StatusBar hidden={phase === 'gone' && here ? true : undefined} animated />
-      <BlurSurface backdrop={<EchoBackground screen="home" />}>
-        <Animated.View
-          style={[styles.fill, veil]}
-          pointerEvents={dissolved ? 'none' : 'box-none'}
-          accessibilityElementsHidden={dissolved}
-          importantForAccessibility={dissolved ? 'no-hide-descendants' : 'auto'}
+      {/* No photograph here. This screen is transparent over the one app/home/_layout.tsx draws
+          beneath the stack, still or alive (D-009), which is also what the glass below blurs. A
+          copy of its own would cover the loop. */}
+      <Animated.View
+        style={[styles.fill, veil]}
+        pointerEvents={dissolved ? 'none' : 'box-none'}
+        accessibilityElementsHidden={dissolved}
+        importantForAccessibility={dissolved ? 'no-hide-descendants' : 'auto'}
+      >
+        {night && <NightFloor />}
+        {/* Scrolls only when the content is taller than the screen. The tab bar is not inside it. */}
+        <ScrollView
+          testID="home-scroll"
+          style={styles.fill}
+          contentContainerStyle={[
+            styles.scroll,
+            {
+              paddingTop: Math.max(insets.top + HEADER_OFFSET_FROM_SAFE_TOP, 8),
+              paddingBottom: tabBarSpace + ABOVE_TAB_BAR[name],
+            },
+          ]}
+          alwaysBounceVertical={false}
+          showsVerticalScrollIndicator={false}
         >
-          {night && <NightFloor />}
-          {/* Scrolls only when the content is taller than the screen. The tab bar is not inside it. */}
-          <ScrollView
-            testID="home-scroll"
-            style={styles.fill}
-            contentContainerStyle={[
-              styles.scroll,
-              {
-                paddingTop: Math.max(insets.top + HEADER_OFFSET_FROM_SAFE_TOP, 8),
-                paddingBottom: tabBarSpace + ABOVE_TAB_BAR[name],
-              },
-            ]}
-            alwaysBounceVertical={false}
-            showsVerticalScrollIndicator={false}
-          >
-            <View style={[styles.column, { width, paddingHorizontal: gutter }]}>
-              {night ? <NightHome summary={summary} /> : <DayHome summary={summary} />}
-            </View>
-          </ScrollView>
-        </Animated.View>
-      </BlurSurface>
+          <View style={[styles.column, { width, paddingHorizontal: gutter }]}>
+            {night ? <NightHome summary={summary} /> : <DayHome summary={summary} />}
+          </View>
+        </ScrollView>
+      </Animated.View>
     </View>
   );
 }

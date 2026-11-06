@@ -1,5 +1,5 @@
 import { act, screen } from '@testing-library/react-native';
-import { AccessibilityInfo, StyleSheet } from 'react-native';
+import { AccessibilityInfo, StyleSheet, Text } from 'react-native';
 
 import { backgroundSources } from '@/design/generated/backgrounds';
 import { setPlateFlowStep } from '@/design/plateMotion';
@@ -145,5 +145,33 @@ describe('EchoBackground when the theme changes', () => {
       await jest.advanceTimersByTimeAsync(900);
     });
     expect(sources()).toEqual([backgroundSources.night.intent]);
+  });
+});
+
+describe('EchoBackground with an overlay (the living Night plate, D-009)', () => {
+  const layers = () =>
+    screen
+      .getAllByTestId(/^(plate|overlay)$/, { includeHiddenElements: true })
+      .map((node) => node.props.testID as string);
+  const overlay = <Text testID="overlay">loop</Text>;
+
+  it('lays it over the plate of the current theme', async () => {
+    await render(<EchoBackground screen="home" overlay={overlay} />);
+    expect(layers()).toEqual(['plate', 'overlay']);
+  });
+
+  it('keeps it beneath a plate that is leaving, so the old theme still covers it as it fades', async () => {
+    await render(<EchoBackground screen="home" overlay={overlay} />);
+    await act(async () => usePreferences.setState({ theme: 'day' }));
+    expect(layers()).toEqual(['plate', 'overlay', 'plate']);
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(900);
+    });
+    expect(layers()).toEqual(['plate', 'overlay']);
+  });
+
+  it('draws the same plates as before when there is no overlay', async () => {
+    await render(<EchoBackground screen="home" />);
+    expect(layers()).toEqual(['plate']);
   });
 });

@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
@@ -70,8 +70,12 @@ function LeavingPlate({
  *   fade.
  * - Theme. A change of theme cross-fades the two complete plates over 900 ms (180 ms with Reduce
  *   Motion). The plate is never blended with a colour: one image simply gives way to the other.
+ *
+ * `overlay` is drawn on the plate of the theme that is current, and beneath one that is leaving. It
+ * is how Night Home comes alive (D-009): the loop lies over the still, so a Day plate fading out
+ * above it still covers it, and the still beneath is the poster until the loop's first frame.
  */
-export function EchoBackground({ screen }: { screen: ScreenId }) {
+export function EchoBackground({ screen, overlay }: { screen: ScreenId; overlay?: ReactNode }) {
   const { target } = useTheme();
   const reduced = useReduceMotion();
 
@@ -110,6 +114,7 @@ export function EchoBackground({ screen }: { screen: ScreenId }) {
     >
       <Animated.View style={[StyleSheet.absoluteFill, drift]}>
         <Plate screen={screen} theme={target} />
+        {overlay}
         {leaving && (
           <LeavingPlate
             key={leaving.key}

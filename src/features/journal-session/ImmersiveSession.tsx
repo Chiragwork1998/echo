@@ -1,4 +1,3 @@
-import { Image } from 'expo-image';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState, type ComponentRef } from 'react';
@@ -16,7 +15,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EchoBackground } from '@/components/EchoBackground';
 import { EchoText } from '@/components/EchoText';
 import { copy } from '@/content/copy';
-import { backgroundSources } from '@/design/generated/backgrounds';
 import { useLayout } from '@/design/layout';
 import { useTheme } from '@/design/theme';
 import { BookPage, useBookFrame } from '@/features/book/BookPage';
@@ -73,7 +71,7 @@ export function ImmersiveSession({
    */
   page?: 'sky' | Surface;
 }) {
-  const { name, colors } = useTheme();
+  const { colors } = useTheme();
   const ink = useSkyInk();
   const insets = useSafeAreaInsets();
   const { width } = usePlateFrame();
@@ -231,20 +229,10 @@ export function ImmersiveSession({
 
   return (
     <View style={styles.root}>
-      {onboarding && book ? (
-        <EchoBackground screen="first-echo" />
-      ) : (
-        // The same photograph Home was showing, on a transparent screen above the same layer.
-        <Image
-          source={backgroundSources[name].home}
-          style={StyleSheet.absoluteFill}
-          contentFit="cover"
-          contentPosition="center"
-          transition={0}
-          accessibilityElementsHidden
-          importantForAccessibility="no-hide-descendants"
-        />
-      )}
+      {/* The daily echo draws no photograph of its own. This screen is transparent, and the one
+          photograph Home was showing, still or alive (D-009), is drawn beneath the stack by
+          app/home/_layout.tsx. Another copy here would cover the loop and cut it off. */}
+      {onboarding && book && <EchoBackground screen="first-echo" />}
       {book && <Stack.Screen options={{ gestureEnabled: false }} />}
       {/* The clock and the icons go with everything else. */}
       <StatusBar hidden={here ? true : undefined} animated />
