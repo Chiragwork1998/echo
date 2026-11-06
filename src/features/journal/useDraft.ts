@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 
+import { singleFlight, type Flight } from '@/storage/singleFlight';
+
 import {
   commitEntry,
   discardDraft,
@@ -77,9 +79,12 @@ type Session = {
   dirty: boolean;
   closed: boolean;
   timer: ReturnType<typeof setTimeout> | null;
-  draining: Promise<JournalResult<void>> | null;
-  committing: Promise<JournalResult<Entry>> | null;
+  draining: Flight<JournalResult<void>>;
+  committing: Flight<JournalResult<Entry>>;
 };
+
+/** Text exists that is not on disk yet. Closed sessions owe nothing: committed or discarded. */
+const owesSave = (s: Session) => s.dirty && !s.closed && s.id !== null;
 
 export function useDraft(options: UseDraftOptions = {}): DraftController {
   const { draftId, seed } = options;
@@ -101,8 +106,8 @@ export function useDraft(options: UseDraftOptions = {}): DraftController {
     dirty: false,
     closed: false,
     timer: null,
-    draining: null,
-    committing: null,
+    draining: { current: null },
+    committing: { current: null },
   });
 
   const clearTimer = useCallback(() => {
@@ -114,8 +119,7 @@ export function useDraft(options: UseDraftOptions = {}): DraftController {
   /** Writes until caught up. Only one runs at a time, so saves land in the order they were made. */
   const drain = useCallback((): Promise<JournalResult<void>> => {
     const s = session.current;
-    s.draining ??= (async () => {
-      let result: JournalResult<void> = success(undefined);
+    return singleFlight(s.draining, async () => {
       while (s.dirty && !s.closed && s.id) {
         s.dirty = false;
         // Nothing written yet and nothing to write: no empty rows in the journal.
@@ -126,22 +130,25 @@ export function useDraft(options: UseDraftOptions = {}): DraftController {
           s.dirty = true; // Keep it owed, so the next change, flush, or background retries.
           setSaveState('error');
           setError(saved.error);
-          result = failure(saved.error.code);
-          break;
+          return failure(saved.error.code);
         }
         s.stored = true;
         setSaveState('saved');
         setError(null);
       }
-      s.draining = null;
-      return result;
-    })();
-    return s.draining;
+      return success(undefined);
+    });
   }, []);
 
-  const flush = useCallback((): Promise<JournalResult<void>> => {
+  const flush = useCallback(async (): Promise<JournalResult<void>> => {
+    const s = session.current;
     clearTimer();
-    return drain();
+    // A change can land after a run's last check and before it ends. That run answers ok for what
+    // it wrote, so ok here waits until nothing at all is owed.
+    for (;;) {
+      const result = await drain();
+      if (!result.ok || !owesSave(s)) return result;
+    }
   }, [clearTimer, drain]);
 
   const applyLoaded = useCallback(
@@ -239,32 +246,27 @@ export function useDraft(options: UseDraftOptions = {}): DraftController {
   const commit = useCallback(
     (patch: EntryPatch = {}): Promise<JournalResult<Entry>> => {
       const s = session.current;
-      s.committing ??= (async () => {
-        try {
-          if (!s.id) return failure<Entry>('not_ready');
-          clearTimer();
-          s.content = { ...s.content, ...patch };
-          setContent(s.content);
-          setCommitState('committing');
-          await s.draining;
-          const committed = await commitEntry(s.id, s.content);
-          if (committed.ok) {
-            s.closed = true;
-            s.dirty = false;
-            setCommitState('idle');
-            setError(null);
-          } else {
-            s.dirty = true;
-            setCommitState('error');
-            setError(committed.error);
-            void drain(); // Protect the latest text as a draft while the user retries.
-          }
-          return committed;
-        } finally {
-          s.committing = null;
+      return singleFlight(s.committing, async () => {
+        if (!s.id) return failure<Entry>('not_ready');
+        clearTimer();
+        s.content = { ...s.content, ...patch };
+        setContent(s.content);
+        setCommitState('committing');
+        await s.draining.current;
+        const committed = await commitEntry(s.id, s.content);
+        if (committed.ok) {
+          s.closed = true;
+          s.dirty = false;
+          setCommitState('idle');
+          setError(null);
+        } else {
+          s.dirty = true;
+          setCommitState('error');
+          setError(committed.error);
+          void drain(); // Protect the latest text as a draft while the user retries.
         }
-      })();
-      return s.committing;
+        return committed;
+      });
     },
     [clearTimer, drain],
   );
@@ -273,7 +275,7 @@ export function useDraft(options: UseDraftOptions = {}): DraftController {
     const s = session.current;
     clearTimer();
     s.closed = true; // Stops a pending save from recreating the row.
-    await s.draining;
+    await s.draining.current;
     if (!s.id) return success(undefined);
     const removed = await discardDraft(s.id);
     if (!removed.ok) {

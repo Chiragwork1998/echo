@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
 import { DecryptionError } from '@/storage/envelope';
+import { singleFlight, type Flight } from '@/storage/singleFlight';
 
 // Choices made during onboarding. Screens read and update this store directly. Once the root gate has
 // hydrated it, every change is persisted through the encrypted storage layer, because intent and
@@ -60,10 +61,10 @@ const snapshot = (): OnboardingState => {
 
 let persistence: OnboardingPersistence | null = null;
 let dirty = false;
-let draining: Promise<boolean> | null = null;
+const draining: Flight<boolean> = { current: null };
 
 function drain(port: OnboardingPersistence): Promise<boolean> {
-  draining ??= (async () => {
+  return singleFlight(draining, async () => {
     try {
       // Newest state each pass, so a burst of updates collapses and order cannot be lost.
       while (dirty) {
@@ -76,11 +77,8 @@ function drain(port: OnboardingPersistence): Promise<boolean> {
       dirty = true;
       useOnboarding.setState({ saveFailed: true });
       return false;
-    } finally {
-      draining = null;
     }
-  })();
-  return draining;
+  });
 }
 
 function persist(): void {
@@ -92,7 +90,7 @@ function persist(): void {
 /** Resolves true once everything is on disk. Always true where nothing persists (web, tests). */
 export async function flushOnboarding(): Promise<boolean> {
   if (!persistence) return true;
-  await draining;
+  await draining.current;
   return dirty ? drain(persistence) : true;
 }
 

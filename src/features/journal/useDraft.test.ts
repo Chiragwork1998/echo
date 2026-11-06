@@ -97,6 +97,12 @@ describe('starting', () => {
     await act(() => current(view).update({ body: '   ' }));
     await advance(AUTOSAVE_INTERVAL_MS * 2);
     expect(await rowCount()).toBe(0);
+
+    // That save had nothing to write. It must not have stopped every later save.
+    await act(() => current(view).update({ body: 'never mind, here it is' }));
+    await advance(AUTOSAVE_INTERVAL_MS);
+    expect(await storedBody(current(view).id)).toBe('never mind, here it is');
+    expect(current(view).saveState).toBe('saved');
   });
 
   it('applies the seed to a new draft', async () => {
@@ -236,6 +242,204 @@ describe('autosave', () => {
       expect((await current(view).flush()).ok).toBe(true);
     });
     expect(await storedBody(current(view).id)).toBe('keep draft');
+  });
+});
+
+// A drain with nothing owed finishes without yielding. These are the sequences that reach that exit
+// in real use, followed by the writing that used to be lost.
+describe('after a save that had nothing to do', () => {
+  const sendAppState = (state: string) =>
+    act(async () => {
+      appStateHandlers.forEach((handler) => handler(state));
+      await jest.advanceTimersByTimeAsync(0);
+    });
+
+  /** Holds each save open until released, as real AES and fsync latency does. */
+  function heldSaves() {
+    const held: (() => void)[] = [];
+    const wrapped: Journal = {
+      ...journal,
+      saveDraft: async (id, content) => {
+        await new Promise<void>((release) => held.push(release));
+        return journal.saveDraft(id, content);
+      },
+    };
+    const release = () =>
+      act(async () => {
+        held.shift()?.();
+        await jest.advanceTimersByTimeAsync(0);
+      });
+    return { wrapped, release };
+  }
+
+  it('autosaves after the app went inactive with nothing to save', async () => {
+    const view = await mount();
+    await sendAppState('inactive');
+    await act(() => current(view).update({ body: 'my most private thoughts' }));
+    await advance(AUTOSAVE_INTERVAL_MS);
+    expect(await storedBody(current(view).id)).toBe('my most private thoughts');
+    expect(current(view).saveState).toBe('saved');
+  });
+
+  it('flushes on the way to the background after going inactive when clean', async () => {
+    const view = await mount();
+    await sendAppState('inactive');
+    await act(() => current(view).update({ body: 'typed, then the phone was locked' }));
+    await sendAppState('background');
+    expect(await storedBody(current(view).id)).toBe('typed, then the phone was locked');
+  });
+
+  it('flushes on unmount after going inactive when clean', async () => {
+    const view = await mount();
+    const { id } = current(view);
+    await sendAppState('inactive');
+    await act(() => current(view).update({ body: 'left the screen' }));
+    await view.unmount();
+    await flushMicrotasks();
+    expect(await storedBody(id)).toBe('left the screen');
+  });
+
+  it('honours Keep draft after going inactive when clean', async () => {
+    const view = await mount();
+    await sendAppState('inactive');
+    await act(() => current(view).update({ body: 'keep this draft' }));
+    await act(async () => {
+      expect((await current(view).flush()).ok).toBe(true);
+    });
+    expect(await storedBody(current(view).id)).toBe('keep this draft');
+  });
+
+  it('keeps saving after a keystroke during a save, then a pause', async () => {
+    const { wrapped, release } = heldSaves();
+    setJournal(wrapped);
+    const view = await mount();
+    await act(() => current(view).update({ body: 'first' }));
+    await advance(AUTOSAVE_INTERVAL_MS); // The first timer fires and its save is held open.
+    await act(() => current(view).update({ body: 'first second' })); // Arms a second timer.
+    await release();
+    await release(); // The running drain picks up the keystroke, so the second timer finds no work.
+    await advance(AUTOSAVE_INTERVAL_MS + 10);
+    expect(await storedBody(current(view).id)).toBe('first second');
+
+    setJournal(journal);
+    await act(() => current(view).update({ body: 'first second, and the rest of the page' }));
+    await advance(AUTOSAVE_INTERVAL_MS);
+    expect(await storedBody(current(view).id)).toBe('first second, and the rest of the page');
+    expect(current(view).saveState).toBe('saved');
+  });
+
+  it('commits after a commit that came too early', async () => {
+    let finishLoading = () => undefined as void;
+    const loaded = new Promise<void>((resolve) => (finishLoading = resolve));
+    setJournal({
+      ...journal,
+      latestDraft: async () => {
+        await loaded;
+        return journal.latestDraft();
+      },
+    });
+    const view = await renderHook(() => useDraft());
+    await act(async () => {
+      expect(await current(view).commit({ body: 'too early' })).toEqual({
+        ok: false,
+        error: { code: 'not_ready', retryable: true },
+      });
+    });
+    await act(async () => {
+      finishLoading();
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    await act(() => current(view).update({ body: 'a real entry with enough words' }));
+    await act(async () => {
+      expect(unwrap(await current(view).commit()).body).toBe('a real entry with enough words');
+    });
+  });
+});
+
+describe('flush only reports ok for bytes that are durable', () => {
+  /** What a relaunch would find: nothing here can be held in memory or a pending write. */
+  async function bodyAfterRelaunch(id: string | null) {
+    const after = createSqlJournal(await rt.reopen());
+    return unwrap(await after.getEntry(id ?? ''))?.body;
+  }
+
+  it('survives a relaunch after flushing following a clean flush', async () => {
+    const view = await mount();
+    await act(async () => {
+      expect((await current(view).flush()).ok).toBe(true);
+    });
+    await act(() => current(view).update({ body: 'flushed for real' }));
+    await act(async () => {
+      expect((await current(view).flush()).ok).toBe(true);
+    });
+    expect(await bodyAfterRelaunch(current(view).id)).toBe('flushed for real');
+  });
+
+  it('reports the failure when the write fails', async () => {
+    const { state, wrapped } = flaky(journal);
+    setJournal(wrapped);
+    state.broken = true;
+    const view = await mount();
+    await act(() => current(view).update({ body: 'nowhere to go' }));
+    await act(async () => {
+      expect(await current(view).flush()).toEqual({
+        ok: false,
+        error: { code: 'write_failed', retryable: true },
+      });
+    });
+    expect(current(view).saveState).toBe('error');
+    expect(await rowCount()).toBe(0);
+  });
+
+  it('reports a failure from the save already in flight', async () => {
+    let failSave = () => undefined as void;
+    const failing = new Promise<void>((resolve) => (failSave = resolve));
+    setJournal({
+      ...journal,
+      saveDraft: async () => {
+        await failing;
+        return { ok: false, error: { code: 'write_failed', retryable: true } };
+      },
+    });
+    const view = await mount();
+    await act(() => current(view).update({ body: 'in flight' }));
+    await advance(AUTOSAVE_INTERVAL_MS);
+    await act(async () => {
+      const flushed = current(view).flush();
+      failSave();
+      expect((await flushed).ok).toBe(false);
+    });
+  });
+
+  it('never reports ok for a change that landed as a save finished', async () => {
+    // A change can arrive on any tick around the end of a save. This walks each one.
+    for (let ticks = 0; ticks < 24; ticks += 1) {
+      const draftId = `tick-${ticks}`;
+      const view = await mount({ draftId });
+      let saveFinished = () => undefined as void;
+      const finished = new Promise<void>((resolve) => (saveFinished = resolve));
+      setJournal({
+        ...journal,
+        saveDraft: async (id, content) => {
+          const saved = await journal.saveDraft(id, content);
+          saveFinished();
+          return saved;
+        },
+      });
+      await act(() => current(view).update({ body: 'first' }));
+      await act(async () => {
+        const first = current(view).flush();
+        await finished;
+        for (let tick = 0; tick < ticks; tick += 1) await Promise.resolve();
+        current(view).update({ body: 'second' });
+        expect((await current(view).flush()).ok).toBe(true);
+        await first;
+      });
+      expect(await storedBody(draftId)).toBe('second');
+      await view.unmount();
+      await flushMicrotasks();
+      setJournal(journal);
+    }
   });
 });
 

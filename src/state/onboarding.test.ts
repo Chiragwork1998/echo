@@ -234,6 +234,20 @@ describe('persistence', () => {
   });
 });
 
+describe('a save that fails before it yields', () => {
+  it('does not stop every later save', async () => {
+    const save = jest.spyOn(persistence, 'save');
+    await hydrateOnboarding(persistence);
+    save.mockImplementationOnce(() => {
+      throw new Error('disk full');
+    });
+    update({ intent: 'quiet' });
+    expect(await flushOnboarding()).toBe(true);
+    await terminateAndRelaunch();
+    expect(state().intent).toBe('quiet');
+  });
+});
+
 describe('step tracking', () => {
   beforeEach(async () => {
     await hydrateOnboarding(persistence);
