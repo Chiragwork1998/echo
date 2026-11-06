@@ -75,7 +75,7 @@ export const patternsCopy = {
       'Your entries are sent to OpenAI, over a secure connection, to be read.',
       'OpenAI does not use them to train its models.',
       'OpenAI may keep them for up to 30 days to check for abuse, then deletes them.',
-      'ECHO’s own server keeps nothing.',
+      'ECHO’s own server keeps none of your voice or words.',
       'The cards are kept on this phone, encrypted.',
       'You can withdraw this at any time, here in Patterns.',
     ],

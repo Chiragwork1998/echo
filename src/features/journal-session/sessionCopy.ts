@@ -78,7 +78,7 @@ export const sessionCopy = {
     facts: [
       'Your voice goes to OpenAI to become text, and is sent securely.',
       'OpenAI’s transcription service does not store it, and does not train on it.',
-      'ECHO’s own server keeps nothing.',
+      'ECHO’s own server keeps none of your voice or words.',
       'Your recording and your words are encrypted when saved on this phone.',
       'If you speak Hindi, or turn on Tidy my words, the text also goes through a second step at OpenAI. OpenAI may keep that text for up to 30 days to check for abuse, then deletes it. It is not used for training.',
     ],
@@ -100,7 +100,7 @@ export const sessionCopy = {
     facts: [
       'Your voice streams to OpenAI as you speak, sent securely, and comes back as words on the screen.',
       'OpenAI may keep what is sent and received for up to 30 days to check for abuse, then deletes it. It is not used for training.',
-      'ECHO’s own server keeps nothing. Your recording and your words are encrypted when saved on this phone.',
+      'ECHO’s own server keeps none of your voice or words. Your recording and your words are encrypted when saved on this phone.',
       'If you speak Hindi, or turn on Tidy my words, the finished text also goes through a second step at OpenAI, kept for up to 30 days in the same way.',
       'Hiding words stops the streaming. Your voice is sent after you stop, in parts if the take is long, to a transcription service that does not store it. The second step above still applies.',
     ],

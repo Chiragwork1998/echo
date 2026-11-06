@@ -17,7 +17,7 @@ describe('what the voice consent promises', () => {
       'Your recording and your words are encrypted when saved on this phone.',
     );
     expect(sessionCopy.liveConsent.facts).toContain(
-      'ECHO’s own server keeps nothing. Your recording and your words are encrypted when saved on this phone.',
+      'ECHO’s own server keeps none of your voice or words. Your recording and your words are encrypted when saved on this phone.',
     );
   });
 
