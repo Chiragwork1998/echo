@@ -318,6 +318,116 @@ describe('launch sweep', () => {
     });
   });
 
+  describe('a recording that failed to save, on a draft the user then throws away', () => {
+    /** stop() reported save_failed. The plaintext and its ledger row wait for the next launch. */
+    async function failedRecording(context: Setup, draftId: string) {
+      const { journal, rt } = context;
+      const { recordingId } = unwrap(await journal.beginRecording(draftId));
+      const uri = leaveRecording(context, `${recordingId}.m4a`);
+      const seal = jest.spyOn(rt.vault, 'sealBytes').mockRejectedValueOnce(new Error('no'));
+      const attached = await journal.attachRecording({
+        recordingId,
+        uri,
+        draftId,
+        durationSeconds: 5,
+        content: emptyContent({ mode: 'voice' }),
+      });
+      seal.mockRestore();
+      expect(attached.ok).toBe(false);
+      expect(existsSync(uri)).toBe(true);
+      return uri;
+    }
+
+    it('removes the plaintext and leaves the sweep nothing to revive', async () => {
+      const context = await setup();
+      const { journal } = context;
+      unwrap(await journal.saveDraft('a', emptyContent({ body: 'words' })));
+      const uri = await failedRecording(context, 'a');
+
+      unwrap(await journal.discardDraft('a'));
+
+      expect(existsSync(uri)).toBe(false);
+      expect(await rows(context, 'recordings')).toBe(0);
+      expect(await journal.recoverLeftovers()).toMatchObject({ recovered: 0, lost: 0 });
+      expect(await rows(context, 'entries')).toBe(0);
+    });
+
+    it('does so for a draft that was never saved, which has no row', async () => {
+      const context = await setup();
+      const { journal } = context;
+      const uri = await failedRecording(context, 'a');
+
+      unwrap(await journal.discardDraft('a'));
+
+      expect(existsSync(uri)).toBe(false);
+      expect(await rows(context, 'recordings')).toBe(0);
+      expect(await journal.recoverLeftovers()).toMatchObject({ recovered: 0 });
+      expect(await rows(context, 'entries')).toBe(0);
+    });
+
+    it('does so for a recording left in the other platform directory', async () => {
+      const context = await setup();
+      const { journal } = context;
+      const { recordingId } = unwrap(await journal.beginRecording('a'));
+      const uri = leaveRecording(context, `${recordingId}.caf`, SPOKEN, 1);
+
+      unwrap(await journal.discardDraft('a'));
+
+      expect(existsSync(uri)).toBe(false);
+    });
+
+    it('does so when a draft is removed through deleteEntry', async () => {
+      const context = await setup();
+      const { journal } = context;
+      unwrap(await journal.saveDraft('a', emptyContent({ body: 'words' })));
+      const uri = await failedRecording(context, 'a');
+
+      unwrap(await journal.deleteEntry('a'));
+
+      expect(existsSync(uri)).toBe(false);
+      expect(await journal.recoverLeftovers()).toMatchObject({ recovered: 0 });
+      expect(await rows(context, 'entries')).toBe(0);
+    });
+
+    it('does so when a committed entry is deleted, so its audio cannot return', async () => {
+      const context = await setup();
+      const { journal } = context;
+      unwrap(await journal.commitEntry('a', emptyContent({ body: 'words' })));
+      const uri = await failedRecording(context, 'a');
+
+      unwrap(await journal.deleteEntry('a'));
+
+      expect(existsSync(uri)).toBe(false);
+      expect(await journal.recoverLeftovers()).toMatchObject({ recovered: 0 });
+      expect(unwrap(await journal.listDrafts())).toEqual([]);
+    });
+
+    it('leaves recordings that belong to other drafts', async () => {
+      const context = await setup();
+      const { journal } = context;
+      unwrap(await journal.saveDraft('a', emptyContent({ body: 'words' })));
+      await failedRecording(context, 'a');
+      const other = await failedRecording(context, 'b');
+
+      unwrap(await journal.discardDraft('a'));
+
+      expect(existsSync(other)).toBe(true);
+      expect(await rows(context, 'recordings')).toBe(1);
+    });
+
+    it('keeps the recording when the discard is refused', async () => {
+      const context = await setup();
+      const { journal } = context;
+      unwrap(await journal.commitEntry('a', emptyContent({ body: 'words' })));
+      const uri = await failedRecording(context, 'a');
+
+      expect(await journal.discardDraft('a')).toMatchObject({ ok: false });
+
+      expect(existsSync(uri)).toBe(true);
+      expect(await rows(context, 'recordings')).toBe(1);
+    });
+  });
+
   it('salvages one recording when its screen closes mid-recording', async () => {
     const context = await setup();
     const { journal } = context;

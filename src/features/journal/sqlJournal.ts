@@ -318,6 +318,23 @@ export function createSqlJournal(rt: Runtime, clock: Clock = deviceClock): SqlJo
 
   const recordingFiles = () => paths.recordingDirs.flatMap((directory) => files.list(directory));
 
+  /**
+   * A recording that failed to save keeps its plaintext and ledger row for the launch sweep, which
+   * would bring it back as a new draft. Throwing the draft away has to take those too. File first:
+   * a ledger row with no file reads as lost, but a file with no ledger row would still be rescued.
+   */
+  async function forgetRecordings(draftId: string): Promise<void> {
+    const ledger = await db.all<{ id: string }>('SELECT id FROM recordings WHERE draft_id = ?', [
+      draftId,
+    ]);
+    if (ledger.length === 0) return;
+    const ids = new Set(ledger.map((row) => row.id));
+    for (const file of recordingFiles()) {
+      if (ids.has(stemOf(file.name))) files.remove(file.uri);
+    }
+    await db.run('DELETE FROM recordings WHERE draft_id = ?', [draftId]);
+  }
+
   return {
     newDraftId: async () => newId(),
 
@@ -372,8 +389,9 @@ export function createSqlJournal(rt: Runtime, clock: Clock = deviceClock): SqlJo
       attempt('write_failed', () =>
         serial(async () => {
           const row = await findRow(id);
+          if (row && row.status !== 'draft') throw new JournalFailure('not_draft');
+          await forgetRecordings(id); // Even with no row: recording can start before the first save.
           if (!row) return;
-          if (row.status !== 'draft') throw new JournalFailure('not_draft');
           await db.run('DELETE FROM entries WHERE id = ?', [id]);
           if (row.audio_id) await removeAudioFile(row.audio_id);
           await scrubLog();
@@ -425,6 +443,7 @@ export function createSqlJournal(rt: Runtime, clock: Clock = deviceClock): SqlJo
         serial(async () => {
           const row = await findRow(id);
           if (!row || row.deleted_at) return;
+          await forgetRecordings(id);
           if (row.status === 'draft') {
             await db.run('DELETE FROM entries WHERE id = ?', [id]);
           } else {
