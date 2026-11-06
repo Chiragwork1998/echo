@@ -1,4 +1,5 @@
 import { act, renderHook } from '@testing-library/react-native';
+import type { PropsWithChildren } from 'react';
 import { useColorScheme } from 'react-native';
 
 import { hydratePreferences, resetPreferences } from '@/state/preferences';
@@ -11,7 +12,11 @@ jest.mock('react-native/Libraries/Utilities/useColorScheme', () => ({
   default: jest.fn(() => 'light'),
 }));
 
-const mount = () => renderHook(() => useTheme(), { wrapper: ThemeProvider });
+// A change is complete the moment it is made. Its motion is tested in themeMotion.test.tsx.
+const still = ({ children }: PropsWithChildren) => (
+  <ThemeProvider crossfade={false}>{children}</ThemeProvider>
+);
+const mount = () => renderHook(() => useTheme(), { wrapper: still });
 const stored = async (rt: Awaited<ReturnType<typeof createTestRuntime>>) =>
   rt.db.first<{ value: string }>(`SELECT value FROM preferences WHERE key = 'theme'`);
 

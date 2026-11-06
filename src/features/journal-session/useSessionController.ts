@@ -1,9 +1,10 @@
 import * as Haptics from 'expo-haptics';
-import { router } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, BackHandler, Keyboard } from 'react-native';
 
 import { copy } from '@/content/copy';
+import { holdTheme } from '@/design/themeHold';
 import { useDraft, useVoiceRecorder, type JournalErrorCode } from '@/features/journal';
 import { backPath, nextPath, onboardingSteps } from '@/features/onboarding/flow';
 import { requestMicrophonePermission, openAppSettings } from '@/services/permissions';
@@ -45,6 +46,10 @@ export type SessionOptions = {
  * what is safe in one is safe in the other.
  */
 export function useSessionController({ variant, initialMode, draftId }: SessionOptions) {
+  // The theme never changes in the middle of a writing session, whoever asks for it. It waits here
+  // while the session is on screen, and is made when the person leaves.
+  useFocusEffect(useCallback(() => holdTheme(), []));
+
   const daily = variant === 'daily';
   const target = TARGETS[variant];
   const prompt = daily ? copy.home.prompt : copy.firstEcho.title;

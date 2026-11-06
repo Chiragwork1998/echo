@@ -1,9 +1,10 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
-import { Alert } from 'react-native';
+import { Alert, Text } from 'react-native';
 
 import { copy } from '@/content/copy';
+import { ThemeProvider, useTheme } from '@/design/theme';
 import {
   createMemoryJournal,
   latestDraft,
@@ -13,6 +14,7 @@ import {
 } from '@/features/journal';
 import { openAppSettings, requestMicrophonePermission } from '@/services/permissions';
 import { initialOnboarding, useOnboarding } from '@/state/onboarding';
+import { usePreferences } from '@/state/preferences';
 import { render } from '@/testing/render';
 
 import { JournalSession, type SessionVariant } from './JournalSession';
@@ -22,11 +24,16 @@ jest.mock('expo-haptics', () => ({
   impactAsync: jest.fn(),
   ImpactFeedbackStyle: { Light: 'light' },
 }));
-jest.mock('expo-router', () => ({
-  router: { navigate: jest.fn() },
-  Stack: { Screen: () => null },
-  usePathname: () => '/home/session',
-}));
+jest.mock('expo-router', () => {
+  const { useEffect } = jest.requireActual('react');
+  return {
+    router: { navigate: jest.fn() },
+    Stack: { Screen: () => null },
+    usePathname: () => '/home/session',
+    // The screen is always focused here: run the effect on mount, and clean it up on unmount.
+    useFocusEffect: (effect: () => void | (() => void)) => useEffect(effect, [effect]),
+  };
+});
 jest.mock(
   'react-native-safe-area-context',
   () => jest.requireActual('react-native-safe-area-context/jest/mock').default,
@@ -188,6 +195,32 @@ describe('JournalSession layout and states', () => {
     expect(await screen.findByText(sessionCopy.errors.open)).toBeTruthy();
     expect(screen.getByRole('button', { name: sessionCopy.errors.retry })).toBeTruthy();
     expect(reflect()).toBeDisabled();
+  });
+});
+
+describe('JournalSession and the theme', () => {
+  function Theme() {
+    return <Text testID="theme">{useTheme().target}</Text>;
+  }
+
+  it('holds the theme while the session is on screen, and lets it change once it closes', async () => {
+    usePreferences.setState({ theme: 'night' });
+    const view = await render(
+      <>
+        <Theme />
+        <JournalSession variant="daily" />
+      </>,
+    );
+    await act(async () => usePreferences.getState().setTheme('day'));
+    expect(screen.getByTestId('theme')).toHaveTextContent('night');
+
+    await view.rerender(
+      <ThemeProvider crossfade={false}>
+        <Theme />
+      </ThemeProvider>,
+    );
+    expect(screen.getByTestId('theme')).toHaveTextContent('day');
+    usePreferences.setState({ theme: 'night' });
   });
 });
 
