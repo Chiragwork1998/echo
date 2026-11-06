@@ -29,6 +29,8 @@ type Props = {
   middleDisabled: boolean;
   canReflect: boolean;
   reflecting: boolean;
+  /** Show words or Hide words, while speaking. Absent when writing, which always shows its words. */
+  words?: { label: string; onPress: () => void };
   onBack: () => void;
   onMiddle: () => void;
   onReflect: () => void;
@@ -83,6 +85,7 @@ export function QuietControls({
   middleDisabled,
   canReflect,
   reflecting,
+  words,
   onBack,
   onMiddle,
   onReflect,
@@ -117,6 +120,7 @@ export function QuietControls({
           disabled={middleDisabled}
           testID="quiet-middle"
         />
+        {words && <Word label={words.label} onPress={words.onPress} testID="quiet-words" />}
       </View>
       <View style={[styles.slot, styles.end]}>
         {canReflect && (

@@ -3,7 +3,12 @@ import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore }
 import type { DraftController } from '@/features/journal';
 import { getEntry, notifyJournalChanged, openEntryAudio, saveDraft } from '@/features/journal/api';
 import type { EntryAudio, PlayableAudio } from '@/features/journal/types';
-import { transcribeEntryAudio, type TranscriptionErrorCode } from '@/services/transcription';
+import type { LiveOutcome } from '@/services/liveTake';
+import {
+  refineWords,
+  transcribeEntryAudio,
+  type TranscriptionErrorCode,
+} from '@/services/transcription';
 import { usePreferences, voiceStatus } from '@/state/preferences';
 
 /** Why the words did not arrive. 'lost' is a take whose recording was replaced before it was sent. */
@@ -33,9 +38,25 @@ export function appendTranscript(body: string, text: string): string {
  */
 export const STUCK_CODES: readonly string[] = ['too_long', 'unsupported', 'no_speech'];
 
+/** A take that was heard live: its words, once they are in, and a way to let go of what shows. */
+export type LiveHandle = {
+  outcome: Promise<LiveOutcome>;
+  /** The words are in the draft, or the take is let go of: what showed while it was heard goes. */
+  settle(): void;
+  /** Hang up on the connection. */
+  abort(): void;
+};
+
 type Take = {
   /** Cannot become words however often it is tried. Dropped when the person records again. */
   stuck?: boolean;
+  /** Heard live. Its words are waited for first, and a failure falls back to the recording. */
+  live?: LiveHandle;
+  /**
+   * Words already heard, waiting only for their second step (Hindi in Roman script, or tidying). A
+   * retry sends just these, not the recording.
+   */
+  words?: string;
   /** The recording this take is. The draft keeps only the newest one. */
   audioId: string;
   /**
@@ -122,10 +143,18 @@ export function useTranscription(draft: DraftController) {
     text.current = draft.content.body;
   });
 
-  const dropAll = useCallback(() => {
-    for (const take of queue.current) take.held?.release();
-    queue.current = [];
+  const letGo = useCallback((take: Take) => {
+    take.held?.release();
+    take.held = null;
+    take.live?.abort();
+    take.live?.settle();
+    take.live = undefined;
   }, []);
+
+  const dropAll = useCallback(() => {
+    for (const take of queue.current) letGo(take);
+    queue.current = [];
+  }, [letGo]);
 
   useEffect(() => {
     alive.current = true;
@@ -183,10 +212,44 @@ export function useTranscription(draft: DraftController) {
           break;
         }
 
+        // Heard live: the words are waited for first. If they do not come, or the connection dropped,
+        // the recording is sent as if it had never been live.
+        if (take.live) {
+          setPhase({ kind: 'listening' });
+          const heard = await take.live.outcome;
+          if (cancelled()) break;
+          if (heard.ok && heard.text.trim().length > 0) take.words = heard.text;
+        }
+        if (take.words !== undefined) {
+          setPhase({ kind: 'listening' });
+          const controller = new AbortController();
+          request.current = controller;
+          const refined = await refineWords(take.words, { signal: controller.signal });
+          request.current = null;
+          if (cancelled()) break;
+          if (!refined.ok) {
+            if (refined.error.code === 'consent_required') {
+              dropAll();
+              break;
+            }
+            outcome = { kind: 'failed', code: refined.error.code };
+            break;
+          }
+          if (!(await deliver(id, take, refined.value.text))) {
+            outcome = { kind: 'failed', code: 'server' };
+            break;
+          }
+          if (cancelled()) break;
+          letGo(take);
+          queue.current.shift();
+          continue;
+        }
+
         // Replaced by a newer recording with no copy kept. Nothing can be sent, and nothing may block
         // the takes after it.
         if (!take.held && queue.current.length > 1) {
           lost.current = true;
+          letGo(take);
           queue.current.shift();
           continue;
         }
@@ -216,8 +279,7 @@ export function useTranscription(draft: DraftController) {
           break;
         }
         if (cancelled()) break;
-        take.held?.release();
-        take.held = null;
+        letGo(take);
         queue.current.shift();
       }
     } finally {
@@ -239,21 +301,24 @@ export function useTranscription(draft: DraftController) {
       }
     }
     setPhase(outcome);
-  }, [ask, deliver, dropAll, me]);
+  }, [ask, deliver, dropAll, letGo, me]);
   useEffect(() => {
     again.current = pump;
   });
 
-  /** A recording has just been sealed. Its words follow, after any take still ahead of it. */
+  /**
+   * A recording has just been sealed. Its words follow, after any take still ahead of it. A take that
+   * was heard live brings its handle, and the words it heard are used before the recording is.
+   */
   const enqueue = useCallback(
-    (audio: EntryAudio) => {
+    (audio: EntryAudio, live?: LiveHandle) => {
       // The person has gone on to speak again: a take that could never be sent is let go of.
-      for (const take of queue.current) if (take.stuck) take.held?.release();
+      for (const take of queue.current) if (take.stuck) letGo(take);
       queue.current = queue.current.filter((take) => !take.stuck);
-      queue.current.push({ audioId: audio.id, held: null });
+      queue.current.push({ audioId: audio.id, held: null, live });
       void pump();
     },
-    [pump],
+    [letGo, pump],
   );
 
   /** Try again: the take that failed, or the draft's recording when nothing has been sent. */

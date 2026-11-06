@@ -6,6 +6,7 @@ import { getMicrophonePermission } from '@/services/permissions';
 import { notifyJournalChanged } from './api';
 import { useRecorderDriver } from './recorderDriver';
 import { getJournal } from './runtime';
+import { useStreamDriver, type PcmTap } from './streamDriver';
 import type { DraftController } from './useDraft';
 import { failure, success, type EntryAudio, type JournalResult } from './types';
 
@@ -23,12 +24,23 @@ export type VoiceErrorCode =
    */
   | 'save_failed';
 
+export type StartOptions = {
+  /**
+   * Samples at 24 kHz mono as they are captured, then null once capture has ended. Giving one asks
+   * for a live take: the microphone is then the stream, which also writes the recording as a WAV.
+   * If the stream cannot start, the file recorder is used instead and the tap hears null at once.
+   */
+  tap?: PcmTap;
+};
+
 export type VoiceRecorder = {
   available: boolean;
+  /** The microphone can be streamed, so a take can be heard live. */
+  liveAvailable: boolean;
   state: 'idle' | 'starting' | 'recording' | 'saving' | 'error';
   elapsedSeconds: number;
   error: VoiceErrorCode | null;
-  start(): Promise<VoiceErrorCode | null>;
+  start(options?: StartOptions): Promise<VoiceErrorCode | null>;
   /** Stops and encrypts. The plaintext file is deleted before this resolves ok. */
   stop(): Promise<JournalResult<EntryAudio>>;
   /** Stops and throws the recording away. */
@@ -36,7 +48,10 @@ export type VoiceRecorder = {
 };
 
 export function useVoiceRecorder(draft: DraftController): VoiceRecorder {
-  const driver = useRecorderDriver();
+  const fileDriver = useRecorderDriver();
+  const streamDriver = useStreamDriver();
+  // Only one thing can own the microphone: this take is the file recorder or the stream.
+  const engine = useRef<'file' | 'stream'>('file');
   const [state, setState] = useState<VoiceRecorder['state']>('idle');
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [error, setError] = useState<VoiceErrorCode | null>(null);
@@ -47,46 +62,66 @@ export function useVoiceRecorder(draft: DraftController): VoiceRecorder {
     latestDraft.current = draft;
   });
 
-  const start = useCallback(async (): Promise<VoiceErrorCode | null> => {
-    const fail = (code: VoiceErrorCode) => {
-      setError(code);
-      setState(code === 'permission_required' ? 'idle' : 'error');
-      return code;
-    };
-    if (!driver) return fail('unavailable');
-    if (active.current || starting.current) return null;
-    const { id } = latestDraft.current;
-    if (!id) return fail('start_failed');
+  const start = useCallback(
+    async (options?: StartOptions): Promise<VoiceErrorCode | null> => {
+      const fail = (code: VoiceErrorCode) => {
+        setError(code);
+        setState(code === 'permission_required' ? 'idle' : 'error');
+        return code;
+      };
+      if (!fileDriver && !streamDriver) return fail('unavailable');
+      if (active.current || starting.current) return null;
+      const { id } = latestDraft.current;
+      if (!id) return fail('start_failed');
 
-    starting.current = true;
-    try {
-      setState('starting');
-      setError(null);
-      const permission = await getMicrophonePermission();
-      if (permission.status !== 'granted') return fail('permission_required');
-
-      const journal = await getJournal();
-      const begun = await journal.beginRecording(id);
-      if (!begun.ok) return fail('start_failed');
+      starting.current = true;
       try {
-        await driver.prepare(begun.value.recordingId);
-        driver.record();
-      } catch {
-        await journal.abandonRecording(begun.value.recordingId);
-        return fail('start_failed');
+        setState('starting');
+        setError(null);
+        const permission = await getMicrophonePermission();
+        if (permission.status !== 'granted') return fail('permission_required');
+
+        const journal = await getJournal();
+        const begun = await journal.beginRecording(id);
+        if (!begun.ok) return fail('start_failed');
+        const recordingId = begun.value.recordingId;
+        let used: 'file' | 'stream' | null = null;
+        if (options?.tap && streamDriver) {
+          try {
+            await streamDriver.begin(recordingId, options.tap);
+            used = 'stream';
+          } catch {
+            // The ordinary recorder takes over, and this take simply has no live words.
+            options.tap(null);
+          }
+        } else options?.tap?.(null);
+        if (!used) {
+          try {
+            if (!fileDriver) throw new Error('no_recorder');
+            await fileDriver.prepare(recordingId);
+            fileDriver.record();
+            used = 'file';
+          } catch {
+            await journal.abandonRecording(recordingId);
+            return fail('start_failed');
+          }
+        }
+        engine.current = used;
+        active.current = recordingId;
+        setElapsedSeconds(0);
+        setState('recording');
+        return null;
+      } finally {
+        starting.current = false;
       }
-      active.current = begun.value.recordingId;
-      setElapsedSeconds(0);
-      setState('recording');
-      return null;
-    } finally {
-      starting.current = false;
-    }
-  }, [driver]);
+    },
+    [fileDriver, streamDriver],
+  );
 
   const stop = useCallback(async (): Promise<JournalResult<EntryAudio>> => {
     const recordingId = active.current;
     const { id, content } = latestDraft.current;
+    const driver = engine.current === 'stream' ? streamDriver : fileDriver;
     if (!driver || !recordingId || !id) return failure('audio_failed');
     active.current = null;
     setState('saving');
@@ -116,25 +151,27 @@ export function useVoiceRecorder(draft: DraftController): VoiceRecorder {
     setError('save_failed');
     setState('error');
     return attached;
-  }, [driver]);
+  }, [fileDriver, streamDriver]);
 
   const cancel = useCallback(async () => {
     const recordingId = active.current;
     active.current = null;
     if (recordingId) {
+      const driver = engine.current === 'stream' ? streamDriver : fileDriver;
       await driver?.stop().catch(() => undefined);
       const journal = await getJournal();
       await journal.abandonRecording(recordingId);
     }
     setError(null);
     setState('idle');
-  }, [driver]);
+  }, [fileDriver, streamDriver]);
 
   useEffect(() => {
+    const driver = engine.current === 'stream' ? streamDriver : fileDriver;
     if (state !== 'recording' || !driver) return;
     const tick = setInterval(() => setElapsedSeconds(driver.elapsedSeconds()), ELAPSED_TICK_MS);
     return () => clearInterval(tick);
-  }, [driver, state]);
+  }, [fileDriver, streamDriver, state]);
 
   useEffect(() => {
     // Encrypt on the way out instead of leaving plaintext on disk until the next launch.
@@ -161,7 +198,8 @@ export function useVoiceRecorder(draft: DraftController): VoiceRecorder {
   );
 
   return {
-    available: driver !== null,
+    available: fileDriver !== null || streamDriver !== null,
+    liveAvailable: streamDriver !== null,
     state,
     elapsedSeconds,
     error,

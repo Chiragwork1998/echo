@@ -21,6 +21,7 @@ import type { SessionController } from './useSessionController';
 import { useQuietControls } from './useQuietControls';
 import { useScreenReader } from './useScreenReader';
 import { useStillness } from './useStillness';
+import { appendTranscript } from './useTranscription';
 import { VOICE_NOTES, VoiceNote } from './VoiceNote';
 import { GROUND_FADE, Wash } from './Wash';
 
@@ -58,7 +59,11 @@ export function ImmersiveSession({ session }: { session: SessionController }) {
   const voiceNote = !writing && VOICE_NOTES.includes(speakView);
   const pinned = retryable || failure !== null || voiceNote;
   // Shade only comes with words on the sky: the mountains are left alone until then.
-  const washed = draft.content.body.length > 0 || voiceNote || failure !== null;
+  const washed =
+    (session.bodyVisible && draft.content.body.length > 0) ||
+    session.liveText.length > 0 ||
+    voiceNote ||
+    failure !== null;
   const quiet = useQuietControls({ always: screenReader, pinned });
 
   // The keyboard rises over the lower scenery. The photograph and the words stay where they are:
@@ -115,11 +120,9 @@ export function ImmersiveSession({ session }: { session: SessionController }) {
       else focusEnd();
       return;
     }
-    if (recording) void session.stop();
-    // A further take can begin while the last is still becoming words.
-    else if (speakView === 'ready' || speakView === 'recorded' || speakView === 'listening') {
-      session.record();
-    } else quiet.show();
+    // Speaking: stop what is recording, or begin another take. That includes after words failed to
+    // arrive, and while the last take is still becoming words.
+    if (!session.touchSky()) quiet.show();
   };
 
   const onMiddle = () => {
@@ -173,7 +176,14 @@ export function ImmersiveSession({ session }: { session: SessionController }) {
 
       <SkyInput
         inputRef={inputRef}
-        value={draft.content.body}
+        // Spoken words stay off the sky unless the person chose to see them. Writing always shows.
+        value={
+          session.bodyVisible
+            ? writing
+              ? draft.content.body
+              : appendTranscript(draft.content.body, session.liveText)
+            : ''
+        }
         label={session.prompt}
         editable={ready && writing}
         onChangeText={(body) => {
@@ -259,6 +269,11 @@ export function ImmersiveSession({ session }: { session: SessionController }) {
           middleDisabled={busy || !ready}
           canReflect={canReflect}
           reflecting={draft.commitState === 'committing'}
+          words={
+            writing || !session.daily
+              ? undefined
+              : { label: session.wordsLabel, onPress: session.toggleWords }
+          }
           onBack={session.back}
           onMiddle={onMiddle}
           onReflect={() => void session.reflect()}

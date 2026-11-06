@@ -46,10 +46,12 @@ describe('privacy rules', () => {
   });
 
   // D-005: spoken entries are transcribed by ECHO's voice server, after the person agrees, and
-  // Pattern Cards are read there too, under their own consent. Those are the only places a request
-  // is made. Every other file here stays offline, and adding one should be a decision, not an
-  // accident.
-  const NETWORK = ['src/services/transcription.ts', 'src/services/patterns.ts'];
+  // Pattern Cards are read there too, under their own consent. Live words (D-007) are the one thing
+  // that also opens a socket, straight to OpenAI with a secret ECHO's server hands out. Those are the
+  // only places a request or a socket is made. Every other file here stays offline, and adding one
+  // should be a decision, not an accident.
+  const SOCKET = ['src/services/liveTranscription.ts'];
+  const NETWORK = ['src/services/transcription.ts', 'src/services/patterns.ts', ...SOCKET];
   it.each(production.filter((path) => !NETWORK.includes(path)))(
     '%s makes no network call',
     (path) => {
@@ -61,11 +63,23 @@ describe('privacy rules', () => {
     for (const path of NETWORK) {
       expect(production).toContain(path);
       const source = read(path);
-      expect(source).not.toMatch(/XMLHttpRequest|axios|WebSocket/);
+      expect(source).not.toMatch(/XMLHttpRequest|axios/);
+      if (!SOCKET.includes(path)) expect(source).not.toMatch(/WebSocket/);
       // The address and token come from the environment, never from the source.
       expect(source).not.toMatch(/https?:\/\/(?!127\.0\.0\.1|localhost)[a-z0-9.-]+\.[a-z]{2,}/i);
+      expect(source).not.toMatch(/wss?:\/\/(?!127\.0\.0\.1|localhost)[a-z0-9.-]+\.[a-z]{2,}/i);
       expect(source).toMatch(/env\.EXPO_PUBLIC_VOICE_URL|from '\.\/voiceApi'/);
       expect(source).toMatch(/env\.EXPO_PUBLIC_VOICE_TOKEN|from '\.\/voiceApi'/);
+    }
+  });
+
+  it('streams a voice only over wss, to an address the server gave', () => {
+    for (const path of SOCKET) {
+      const source = read(path);
+      // A socket in the clear is refused outside this Mac's own loopback in a development build.
+      expect(source).toMatch(/wss:/);
+      expect(source).toMatch(/liveAddress/);
+      expect(source).not.toMatch(/new WebSocket\(\s*['"`]/);
     }
   });
 

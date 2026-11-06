@@ -10,13 +10,21 @@ import { backPath, nextPath, onboardingSteps } from '@/features/onboarding/flow'
 import { requestMicrophonePermission, openAppSettings } from '@/services/permissions';
 import { UNAVAILABLE_CODES } from '@/services/transcription';
 import { useOnboarding } from '@/state/onboarding';
-import { usePreferences, useVoiceStatus } from '@/state/preferences';
+import { liveAllowed, usePreferences, useVoiceStatus } from '@/state/preferences';
 
 import type { SessionMode } from './SegmentedMode';
+import type { ConsentKind } from './VoiceConsentSheet';
 import { sessionCopy } from './sessionCopy';
 import type { SpeakView } from './SpeakPanel';
+import { useLiveWords } from './useLiveWords';
 import { useSessionTimer } from './useSessionTimer';
-import { STUCK_CODES, useTranscription, type TranscriptionFailure } from './useTranscription';
+import {
+  STUCK_CODES,
+  useTranscription,
+  type ConsentChoice,
+  type LiveHandle,
+  type TranscriptionFailure,
+} from './useTranscription';
 
 const FIRST_ECHO_STEP = onboardingSteps.indexOf('first-echo') + 1;
 
@@ -29,6 +37,17 @@ const TARGETS = {
   daily: { back: '/home', next: '/home/complete', step: undefined },
 } as const;
 const go = (path: string | undefined) => path && router.navigate(path as never);
+
+/** Where a touch on the open sky starts another take: not mid-question, and not before the microphone is allowed. */
+const CAN_START: readonly SpeakView[] = [
+  'ready',
+  'recorded',
+  'listening',
+  'untranscribed',
+  'transcribe_failed',
+  'transcribe_unavailable',
+  'failed',
+];
 
 /** Text for a failure, from its code alone: a code never carries what the person wrote. */
 function draftError(code: JournalErrorCode | undefined) {
@@ -51,6 +70,8 @@ function failureLine(code: TranscriptionFailure): string {
       return lines.unsupported;
     case 'audio_unavailable':
       return lines.audio;
+    case 'unexpected':
+      return lines.unexpected;
     case 'lost':
       return lines.lost;
     case 'unauthorized':
@@ -103,6 +124,12 @@ export function useSessionController({ variant, initialMode, draftId }: SessionO
   const voice = useVoiceRecorder(draft);
   const transcription = useTranscription(draft);
   const voiceChoice = useVoiceStatus();
+  const wordsShown = usePreferences((state) => state.wordsShown);
+  const liveWords = useLiveWords();
+  // The take being recorded that is also being heard live, and the question that Show words asks.
+  const liveTake = useRef<LiveHandle | null>(null);
+  const stopping = useRef(false);
+  const [liveAsk, setLiveAsk] = useState<'toggle' | 'record' | null>(null);
   // Speak, unless the person last chose to write. Where there is no microphone to speak into, the
   // page they can use opens instead.
   const [mode, setMode] = useState<SessionMode>(
@@ -163,11 +190,28 @@ export function useSessionController({ variant, initialMode, draftId }: SessionO
     choose('write');
   };
 
+  /** Hang up on a live take, and stop showing what it heard. The recording is not touched. */
+  const dropLive = () => {
+    const take = liveTake.current;
+    liveTake.current = null;
+    take?.abort();
+    take?.settle();
+  };
   const beginRecording = async () => {
     setPermission('none');
+    const { wordsShown: shown, voiceConsent } = usePreferences.getState();
+    // Hidden words never open a connection. Live needs the stream, the person's agreement to it, and
+    // the daily echo's open sky, which is the only page that can show words as they come.
+    if (daily && shown && voice.liveAvailable && !liveAllowed(voiceConsent)) {
+      setLiveAsk('record');
+      return;
+    }
+    const live = daily && shown && voice.liveAvailable ? liveWords.begin() : null;
+    liveTake.current = live?.handle ?? null;
     // A take still waiting for its words keeps a copy of its recording, which this one will replace.
     await transcription.holdCurrent();
-    const code = await voice.start();
+    const code = await voice.start(live ? { tap: live.tap } : undefined);
+    if (code !== null) dropLive();
     if (code === 'permission_required') setPermission('explain');
   };
   /** A recording whose words are not in the draft, and are not on their way either. */
@@ -194,11 +238,67 @@ export function useSessionController({ variant, initialMode, draftId }: SessionO
     );
   };
   const stop = async () => {
+    const live = liveTake.current;
+    liveTake.current = null;
+    stopping.current = true;
+    // Capture ends first, so the last words are already being finished while the recording is sealed.
     const result = await voice.stop();
-    if (!result.ok) return;
+    stopping.current = false;
+    if (!result.ok) {
+      live?.abort();
+      live?.settle();
+      return;
+    }
     draft.update({ durationSeconds: elapsed });
-    // The recording is sealed on the phone. Only now do its words follow, in the order spoken.
-    transcription.enqueue(result.value);
+    // The recording is sealed on the phone. Only now do its words follow, in the order spoken. A live
+    // take brings the words it heard, and the recording is used only if they did not come.
+    transcription.enqueue(result.value, live ?? undefined);
+  };
+
+  // The recorder stopped itself (the app went to the background), so no one will wait on this take.
+  const recorderState = voice.state;
+  useEffect(() => {
+    if (recorderState === 'recording' || recorderState === 'starting') return;
+    if (liveTake.current && !stopping.current) dropLive();
+  }, [recorderState]);
+
+  /** Show words or Hide words. Showing for the first time asks, because live words stream the voice. */
+  const toggleWords = () => {
+    const prefs = usePreferences.getState();
+    if (prefs.wordsShown) {
+      prefs.setWordsShown(false);
+      // Hiding is the way to avoid the live stream: it stops now, and the words follow after.
+      dropLive();
+      return;
+    }
+    if (daily && voice.liveAvailable && !liveAllowed(prefs.voiceConsent)) setLiveAsk('toggle');
+    else prefs.setWordsShown(true);
+  };
+  const chooseConsent = (choice: ConsentChoice) => {
+    if (liveAsk === null) return transcription.choose(choice);
+    const asked = liveAsk;
+    setLiveAsk(null);
+    const prefs = usePreferences.getState();
+    if (choice === 'allowed') {
+      prefs.allowLiveWords();
+      prefs.setWordsShown(true);
+      if (asked === 'record') void beginRecording();
+    } else if (choice === 'voice_only') {
+      // Keep words hidden: the take goes on the quiet way if it was waiting to begin.
+      prefs.setWordsShown(false);
+      if (asked === 'record') void beginRecording();
+    }
+  };
+
+  /** A touch on the open sky while speaking. Returns whether it did anything. */
+  const touchSky = (): boolean => {
+    if (voice.state === 'recording') {
+      void stop();
+      return true;
+    }
+    if (!CAN_START.includes(speakView)) return false;
+    record();
+    return true;
   };
   const allowMicrophone = async () => {
     // The in-app explanation has been read: only now does the system ask.
@@ -281,6 +381,7 @@ export function useSessionController({ variant, initialMode, draftId }: SessionO
     else setProblem(sessionCopy.errors.save);
   };
   const discardDraft = async () => {
+    dropLive();
     if (voice.state === 'recording') await voice.cancel();
     transcription.abandon();
     const removed = await draft.discard();
@@ -339,6 +440,9 @@ export function useSessionController({ variant, initialMode, draftId }: SessionO
     return null;
   })();
 
+  // A live take that broke is said calmly and stays on screen until its words arrive some other way.
+  const liveNote = wordsShown && liveWords.failed ? sessionCopy.liveStopped : null;
+
   const notice =
     problem ??
     (draft.commitState === 'error' ? sessionCopy.errors.commit : null) ??
@@ -362,13 +466,29 @@ export function useSessionController({ variant, initialMode, draftId }: SessionO
     notice,
     /** Spoken words are on their way: a quiet line, and the light keeps breathing. */
     listening: transcription.phase.kind === 'listening',
-    quietLine: transcription.phase.kind === 'listening' ? sessionCopy.transcribe.listening : null,
+    quietLine:
+      liveNote ??
+      (wordsShown && transcription.phase.kind === 'listening'
+        ? sessionCopy.transcribe.listening
+        : null),
     /** The sentence for the transcription states that have actions. */
     speakLine,
     /** Counts the times words have landed, so they can be let in softly. */
     arrival: transcription.arrival,
-    consentOpen: transcription.phase.kind === 'consent',
-    chooseConsent: transcription.choose,
+    consentOpen: transcription.phase.kind === 'consent' || liveAsk !== null,
+    /** Which question is open: before any voice is sent, or the first time Show words is turned on. */
+    consentKind: (liveAsk !== null ? 'live' : 'voice') as ConsentKind,
+    chooseConsent,
+    /** Show words is on: the words are on the screen. Off, a spoken session shows only the light. */
+    wordsShown,
+    /** Words heard live and not yet in the draft. Always empty unless words are shown. */
+    liveText: wordsShown ? liveWords.text : '',
+    /** The draft's words are on the screen: always when writing, and when spoken words are shown. */
+    bodyVisible: mode === 'write' || wordsShown,
+    /** The quiet word for the words: what a tap will do. */
+    wordsLabel: wordsShown ? sessionCopy.words.hide : sessionCopy.words.show,
+    toggleWords,
+    touchSky,
     /** Try again, or turn a recording that has no words yet into words. */
     retryTranscription: transcription.retry,
     retryable: draft.commitState === 'error',
