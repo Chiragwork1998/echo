@@ -41,10 +41,17 @@ export function SupportPanel({ onClose, region = deviceRegion() }: Props) {
                 onPress={() => open(line.link)}
                 style={({ pressed }) => [styles.line, pressed && styles.pressed]}
               >
-                <EchoText variant="bodyM">{line.name}</EchoText>
-                <EchoText variant="bodyL" style={styles.contact}>
-                  {line.contact}
-                </EchoText>
+                <View style={styles.lineTop}>
+                  <View style={styles.lineText}>
+                    <EchoText variant="bodyM">{line.name}</EchoText>
+                    <EchoText variant="bodyL" style={styles.contact}>
+                      {line.contact}
+                    </EchoText>
+                  </View>
+                  <EchoText variant="label" accessibilityElementsHidden>
+                    {supportCopy.callWord.toUpperCase()}
+                  </EchoText>
+                </View>
                 <EchoText variant="caption" color="textSecondary" style={styles.detail}>
                   {line.detail}
                 </EchoText>
@@ -100,6 +107,13 @@ const styles = StyleSheet.create({
     paddingVertical: tokens.space[8],
   },
   pressed: { opacity: 0.7 },
+  lineTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: tokens.space[12],
+  },
+  lineText: { flex: 1 },
   contact: { letterSpacing: 0.4 },
   detail: { fontSize: 12.5, lineHeight: 17, letterSpacing: 0.1 },
   close: {

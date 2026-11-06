@@ -110,5 +110,6 @@ export const supportCopy = {
     'If you might act on these thoughts, or you are in danger, call your local emergency number now.',
   call: (name: string, contact: string) => `Call ${name}, ${contact}`,
   footer: 'ECHO isn’t a crisis service and can’t take the place of one. Your entries stay yours.',
+  callWord: 'Call',
   close: 'Close',
 } as const;

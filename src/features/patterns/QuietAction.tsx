@@ -10,11 +10,24 @@ type Props = {
   onPress: () => void;
   busy?: boolean;
   hint?: string;
+  /** For use on glass that is already frosted: a hairline pill with no second layer of blur. */
+  flat?: boolean;
 };
 
 /** A calm glass pill: the one action on a quiet page. 48 pt tall, with a label that never shouts. */
-export function QuietAction({ label, onPress, busy, hint }: Props) {
+export function QuietAction({ label, onPress, busy, hint, flat }: Props) {
   const { colors } = useTheme();
+  const inside = (
+    <View style={styles.inside}>
+      {busy ? (
+        <ActivityIndicator color={colors.textPrimary} />
+      ) : (
+        <EchoText variant="label" numberOfLines={1}>
+          {label.toUpperCase()}
+        </EchoText>
+      )}
+    </View>
+  );
   return (
     <Pressable
       accessibilityRole="button"
@@ -25,17 +38,11 @@ export function QuietAction({ label, onPress, busy, hint }: Props) {
       onPress={onPress}
       style={({ pressed }) => [styles.press, pressed && styles.pressed]}
     >
-      <GlassCard radius={tokens.radius.pill}>
-        <View style={styles.inside}>
-          {busy ? (
-            <ActivityIndicator color={colors.textPrimary} />
-          ) : (
-            <EchoText variant="label" numberOfLines={1}>
-              {label.toUpperCase()}
-            </EchoText>
-          )}
-        </View>
-      </GlassCard>
+      {flat ? (
+        <View style={[styles.flat, { borderColor: colors.borderGlass }]}>{inside}</View>
+      ) : (
+        <GlassCard radius={tokens.radius.pill}>{inside}</GlassCard>
+      )}
     </Pressable>
   );
 }
@@ -43,6 +50,11 @@ export function QuietAction({ label, onPress, busy, hint }: Props) {
 const styles = StyleSheet.create({
   press: { alignSelf: 'center' },
   pressed: { opacity: 0.72 },
+  flat: {
+    borderRadius: tokens.radius.pill,
+    borderWidth: 1,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+  },
   inside: {
     minHeight: 48,
     minWidth: 200,

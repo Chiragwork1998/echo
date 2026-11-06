@@ -63,6 +63,9 @@ export function figureFor(name: string): Figure {
 type Props = { name: string; color: string; opacity?: number };
 
 /** Decorative only, so it is hidden from screen readers. */
+/** Stars lower on the board are dimmer, so the sky dissolves into the card without an edge. */
+const fade = (y: number) => 1 - (y / BOARD.height) * 0.85;
+
 export function Constellation({ name, color, opacity = 0.4 }: Props) {
   const { stars, lines } = figureFor(name);
   return (
@@ -85,7 +88,7 @@ export function Constellation({ name, color, opacity = 0.4 }: Props) {
               y2={b.y}
               stroke={color}
               strokeWidth={0.18}
-              strokeOpacity={opacity * 0.9}
+              strokeOpacity={opacity * 0.9 * Math.min(fade(a.y), fade(b.y))}
               strokeLinecap="round"
             />
           ) : null;
@@ -97,7 +100,7 @@ export function Constellation({ name, color, opacity = 0.4 }: Props) {
             cy={star.y}
             r={star.r * 2.6}
             fill={color}
-            fillOpacity={opacity * 0.22}
+            fillOpacity={opacity * 0.22 * fade(star.y)}
           />
         ))}
         {stars.map((star, index) => (
@@ -107,7 +110,7 @@ export function Constellation({ name, color, opacity = 0.4 }: Props) {
             cy={star.y}
             r={star.r * 0.5}
             fill={color}
-            fillOpacity={Math.min(1, opacity * 2)}
+            fillOpacity={Math.min(1, opacity * 2) * fade(star.y)}
           />
         ))}
       </Svg>

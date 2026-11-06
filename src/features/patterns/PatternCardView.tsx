@@ -82,11 +82,6 @@ export function PatternCardView({ card, index, total }: Props) {
         <LinearGradient colors={FACE} style={styles.face}>
           <View style={styles.sky}>
             <Constellation name={card.name} color={GOLD} />
-            <LinearGradient
-              colors={['rgba(5,14,29,0)', 'rgba(9,26,49,0.9)']}
-              style={StyleSheet.absoluteFill}
-              pointerEvents="none"
-            />
           </View>
           <View style={styles.frame} pointerEvents="none" />
 
@@ -258,7 +253,7 @@ const styles = StyleSheet.create({
     paddingTop: 22,
   },
   count: { opacity: 0.8, letterSpacing: 1.2 },
-  body: { paddingHorizontal: PAD, paddingTop: 52, paddingBottom: 24, gap: tokens.space[12] },
+  body: { paddingHorizontal: PAD, paddingTop: 52, paddingBottom: 24, gap: tokens.space[16] },
   name: { fontSize: 36, lineHeight: 40, letterSpacing: -0.2 },
   center: { alignItems: 'center' },
   rule: { height: StyleSheet.hairlineWidth, backgroundColor: GOLD_RULE, marginVertical: 4 },

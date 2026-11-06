@@ -65,7 +65,7 @@ export function ConsentPanel({ count, onAgree, onDecline }: Props) {
             </View>
           ))}
         </View>
-        <QuietAction label={consent.agree} onPress={onAgree} />
+        <QuietAction flat label={consent.agree} onPress={onAgree} />
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={consent.notNow}
