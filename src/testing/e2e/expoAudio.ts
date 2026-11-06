@@ -31,18 +31,25 @@ async function localFile(module: number): Promise<File> {
   return new File(asset.localUri ?? asset.uri);
 }
 
-function copyOver(from: File, to: File) {
+// File.copy is asynchronous: it returns before the bytes are on disk. A caller that does not wait
+// hands the app a path with no file behind it, which a slow disk turns into a failed save.
+async function copyOver(from: File, to: File) {
   new Directory(Paths.cache, 'Audio').create({ idempotent: true, intermediates: true });
   if (to.exists) to.delete();
-  from.copy(to);
+  await from.copy(to);
 }
 
 type RecorderOptions = { android?: { extension?: string } };
 
-/** "Records" for as long as it runs, and leaves the speech in its file when it stops. */
-function createRecorder(options: RecorderOptions) {
+/**
+ * "Records" for as long as it runs. The speech is put in its file when recording starts, as a real
+ * recorder's first seconds are, so a take that is cut off mid-way leaves a file to be recovered.
+ * stop() waits for that file to be whole.
+ */
+export function createRecorder(options: RecorderOptions) {
   let uri: string | null = null;
   let startedAt = 0;
+  let written: Promise<void> = Promise.resolve();
   return {
     get uri() {
       return uri;
@@ -54,10 +61,16 @@ function createRecorder(options: RecorderOptions) {
     },
     record() {
       startedAt = Date.now();
+      if (!uri) return;
+      const target = new File(uri);
+      written = localFile(AAC).then((from) => copyOver(from, target));
+      // Reported by stop(). A take that is killed first never reaches it, and must not be an
+      // unhandled rejection.
+      written.catch(() => undefined);
     },
     async stop() {
       startedAt = 0;
-      if (uri) copyOver(await localFile(AAC), new File(uri));
+      await written;
     },
   };
 }
@@ -76,7 +89,7 @@ type StreamBuffer = {
 type StreamOptions = { onBuffer?: (buffer: StreamBuffer) => void };
 
 /** Real speech at real speed, then quiet, for as long as the take runs. */
-function createStream() {
+export function createStream() {
   let deliver: StreamOptions['onBuffer'];
   let timer: ReturnType<typeof setInterval> | null = null;
   let fileUri: string | null = null;
@@ -112,7 +125,7 @@ function createStream() {
     },
     async startFileRecordingAsync(file: { uri: string }) {
       fileUri = file.uri;
-      copyOver(await localFile(WAV), new File(file.uri));
+      await copyOver(await localFile(WAV), new File(file.uri));
       return { uri: file.uri };
     },
     async stopFileRecordingAsync() {
