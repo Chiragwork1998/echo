@@ -7,6 +7,7 @@ import { usePreferences, voiceStatus, type VoiceStatus } from '@/state/preferenc
 
 import { planAdtsPieces } from './adts';
 import { joinSpokenPieces } from './joinWords';
+import { voiceOrigin } from './voiceApi';
 import { parseWav, planPieces, wavPiece } from './wav';
 
 // Turns a sealed recording into text through ECHO's voice server (docs/OWNER_DECISIONS.md, D-005,
@@ -112,26 +113,18 @@ const SLOW_UPLINK = 100_000;
 export const pieceTimeoutMs = (baseMs: number, bytes: number, sharing: number) =>
   baseMs + Math.ceil((bytes * sharing * 1000) / SLOW_UPLINK);
 
-const LOCAL_HOSTS = ['127.0.0.1', 'localhost'];
-
 /**
- * The server's address, or null when it must not be used. Anything but a phone talking to itself
- * has to be https: a voice never crosses a network in the clear. Parsed by hand, because the URL
- * class is not complete on every React Native runtime, and strict, so that a host like
- * "127.0.0.1.example.com" or "localhost@example.com" cannot pass for a local one.
+ * The server's address for a route, or null when it must not be used. The rule is the app's one rule
+ * for ECHO's server (`voiceOrigin`): https, with plain http only for this Mac's own address in a
+ * development build.
  */
 export function voiceEndpoint(
   raw: string | undefined,
   path: string = TRANSCRIBE_PATH,
+  development?: boolean,
 ): string | null {
-  const match = /^(https?):\/\/([^/?#@\s]+)\/?$/i.exec((raw ?? '').trim());
-  if (!match) return null;
-  const scheme = match[1]!.toLowerCase();
-  const authority = match[2]!.toLowerCase();
-  const host = authority.replace(/:\d{1,5}$/, '');
-  if (host.length === 0 || host.includes(':')) return null;
-  if (scheme === 'http' && !LOCAL_HOSTS.includes(host)) return null;
-  return `${scheme}://${authority}${path}`;
+  const origin = voiceOrigin(raw, development);
+  return origin && `${origin}${path}`;
 }
 
 const responseSchema = z.object({

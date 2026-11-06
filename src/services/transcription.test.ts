@@ -124,6 +124,38 @@ describe('voiceEndpoint', () => {
   });
 });
 
+describe('voiceEndpoint in a release build', () => {
+  it('refuses plain http even to this Mac’s own address, as the rest of the app does', () => {
+    expect(voiceEndpoint('http://127.0.0.1:8787', undefined, false)).toBeNull();
+    expect(voiceEndpoint('http://localhost:8787', '/api/refine', false)).toBeNull();
+    expect(voiceEndpoint('https://voice.example.com', undefined, false)).toBe(
+      'https://voice.example.com/api/transcribe',
+    );
+  });
+
+  it('sends nothing to a loopback address when the build is not a development one', async () => {
+    const globals = globalThis as { __DEV__?: boolean };
+    const before = globals.__DEV__;
+    globals.__DEV__ = false;
+    try {
+      expect(await failedWith(run({ url: 'http://127.0.0.1:8787' }))).toEqual({
+        code: 'not_configured',
+        retryable: false,
+      });
+      const refined = await refineWords(
+        'आज मन भारी है',
+        {},
+        { fetch: send, url: 'http://localhost:8787', token: TOKEN, status, style: () => 'exact' },
+      );
+      expect(refined).toEqual({ ok: false, error: { code: 'not_configured', retryable: false } });
+      expect(send).not.toHaveBeenCalled();
+      expect(open).not.toHaveBeenCalled();
+    } finally {
+      globals.__DEV__ = before;
+    }
+  });
+});
+
 describe('request building', () => {
   it('posts the recording as multipart with the token header and nothing else', async () => {
     const result = await run();
