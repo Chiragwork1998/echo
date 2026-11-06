@@ -1,3 +1,5 @@
+import { liveAllowed, usePreferences } from '@/state/preferences';
+
 import { VOICE_TOKEN_HEADER, voiceApi, type VoiceApi } from './voiceApi';
 
 // Live words (docs/OWNER_DECISIONS.md, D-007, D-008): a take streamed to OpenAI's realtime
@@ -77,6 +79,8 @@ export type LiveDeps = {
   WebSocket: SocketConstructor;
   /** How long to wait for the secret, and then for the socket to open. */
   timeoutMs: number;
+  /** Whether the person agreed to their voice being streamed as it is spoken (`liveAllowed`). */
+  allowed: () => boolean;
 };
 
 const defaults = (): LiveDeps => ({
@@ -84,6 +88,7 @@ const defaults = (): LiveDeps => ({
   api: voiceApi(),
   WebSocket: WebSocket as unknown as SocketConstructor,
   timeoutMs: 12_000,
+  allowed: () => liveAllowed(usePreferences.getState().voiceConsent),
 });
 
 export const LIVE_SESSION_PATH = '/api/live-session';
@@ -137,12 +142,15 @@ async function mint(deps: LiveDeps): Promise<Granted | null> {
 /**
  * Opens a live transcription session and resolves once audio can be sent, or with null if it could
  * not be opened for any reason. A connection that later ends is reported through `onClose`, once.
+ * It checks the person's consent itself, before it asks the server for anything, so no caller can
+ * stream a voice that was not agreed to be streamed.
  */
 export async function openLiveSocket(
   handlers: LiveHandlers,
   overrides: Partial<LiveDeps> = {},
 ): Promise<LiveSocket | null> {
   const deps = { ...defaults(), ...overrides };
+  if (!deps.allowed()) return null;
   let granted: Granted | null;
   try {
     granted = await mint(deps);

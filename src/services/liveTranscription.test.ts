@@ -1,3 +1,5 @@
+import { resetPreferences, usePreferences } from '@/state/preferences';
+
 import { liveAddress, openLiveSocket, type LiveDeps, type LiveEvent } from './liveTranscription';
 
 const API = { url: 'http://127.0.0.1:8787', token: 'app-token' };
@@ -39,6 +41,7 @@ const deps = (overrides: Partial<LiveDeps> = {}): Partial<LiveDeps> => ({
   api: API,
   WebSocket: FakeSocket,
   timeoutMs: 500,
+  allowed: () => true,
   ...overrides,
 });
 
@@ -94,6 +97,44 @@ describe('liveAddress', () => {
     expect(liveAddress('ws://127.0.0.1.example.org/x', true)).toBeNull();
     // A development build still pins a secure address: only the loopback is relaxed.
     expect(liveAddress('wss://realtime.example.org/v1/realtime', true)).toBeNull();
+  });
+});
+
+describe('openLiveSocket and consent', () => {
+  const handlers = () => ({ onEvent: jest.fn<void, [LiveEvent]>(), onClose: jest.fn() });
+  beforeEach(() => resetPreferences());
+
+  it('asks the server for nothing and opens nothing when live words are not allowed', async () => {
+    const given = deps({ allowed: () => false });
+    FakeSocket.last = undefined as unknown as FakeSocket;
+    expect(await openLiveSocket(handlers(), given)).toBeNull();
+    expect(given.fetch).not.toHaveBeenCalled();
+    expect(FakeSocket.last).toBeUndefined();
+  });
+
+  it("reads the person's own choice unless told otherwise, so no caller can stream without it", async () => {
+    const { allowed: _skipped, ...asked } = deps();
+    FakeSocket.last = undefined as unknown as FakeSocket;
+
+    // Never asked, then allowed to send a voice but not to stream it, then keeping the voice on the phone.
+    for (const choose of [
+      () => undefined,
+      () => usePreferences.getState().setVoiceConsent('allowed'),
+      () => usePreferences.getState().setVoiceConsent('voice_only'),
+    ]) {
+      choose();
+      expect(await openLiveSocket(handlers(), asked)).toBeNull();
+    }
+    expect(asked.fetch).not.toHaveBeenCalled();
+    expect(FakeSocket.last).toBeUndefined();
+
+    // Agreed to live words: now it asks, and connects.
+    usePreferences.getState().allowLiveWords();
+    const opening = openLiveSocket(handlers(), asked);
+    await new Promise((resolve) => setImmediate(resolve));
+    FakeSocket.last.onopen?.();
+    expect(await opening).not.toBeNull();
+    expect(asked.fetch).toHaveBeenCalledTimes(1);
   });
 });
 
