@@ -93,5 +93,6 @@ The final backup key-recovery model is a product/security decision. Cross-device
 - Device tests for onboarding resume, denied permissions, offline journaling, draft recovery, export, deletion, and biometric lock.
 - Day/night golden comparisons at the required dimensions and accessibility modes.
 - Release builds run on a physical iPhone and Android device before submission.
+- A release cannot contain the end-to-end test microphone. `ECHO_E2E=1` swaps a stand-in for `expo-audio` in the development bundle, and `metro.config.js` fails the build if it is set when `NODE_ENV` is `production` or `EAS_BUILD` is `true`, and again if Metro is asked for a production-mode bundle (`scripts/e2eMicrophone.js`, tested in `src/testing/e2e/metroConfig.test.ts`). Development with `ECHO_E2E=1` is unchanged.
 - Privacy inspection confirms no journal content in logs, analytics, notifications, crash reports, or network metadata.
 

@@ -39,3 +39,19 @@ Production plates are richer and more saturated than the plates inside the golde
 ## Open technical limits
 
 - **An iOS hidden take cannot be split, and past about 14 minutes it gets no words.** iOS records `.m4a` (`src/features/journal/recorderDriver.ts`), and MPEG-4 cannot be cut between frames the way Android's ADTS `.aac` can, which the app now sends in overlapping pieces. An `.m4a` goes to the voice server whole, so it is limited by what one request may carry, 4.4 MB, which is about 14 minutes at 40 kbps (a ten minute `.m4a` was taken in 15 seconds). A longer one is refused before anything is sent as `too_long`. The recording stays sealed and nothing is lost, but the person gets no words from it. Live takes (WAV) are split on both platforms and are not affected. Options when the owner decides: record iOS hidden takes in a format that can be cut (PCM in a WAV or CAF, split by size, or ADTS if the recorder can write it), record in segments, or add an MP4 splitter. **Owner action.**
+
+## Before public launch
+
+**Launch blocker. The voice server can be spent by anyone who opens the app.** `EXPO_PUBLIC_VOICE_TOKEN` is read by the app, so it ships inside the bundle. Anyone who unpacks the app can take it and call all four routes with it: `/api/transcribe`, `/api/refine`, `/api/live-session` and `/api/patterns`. `/api/live-session` hands out a realtime session secret that is billed to ECHO's OpenAI account, and `/api/patterns` and tidy `/api/refine` are model calls on arbitrary text. The only things standing in the way are the limits below, and none of them is a defence against someone who means it:
+
+- The rate limit and the count of wrong tokens are held in memory, per Vercel instance. A second instance counts for itself, and an instance that restarts forgets. They stop casual abuse and nothing else.
+- The token is shared by every install, so one install cannot be told from another, and one cannot be turned off without turning off all of them.
+- ffmpeg is bounded (30 seconds, four at once per instance, 25 MiB of output), `/api/refine` takes at most 100,000 characters, and each route has a body limit. These cap what one request can cost, not how many are made.
+
+Before the app is public, all three of these must be done:
+
+1. **Prove the app is the app.** App Attest on iOS and Play Integrity on Android, or a per-install token the server issues after that check, so a token taken from one phone is useless on another and a bad install can be revoked alone.
+2. **Rate limits that hold across instances.** Vercel Firewall rate limits on `/api/*`, keyed by IP and by install, with the in-memory limits kept as a second layer.
+3. **A dedicated OpenAI project with a spend cap.** ECHO's voice server should use its own project and key, with a monthly hard limit and usage alerts, so that the worst case is a known number and cannot reach any other use of the account.
+
+Public launch is blocked until all three are done. **Owner action.**
