@@ -17,6 +17,20 @@ export const useJournalRevision = create<{ revision: number }>(() => ({ revision
 export const notifyJournalChanged = () =>
   useJournalRevision.setState(({ revision }) => ({ revision: revision + 1 }));
 
+let lostRecordings = 0;
+
+/** Called by the launch sweep for recordings the OS cleared before they could be encrypted. */
+export const noteLostRecordings = (count: number) => {
+  lostRecordings += count;
+};
+
+/** Hands the news to one caller, so it is told once. */
+export const takeLostRecordings = () => {
+  const count = lostRecordings;
+  lostRecordings = 0;
+  return count;
+};
+
 async function withJournal<T>(
   task: (journal: Journal) => Promise<JournalResult<T>>,
 ): Promise<JournalResult<T>> {

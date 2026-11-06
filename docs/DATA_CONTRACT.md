@@ -92,6 +92,7 @@ On failure do not navigate. The draft is intact, in memory and on disk, and `com
 | `saveState: 'error'`      | Non-blocking inline note. The text is safe in memory, and saving retries on the next change  |
 | `commitState: 'error'`    | Inline message, Reflect stays enabled for retry                                              |
 | `resumed` with `audio.recovered` | Rescued after a crash. The recording may be cut short                                 |
+| `status: 'ready'` with `error.code: 'audio_failed'` | A recording from an earlier session is gone: the OS cleared it before it could be encrypted. Say so inline. Writing carries on, and the next save clears it. It appears on the first draft opened after the launch that found it, which may not be the draft it came from |
 
 Saving happens by itself: every 600 ms while typing, on leaving the screen, and when the app backgrounds.
 
@@ -112,7 +113,7 @@ Saving happens by itself: every 600 ms while typing, on leaving the screen, and 
 | `permission_required` | Show the in-app explanation, call `requestMicrophonePermission()` from `@/services/permissions`, then `start()` again |
 | `unavailable`         | Offer Write                                                                     |
 | `start_failed`        | Inline message, offer Write                                                     |
-| `save_failed`         | Say the recording is kept. It is recovered on the next launch. Offer Write      |
+| `save_failed`         | Say the recording is kept for now. The next launch encrypts it, unless the OS clears its cache first, which the next draft reports. Offer Write |
 
 - `start()` never shows the OS prompt. Only `requestMicrophonePermission()` does.
 - Call `await voice.stop()` before `draft.commit()`, and keep Reflect disabled while `state` is `recording` or `saving`.

@@ -1,10 +1,13 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { act, renderHook } from '@testing-library/react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 
+import { takeLostRecordings } from '@/features/journal/api';
 import { emptyContent } from '@/features/journal/content';
 import { sqlJournalFor } from '@/features/journal/runtime';
+import { useDraft } from '@/features/journal/useDraft';
 import { DatabaseTooNewError } from '@/storage/migrations';
 import { installRuntime } from '@/storage/runtime';
 import { createTestRuntime, nodeAes, type TestRuntime } from '@/storage/testing/nodePorts';
@@ -136,6 +139,54 @@ describe('routing a launch', () => {
     expect(existsSync(uri)).toBe(false);
     const drafts = await sqlJournalFor(rt).listDrafts();
     expect(drafts.ok && drafts.value).toHaveLength(1);
+  });
+
+  describe('a recording the OS evicted before it could be encrypted', () => {
+    const draftAfterBoot = async () => {
+      const view = await renderHook(() => useDraft());
+      await act(async () => {
+        await new Promise((resolve) => setImmediate(resolve));
+      });
+      return view;
+    };
+
+    beforeEach(async () => {
+      takeLostRecordings();
+      const journal = sqlJournalFor(rt);
+      await journal.saveDraft('a', emptyContent({ body: 'words' }));
+      // A ledger row with no file: the cache was cleared while the app was away.
+      await journal.beginRecording('a');
+    });
+
+    it('is reported on the next draft, which still opens normally', async () => {
+      await bootApp();
+      const view = await draftAfterBoot();
+      expect(view.result.current).toMatchObject({
+        status: 'ready',
+        id: 'a',
+        error: { code: 'audio_failed', retryable: false },
+      });
+      expect(view.result.current.content.body).toBe('words');
+      await view.unmount();
+    });
+
+    it('is reported once, not on every draft after it', async () => {
+      await bootApp();
+      const first = await draftAfterBoot();
+      await first.unmount();
+      const second = await draftAfterBoot();
+      expect(second.result.current.error).toBeNull();
+      await second.unmount();
+    });
+
+    it('is not reported when nothing was lost', async () => {
+      await sqlJournalFor(rt).recoverLeftovers();
+      takeLostRecordings();
+      await bootApp();
+      const view = await draftAfterBoot();
+      expect(view.result.current.error).toBeNull();
+      await view.unmount();
+    });
   });
 
   it('does not let a failed sweep keep anyone out', async () => {

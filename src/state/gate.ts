@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 import { create } from 'zustand';
 
+import { noteLostRecordings } from '@/features/journal/api';
 import { sqlJournalFor } from '@/features/journal/runtime';
 import {
   authenticate,
@@ -117,7 +118,8 @@ async function resolve(runtime: Runtime): Promise<void> {
   const journal = sqlJournalFor(runtime);
   // Before anything else, so plaintext is off disk as early as possible. Failures leave the file in
   // place for the next launch and never block the app.
-  await journal.recoverLeftovers().catch(() => undefined);
+  const swept = await journal.recoverLeftovers().catch(() => null);
+  if (swept?.lost) noteLostRecordings(swept.lost);
 
   const hydration = await hydrateOnboarding(createOnboardingPersistence(runtime));
   const committed = await journal.hasCommittedEntries();

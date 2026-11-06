@@ -11,6 +11,7 @@ import {
   newDraftId,
   notifyJournalChanged,
   saveDraft,
+  takeLostRecordings,
 } from './api';
 import { canReflect, emptyContent, hasContent } from './content';
 import {
@@ -189,7 +190,9 @@ export function useDraft(options: UseDraftOptions = {}): DraftController {
         setId(s.id);
       }
       s.loaded = true;
-      setError(null);
+      // The first draft opened after the launch sweep is where this reaches the person. The session
+      // carries on normally, and the next save clears it.
+      setError(takeLostRecordings() > 0 ? { code: 'audio_failed', retryable: false } : null);
       setStatus('ready');
     },
     [draftId],

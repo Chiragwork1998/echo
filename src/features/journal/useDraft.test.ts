@@ -3,7 +3,7 @@ import { AppState } from 'react-native';
 
 import { createTestRuntime, type TestRuntime } from '@/storage/testing/nodePorts';
 
-import { useJournalRevision } from './api';
+import { noteLostRecordings, takeLostRecordings, useJournalRevision } from './api';
 import { setJournal } from './runtime';
 import { createSqlJournal } from './sqlJournal';
 import type { Journal, JournalResult } from './types';
@@ -469,6 +469,46 @@ describe('flush only reports ok for bytes that are durable', () => {
       await flushMicrotasks();
       setJournal(journal);
     }
+  });
+});
+
+describe('a recording lost before this session', () => {
+  beforeEach(() => {
+    takeLostRecordings();
+    noteLostRecordings(1);
+  });
+
+  afterEach(() => {
+    takeLostRecordings();
+  });
+
+  it('shows as an error on an otherwise healthy draft', async () => {
+    const view = await mount();
+    expect(current(view)).toMatchObject({
+      status: 'ready',
+      saveState: 'idle',
+      commitState: 'idle',
+      error: { code: 'audio_failed', retryable: false },
+    });
+  });
+
+  it('does not get in the way of writing, and clears on the next save', async () => {
+    const view = await mount();
+    await act(() => current(view).update({ body: 'carrying on' }));
+    await advance(AUTOSAVE_INTERVAL_MS);
+    expect(await storedBody(current(view).id)).toBe('carrying on');
+    expect(current(view).error).toBeNull();
+  });
+
+  it('is not held back for a draft that failed to load', async () => {
+    unwrap(await journal.saveDraft('bad', { body: 'x', mode: 'text', durationSeconds: 0 }));
+    await rt.db.exec(`UPDATE entries SET sealed = x'01'`);
+    const failed = await mount({ draftId: 'bad' });
+    expect(current(failed).error?.code).toBe('unreadable');
+    await failed.unmount();
+
+    const view = await mount();
+    expect(current(view).error?.code).toBe('audio_failed');
   });
 });
 

@@ -17,7 +17,10 @@ export type VoiceErrorCode =
   /** The web preview, or a device without the native module. Offer Write. */
   | 'unavailable'
   | 'start_failed'
-  /** Encryption failed. The recording is kept and retried on the next launch. Offer Write. */
+  /**
+   * Encryption failed. The recording is kept and retried on the next launch, unless the OS clears
+   * its cache first, which the next draft reports as audio_failed. Offer Write.
+   */
   | 'save_failed';
 
 export type VoiceRecorder = {
