@@ -98,6 +98,13 @@ describe('the live transcript', () => {
     expect(transcript.committed()).toBe(2);
   });
 
+  it('knows when the server reported an error, so the whole cannot be trusted', () => {
+    const transcript = feed([delta('a', ' fine'), committed('a'), completed('a', 'Fine.')]);
+    expect(transcript.failed()).toBe(false);
+    transcript.apply({ kind: 'error' });
+    expect(transcript.failed()).toBe(true);
+  });
+
   it('knows when a turn failed, so the whole cannot be trusted', () => {
     const transcript = feed([
       delta('a', ' x'),

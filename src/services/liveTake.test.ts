@@ -164,6 +164,39 @@ describe('a live take', () => {
     expect(link.socket.close).toHaveBeenCalled();
   });
 
+  it('falls back at once when the server reports an error mid-take, and does not reconnect', async () => {
+    const link = connection();
+    const take = createLiveTake({ open: link.open }, jest.fn());
+    take.push(sound(1, true));
+    await settle();
+    link.say({ kind: 'delta', itemId: 'one', text: ' hello' });
+    // The server refused something: from here the words cannot be trusted to be whole.
+    link.say({ kind: 'error' });
+    expect(take.failed()).toBe(true);
+    expect(await take.outcome).toEqual({ ok: false });
+    expect(link.socket.close).toHaveBeenCalledTimes(1);
+
+    const before = link.sent.length;
+    take.push(sound(1, true));
+    take.push(sound(2, false));
+    take.push(null);
+    expect(link.sent.length).toBe(before);
+    expect(link.open).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back when an error arrives after the person has stopped, even with every turn finished', async () => {
+    const link = connection();
+    const take = createLiveTake({ open: link.open }, jest.fn());
+    take.push(sound(1, true));
+    await settle();
+    take.push(sound(2, false));
+    link.say({ kind: 'committed', itemId: 'one' });
+    take.push(null);
+    link.say({ kind: 'error' });
+    link.say({ kind: 'completed', itemId: 'one', text: 'Everything.' });
+    expect(await take.outcome).toEqual({ ok: false });
+  });
+
   it('falls back when a turn fails to become words', async () => {
     const link = connection();
     const take = createLiveTake({ open: link.open }, jest.fn());

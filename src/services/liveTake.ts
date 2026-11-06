@@ -118,6 +118,9 @@ export function createLiveTake(deps: LiveTakeDeps, onChange: () => void): LiveTa
     onEvent: (event) => {
       if (done) return;
       transcript.apply(event);
+      // An error is not waited out. Whatever the server refused, the take is no longer known to be
+      // whole, so it stops here and the sealed recording is sent. It does not reconnect.
+      if (event.kind === 'error') return fail();
       onChange();
       check();
     },
