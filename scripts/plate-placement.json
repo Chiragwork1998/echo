@@ -48,7 +48,13 @@
     "home": {
       "scale": 1,
       "dx": 0,
-      "dy": 0
+      "dy": 0,
+      "depth": {
+        "from": 0.56,
+        "to": 0.68,
+        "sigma": 22,
+        "darken": 0.0
+      }
     }
   },
   "night": {
@@ -100,7 +106,13 @@
     "home": {
       "scale": 1,
       "dx": 0,
-      "dy": 0
+      "dy": 0,
+      "depth": {
+        "from": 0.6,
+        "to": 0.71,
+        "sigma": 26,
+        "darken": 0.42
+      }
     }
   }
 }

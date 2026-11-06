@@ -2,7 +2,6 @@ import { StyleSheet, View } from 'react-native';
 import Svg, { Line } from 'react-native-svg';
 
 import { EchoText } from '@/components/EchoText';
-import { Icon } from '@/components/Icon';
 import { TrackedText } from '@/components/TrackedText';
 import { copy } from '@/content/copy';
 import { goldenCopy } from '@/content/goldenCopy';
@@ -10,11 +9,10 @@ import { useLayout } from '@/design/layout';
 import { useTheme } from '@/design/theme';
 import type { Rhythm } from '@/features/journal';
 
+import { Cairn } from './Cairn';
 import { homeLabels } from './homeLabels';
 
-const CAIRN_SIZE = 27;
-const CAIRN_DONE = '#EBD8BA'; // pale limestone, to match the stone above
-const CAIRN_OPEN = 'rgba(217,224,234,0.62)';
+const CAIRN_SIZE = 23;
 const LABEL_SIZE = 9.5;
 const TRAIL_INSET = 0.052; // of the row, so the trail stops short of each cairn
 const DAYS = 7;
@@ -81,11 +79,7 @@ export function WeekRhythm({ rhythm, loading }: { rhythm: Rhythm; loading: boole
               .filter(Boolean)
               .join(', ')}
           >
-            <Icon
-              name={completed ? 'cairn-filled' : 'cairn-outline'}
-              size={CAIRN_SIZE}
-              color={completed ? CAIRN_DONE : CAIRN_OPEN}
-            />
+            <Cairn built={completed} size={CAIRN_SIZE} />
             <TrackedText
               text={weekday.toUpperCase()}
               tracking={1.9}
