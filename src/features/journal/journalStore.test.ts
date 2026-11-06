@@ -193,6 +193,16 @@ describe('sql journal', () => {
   const rowCount = async (table: string) =>
     (await rt.db.first<{ total: number }>(`SELECT COUNT(*) AS total FROM ${table}`))?.total;
 
+  const sealedBytes = async (id: string) => {
+    const row = await rt.db.first<{ sealed: Uint8Array }>(
+      'SELECT sealed FROM entries WHERE id = ?',
+      [id],
+    );
+    return Buffer.from(row?.sealed ?? []);
+  };
+  /** Anywhere at all under the app's storage, including the database and its write-ahead log. */
+  const onDisk = (bytes: Buffer) => everyStoredByte(rt.root).includes(bytes);
+
   describe('durability', () => {
     it('keeps a commit through process death, read back from disk', async () => {
       unwrap(await journal.commitEntry('a', text(SECRET_BODY)));
@@ -382,10 +392,10 @@ describe('sql journal', () => {
 
     it('leaves no readable trace of a deleted entry on disk', async () => {
       unwrap(await journal.commitEntry('a', text(SECRET_BODY)));
-      const sealed = await rt.db.first<{ sealed: Uint8Array }>('SELECT sealed FROM entries');
+      const sealed = await sealedBytes('a');
+      expect(onDisk(sealed)).toBe(true);
       unwrap(await journal.deleteEntry('a'));
-      await rt.db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
-      expect(everyStoredByte(rt.root).includes(Buffer.from(sealed?.sealed ?? []))).toBe(false);
+      expect(onDisk(sealed)).toBe(false);
     });
 
     it('is a no-op the second time', async () => {
@@ -409,6 +419,93 @@ describe('sql journal', () => {
       unwrap(await journal.saveDraft('a', text('x')));
       unwrap(await journal.deleteEntry('a'));
       expect(await rowCount('entries')).toBe(0);
+    });
+  });
+
+  // The key opens anything that survives here, so a copy in the log is a deleted entry still readable.
+  describe('the write-ahead log', () => {
+    const checkpoints = () => {
+      const first = jest.spyOn(rt.db, 'first');
+      const exec = jest.spyOn(rt.db, 'exec');
+      return () =>
+        [...first.mock.calls, ...exec.mock.calls].filter(([sql]) => sql.includes('wal_checkpoint'))
+          .length;
+    };
+
+    afterEach(() => jest.restoreAllMocks());
+
+    it('keeps no copy of a discarded draft', async () => {
+      unwrap(await journal.saveDraft('a', text(SECRET_BODY)));
+      const sealed = await sealedBytes('a');
+      expect(onDisk(sealed)).toBe(true);
+      unwrap(await journal.discardDraft('a'));
+      expect(onDisk(sealed)).toBe(false);
+    });
+
+    it('keeps no copy of a draft deleted through deleteEntry', async () => {
+      unwrap(await journal.saveDraft('a', text(SECRET_BODY)));
+      const sealed = await sealedBytes('a');
+      unwrap(await journal.deleteEntry('a'));
+      expect(onDisk(sealed)).toBe(false);
+    });
+
+    it('keeps no copy of every revision of an entry that was deleted', async () => {
+      unwrap(await journal.saveDraft('a', text('the first thing I wrote')));
+      const first = await sealedBytes('a');
+      unwrap(await journal.saveDraft('a', text('the second thing I wrote')));
+      const second = await sealedBytes('a');
+      unwrap(await journal.commitEntry('a', text('what I settled on')));
+      unwrap(await journal.deleteEntry('a'));
+      expect(onDisk(first)).toBe(false);
+      expect(onDisk(second)).toBe(false);
+    });
+
+    it('drops the old revisions of a draft once it is committed', async () => {
+      unwrap(await journal.saveDraft('a', text('a sentence the writer took back')));
+      const taken = await sealedBytes('a');
+      unwrap(await journal.saveDraft('a', text('what they kept')));
+      expect(onDisk(taken)).toBe(true);
+      unwrap(await journal.commitEntry('a', text('what they kept')));
+      expect(onDisk(taken)).toBe(false);
+    });
+
+    it('drops the old revisions of a kept draft on the next launch', async () => {
+      unwrap(await journal.saveDraft('a', text('a sentence the writer took back')));
+      const taken = await sealedBytes('a');
+      unwrap(await journal.saveDraft('a', text('what they kept')));
+      await journal.recoverLeftovers();
+      expect(onDisk(taken)).toBe(false);
+    });
+
+    it('still has the content that is meant to stay', async () => {
+      unwrap(await journal.commitEntry('kept', text('still here')));
+      unwrap(await journal.commitEntry('gone', text('going')));
+      unwrap(await journal.deleteEntry('gone'));
+      expect(unwrap(await journal.getEntry('kept'))?.body).toBe('still here');
+      const after = createSqlJournal(await rt.reopen());
+      expect(unwrap(await after.getEntry('kept'))?.body).toBe('still here');
+    });
+
+    it('is not touched by autosave, which runs every few hundred milliseconds', async () => {
+      const count = checkpoints();
+      for (let index = 0; index < 10; index += 1) {
+        unwrap(await journal.saveDraft('a', text(`revision ${index}`)));
+      }
+      expect(count()).toBe(0);
+    });
+
+    it('does not fail a delete that worked if the log could not be emptied', async () => {
+      unwrap(await journal.commitEntry('a', text('x')));
+      const first = rt.db.first.bind(rt.db);
+      jest
+        .spyOn(rt.db, 'first')
+        .mockImplementation((source, params) =>
+          source.includes('wal_checkpoint')
+            ? Promise.reject(new Error('database is locked'))
+            : first(source, params),
+        );
+      unwrap(await journal.deleteEntry('a'));
+      expect(unwrap(await journal.getEntry('a'))).toBeNull();
     });
   });
 

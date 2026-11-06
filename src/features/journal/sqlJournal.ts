@@ -109,6 +109,19 @@ export function createSqlJournal(rt: Runtime, clock: Clock = deviceClock): SqlJo
     if (result?.busy) throw new JournalFailure('write_failed');
   }
 
+  /**
+   * For after something that leaves old ciphertext behind. Never on autosave: that runs every few
+   * hundred milliseconds, so a draft's earlier revisions wait for its commit, delete, or discard, or
+   * for the next launch. A failure here cannot undo what already worked, and the launch sweep retries.
+   */
+  async function scrubLog(): Promise<void> {
+    try {
+      await truncateLog();
+    } catch {
+      // Finished by recoverLeftovers.
+    }
+  }
+
   const audioUri = (id: string) => childUri(paths.audioDir, `${id}.enc`);
 
   const findRow = (id: string) => db.first<EntryRow>(`${SELECT_ENTRY} WHERE e.id = ?`, [id]);
@@ -329,7 +342,9 @@ export function createSqlJournal(rt: Runtime, clock: Clock = deviceClock): SqlJo
           );
           const stored = await findRow(id);
           if (!stored) throw new JournalFailure('write_failed');
-          return decode(stored);
+          const entry = await decode(stored);
+          await scrubLog();
+          return entry;
         }),
       ),
 
@@ -341,6 +356,7 @@ export function createSqlJournal(rt: Runtime, clock: Clock = deviceClock): SqlJo
           if (row.status !== 'draft') throw new JournalFailure('not_draft');
           await db.run('DELETE FROM entries WHERE id = ?', [id]);
           if (row.audio_id) await removeAudioFile(row.audio_id);
+          await scrubLog();
         }),
       ),
 
@@ -410,6 +426,7 @@ export function createSqlJournal(rt: Runtime, clock: Clock = deviceClock): SqlJo
             });
           }
           if (row.audio_id) await removeAudioFile(row.audio_id);
+          await scrubLog();
         }),
       ),
 
@@ -550,6 +567,7 @@ export function createSqlJournal(rt: Runtime, clock: Clock = deviceClock): SqlJo
           files.remove(file.uri);
           summary.orphansRemoved += 1;
         }
+        await scrubLog();
         return summary;
       }),
 
