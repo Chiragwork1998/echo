@@ -91,13 +91,18 @@ test('only a few conversions run at once, and the rest are told to try again', a
 });
 
 test('a slot is given back when a conversion fails, hangs, or cannot start', async () => {
-  const limits = { maxRunning: 1, timeoutMs: 200 };
+  // One place only, so any place not given back would show at once. The time is long for everything
+  // but the hang, because the first run of a new script is slow on macOS and is not what is tested.
+  const limits = { maxRunning: 1, timeoutMs: 10_000 };
   use(broken);
   await assert.rejects(normalise(aac(), limits), /convert_failed/);
   use(join(dir, 'does-not-exist'));
   await assert.rejects(normalise(aac(), limits));
   use(hang);
-  await assert.rejects(normalise(aac(), limits), (error) => error instanceof VoiceError && error.code === 'too_slow');
+  await assert.rejects(
+    normalise(aac(), { ...limits, timeoutMs: 300 }),
+    (error) => error instanceof VoiceError && error.code === 'too_slow',
+  );
   use(quick);
   assert.equal((await normalise(aac(), limits)).type, 'audio/flac');
 });
