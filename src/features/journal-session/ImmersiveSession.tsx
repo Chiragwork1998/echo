@@ -165,6 +165,8 @@ export function ImmersiveSession({
     return () => clearTimeout(timer);
   }, [bookInView, opened]);
   const notesMayShow = !book || (bookInView && (opened || openingStalled));
+  // A note is actually drawn: the words behind it drop to a faint trace so neither fights the other.
+  const noteDrawn = (voiceNote || failure !== null) && notesMayShow;
 
   // The keyboard rises over the lower scenery. The photograph and the words stay where they are:
   // only the quiet controls ride above it.
@@ -320,6 +322,7 @@ export function ImmersiveSession({
             // A screen reader is not made to wait for the book either.
             hurry={tapped || screenReader}
             concealed={hidden}
+            dimmed={noteDrawn}
             arrival={session.arrival}
             onOpened={() => {
               setOpened(true);
@@ -377,7 +380,7 @@ export function ImmersiveSession({
         />
       )}
 
-      {(voiceNote || failure !== null) && notesMayShow && (
+      {noteDrawn && (
         <View
           pointerEvents="box-none"
           style={[

@@ -53,6 +53,8 @@ const MIN_LINES = 3;
 const FADE_MS = tokens.motion.fast;
 /** Words fade away, and back, over this long. */
 const VEIL_MS = 450;
+/** The words while a note is drawn over the page: a faint trace, plainly still there. */
+export const PAGE_DIMMED = 0.14;
 /** A drag shorter than this does not turn the page. */
 const SWIPE = 60;
 
@@ -110,6 +112,11 @@ type Props = {
    * (D-008). They fade away and back, and every page, line and word is still where it was.
    */
   concealed?: boolean;
+  /**
+   * A note is drawn over the page, so the words drop to a faint trace and come back when it goes.
+   * Never hidden: they stay on the page and for a screen reader (concealed is the one that hides).
+   */
+  dimmed?: boolean;
   /** Counts the times spoken words have landed, so they settle in rather than jump. */
   arrival?: number;
   children?: ReactNode;
@@ -146,6 +153,7 @@ export function Pages({
   lead,
   hidden = false,
   concealed = false,
+  dimmed = false,
   arrival = 0,
   children,
 }: Props) {
@@ -173,16 +181,22 @@ export function Pages({
   const [turn, setTurn] = useState<{ from: number; to: number } | null>(null);
   const flip = useSharedValue(0);
   const dim = useSharedValue(1);
-  const veil = useSharedValue(concealed ? 0 : 1);
+  const shownAt = concealed ? 0 : dimmed ? PAGE_DIMMED : 1;
+  const veil = useSharedValue(shownAt);
+  const wasConcealed = useRef(concealed);
   useEffect(() => {
+    // Hiding and showing keep their short fade under Reduce Motion. Dimming for a note does not fade
+    // at all there: the page simply is the way it will be.
+    const hides = concealed || wasConcealed.current;
+    wasConcealed.current = concealed;
     veil.set(
-      withTiming(concealed ? 0 : 1, {
-        duration: reduced ? FADE_MS : VEIL_MS,
+      withTiming(shownAt, {
+        duration: reduced ? (hides ? FADE_MS : 0) : VEIL_MS,
         easing: Easing.out(Easing.quad),
         reduceMotion: ReduceMotion.Never,
       }),
     );
-  }, [concealed, reduced, veil]);
+  }, [concealed, reduced, shownAt, veil]);
   const veiled = useAnimatedStyle(() => ({ opacity: veil.get() }));
 
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -363,6 +377,7 @@ export function Pages({
           <Head look={look} metrics={metrics} volume={volume} />
           <ArrivalFade arrival={arrival} style={[styles.fill, { opacity: hidden ? 0 : 1 }]}>
             <Animated.View
+              testID="page-words"
               style={[styles.fill, veiled]}
               accessibilityElementsHidden={concealed}
               importantForAccessibility={concealed ? 'no-hide-descendants' : 'auto'}

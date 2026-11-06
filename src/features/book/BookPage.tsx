@@ -65,6 +65,8 @@ type Props = {
   lead?: PagesProps['lead'];
   /** The words are kept but not shown (D-008). */
   concealed?: boolean;
+  /** A note is drawn over the page: the words are a faint trace until it goes. */
+  dimmed?: boolean;
   /** Counts the times spoken words have landed. */
   arrival?: number;
   /** Drawn over the page, in its ink: the breathing light, notes about the microphone. */
