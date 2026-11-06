@@ -314,17 +314,22 @@ describe('destroying the key', () => {
     expect(runtime.secrets.items.size).toBe(0);
   });
 
-  it('keeps the key provable if the key could not be removed', async () => {
+  it('changes nothing if the key could not be removed', async () => {
     const runtime = await createTestRuntime();
+    const sealed = await runtime.vault.sealJson('onboarding', 'v1', { step: 2 });
+    await runtime.db.run(
+      `INSERT INTO sealed_kv (key, sealed, updated_at) VALUES ('onboarding', ?, 1)`,
+      [sealed],
+    );
     runtime.secrets.remove = () => Promise.reject(new Error('interaction not allowed'));
 
     await expect(runtime.vault.destroyKey()).rejects.toThrow('interaction not allowed');
 
     expect(await canaries(runtime)).toBe(1);
-    await expect(runtime.vault.sealJson('entry', 'id', {})).resolves.toBeInstanceOf(Uint8Array);
+    expect(await runtime.vault.openJson('onboarding', 'v1', sealed)).toEqual({ step: 2 });
   });
 
-  it('leaves a state the next launch adopts if the app dies between canary and key', async () => {
+  it('adopts a key with nothing under it', async () => {
     const runtime = await createTestRuntime();
     const key = [...runtime.secrets.items.values()][0];
     await runtime.db.exec(`DELETE FROM sealed_kv WHERE key = 'canary'`);

@@ -6,6 +6,7 @@ import { sqlJournalFor } from '@/features/journal/runtime';
 import { bootApp, resetGateForTests, useGate } from '@/state/gate';
 import {
   completeOnboarding,
+  flushOnboarding,
   hydrateOnboarding,
   resetOnboarding,
   useOnboarding,
@@ -227,6 +228,18 @@ describe('deleteAllLocal', () => {
       },
     );
 
+    it.each(failures)('keeps the lock on after failing at %s', async (_step, breakIt) => {
+      useOnboarding.getState().update({ privacy: { biometricLock: true, privateBackup: false } });
+      await flushOnboarding();
+      breakIt();
+
+      await deleteAllLocal();
+      jest.restoreAllMocks();
+      await relaunch();
+
+      expect(useGate.getState().lock.kind).toBe('locked');
+    });
+
     it.each(failures)('can simply be run again after failing at %s', async (_step, breakIt) => {
       const remove = rt.secrets.remove;
       breakIt();
@@ -239,6 +252,24 @@ describe('deleteAllLocal', () => {
       expect(await count('entries')).toBe(0);
       expect(useGate.getState().status).toEqual({ kind: 'ready', resume: '/' });
     });
+  });
+
+  it('finishes on a second run if only the last step failed, after the key had gone', async () => {
+    const run = rt.db.run.bind(rt.db);
+    jest
+      .spyOn(rt.db, 'run')
+      .mockImplementation((source, params) =>
+        source === 'DELETE FROM sealed_kv'
+          ? Promise.reject(new Error('disk full'))
+          : run(source, params),
+      );
+    expect(await deleteAllLocal()).toEqual({ ok: false, code: 'delete_incomplete' });
+    jest.restoreAllMocks();
+
+    expect(await deleteAllLocal()).toEqual({ ok: true });
+
+    expect(await count('sealed_kv')).toBe(1);
+    expect(useGate.getState().status).toEqual({ kind: 'ready', resume: '/' });
   });
 
   it('is the way out of the key-loss state', async () => {

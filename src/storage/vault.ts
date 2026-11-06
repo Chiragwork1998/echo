@@ -10,8 +10,7 @@ import type {
 } from './ports';
 
 const KEY_NAME = 'echo.content-key.v1';
-/** Removed only by destroyKey, once everything it vouches for is gone. */
-export const CANARY_ROW = 'canary';
+const CANARY_ROW = 'canary';
 const CANARY_ID = 'v1';
 const CANARY_VALUE = 'echo';
 
@@ -49,7 +48,7 @@ export type Vault = {
   openBytes(kind: ObjectKind, id: string, envelope: Uint8Array): Promise<Uint8Array>;
   sealJson(kind: ObjectKind, id: string, value: unknown): Promise<Uint8Array>;
   openJson<T>(kind: ObjectKind, id: string, envelope: Uint8Array): Promise<T>;
-  /** Removes the key and its canary. Only delete-all may call this, after the data has gone. */
+  /** Removes the key, then every sealed record. Only delete-all, after the data has gone. */
   destroyKey(): Promise<void>;
 };
 
@@ -207,17 +206,12 @@ export function createVault({ aes, secrets, db, files, paths, now, serial }: Dep
     openJson: async <T>(kind: ObjectKind, id: string, envelope: Uint8Array) =>
       decodeJson<T>(await open(aes, requireKey(), kind, id, envelope)),
     async destroyKey() {
-      // Canary, then key. A crash between them leaves a key over nothing, which the next launch
-      // adopts. The other order leaves a canary with no key, which reads as a lost journal.
-      await serial(() => db.run('DELETE FROM sealed_kv WHERE key = ?', [CANARY_ROW]));
-      try {
-        await secrets.remove(KEY_NAME);
-      } catch (error) {
-        // The app carries on under this key, so what it writes next has to stay provable.
-        if (key) await writeCanary(key);
-        throw error;
-      }
+      // Key first, so that a failure here changes nothing. The sealed records go after it rather than
+      // with the journal's data, because they have to outlive every step that can fail: the app
+      // carries on after one, and needs the canary to prove its key and the lock setting to stay on.
+      await secrets.remove(KEY_NAME);
       key = null;
+      await serial(() => db.run('DELETE FROM sealed_kv'));
     },
   };
 }

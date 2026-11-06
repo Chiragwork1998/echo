@@ -2,7 +2,7 @@ import { bytesEqual } from '@/storage/bytes';
 import { DecryptionError, encodeJson } from '@/storage/envelope';
 import { childUri, type FileInfo } from '@/storage/ports';
 import type { Runtime } from '@/storage/runtime';
-import { CANARY_ROW, VaultNotReadyError } from '@/storage/vault';
+import { VaultNotReadyError } from '@/storage/vault';
 
 import { emptyContent, hasContent, searchIn, toSummary, unreadableSummary } from './content';
 import { deviceClock, type Clock } from './localDay';
@@ -62,7 +62,7 @@ export type SqlJournal = Journal & {
   /** Every entry and draft, for export. Rows that fail to decrypt are counted, not dropped. */
   readAll(): Promise<{ entries: Entry[]; unreadable: number }>;
   readAudio(entry: Entry): Promise<Uint8Array | null>;
-  /** Removes all journal data. The canary and the key are destroyed separately, last. */
+  /** Removes all journal data. The key and the sealed records go separately, last. */
   wipe(): Promise<void>;
 };
 
@@ -612,11 +612,8 @@ export function createSqlJournal(rt: Runtime, clock: Clock = deviceClock): SqlJo
 
     wipe: () =>
       serial(async () => {
-        // The canary stays. If anything below fails the app carries on under this key, and what it
-        // writes next has to be provable on the next launch.
         await db.transaction(async () => {
           for (const table of TABLES) await db.run(`DELETE FROM ${table}`);
-          await db.run('DELETE FROM sealed_kv WHERE key <> ?', [CANARY_ROW]);
         });
         await truncateLog();
         files.removeDirectory(paths.audioDir);
