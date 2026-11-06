@@ -8,9 +8,26 @@ import { EchoText } from './EchoText';
 // (docs/SPEC_CONFLICTS.md, C-02).
 const SEGMENT = { width: 10.5, height: 3, gap: 1.5 };
 const INACTIVE_OPACITY = 0.28;
+// Segments never shrink below this, so that a step is still a mark and not a speck.
+const MIN_SEGMENT_WIDTH = 3;
 
-export function ProgressSegments({ step, total = 8 }: { step: number; total?: number }) {
+type Props = {
+  step: number;
+  total?: number;
+  /**
+   * The most width the row may take. The golden's 96 pt row is used whenever it fits; a narrower
+   * phone sets the segments a little smaller instead of running into the wordmark.
+   */
+  maxWidth?: number;
+};
+
+export function ProgressSegments({ step, total = 8, maxWidth }: Props) {
   const { colors } = useTheme();
+  const gaps = SEGMENT.gap * (total - 1);
+  const width =
+    maxWidth === undefined
+      ? SEGMENT.width
+      : Math.max(MIN_SEGMENT_WIDTH, Math.min(SEGMENT.width, (maxWidth - gaps) / total));
   return (
     <View
       style={styles.root}
@@ -29,6 +46,7 @@ export function ProgressSegments({ step, total = 8 }: { step: number; total?: nu
             style={[
               styles.segment,
               {
+                width,
                 backgroundColor: colors.surfacePrimary,
                 opacity: i < step ? 1 : INACTIVE_OPACITY,
               },
@@ -52,5 +70,5 @@ const styles = StyleSheet.create({
     opacity: 0.8,
   },
   row: { flexDirection: 'row', gap: SEGMENT.gap },
-  segment: { width: SEGMENT.width, height: SEGMENT.height, borderRadius: SEGMENT.height / 2 },
+  segment: { height: SEGMENT.height, borderRadius: SEGMENT.height / 2 },
 });
