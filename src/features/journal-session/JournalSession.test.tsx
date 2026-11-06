@@ -17,8 +17,10 @@ import { initialOnboarding, useOnboarding } from '@/state/onboarding';
 import { usePreferences } from '@/state/preferences';
 import { render } from '@/testing/render';
 
-import { JournalSession, type SessionVariant } from './JournalSession';
+import { ImmersiveSession } from './ImmersiveSession';
+import { WrittenSession, type SessionVariant } from './JournalSession';
 import { sessionCopy } from './sessionCopy';
+import { useSessionController, type SessionOptions } from './useSessionController';
 
 jest.mock('expo-haptics', () => ({
   impactAsync: jest.fn(),
@@ -50,6 +52,20 @@ jest.mock('@/services/permissions', () => ({
   requestMicrophonePermission: jest.fn(),
   openAppSettings: jest.fn(),
 }));
+
+/**
+ * The two fallbacks, which the constants in JournalSession.tsx return to: First Echo's golden writing
+ * card (ONBOARDING_BOOK = false) and the daily echo on the open sky (DAILY_PAGE = 'sky'). The book
+ * has its own tests, in features/book.
+ */
+function JournalSession(props: SessionOptions) {
+  const session = useSessionController(props);
+  return props.variant === 'onboarding' ? (
+    <WrittenSession session={session} />
+  ) : (
+    <ImmersiveSession session={session} page="sky" />
+  );
+}
 
 const BODY = 'something I have carried';
 const alert = jest.spyOn(Alert, 'alert');

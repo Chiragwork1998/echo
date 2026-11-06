@@ -14,9 +14,10 @@ import { requestMicrophonePermission } from '@/services/permissions';
 import { initialOnboarding, useOnboarding } from '@/state/onboarding';
 import { render } from '@/testing/render';
 
-import { JournalSession } from './JournalSession';
+import { ImmersiveSession } from './ImmersiveSession';
 import { sessionCopy } from './sessionCopy';
 import { QUIET_MS } from './sky';
+import { useSessionController, type SessionOptions } from './useSessionController';
 
 jest.mock('expo-haptics', () => ({
   impactAsync: jest.fn(),
@@ -96,8 +97,14 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
+/** The daily echo on the open sky: D-003 as first built, and what DAILY_PAGE = 'sky' returns to. */
+function SkySession(props: Omit<SessionOptions, 'variant'>) {
+  const session = useSessionController({ variant: 'daily', ...props });
+  return <ImmersiveSession session={session} page="sky" />;
+}
+
 async function open(props = {}) {
-  await render(<JournalSession variant="daily" {...props} />);
+  await render(<SkySession {...props} />);
   const input = () => screen.getByLabelText(copy.home.prompt);
   // The draft has opened once the scenery can be touched.
   await waitFor(() =>

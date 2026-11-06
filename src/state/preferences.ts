@@ -6,13 +6,17 @@ import type { SqlDb, WriteQueue } from '@/storage/ports';
 // Night is the owner's chosen default (docs/OWNER_DECISIONS.md, D-001).
 const DEFAULT_THEME: ThemePreference = 'night';
 const THEME_KEY = 'theme';
+const VOLUME_KEY = 'volume';
 
 type Preferences = {
   theme: ThemePreference;
   setTheme: (theme: ThemePreference) => void;
+  /** The volume of the book the person chose on the shelf (D-004). Empty until they choose. */
+  volume: string | null;
+  setVolume: (volume: string) => void;
 };
 
-let persist: ((theme: ThemePreference) => Promise<unknown>) | null = null;
+let persist: ((key: string, value: string) => Promise<unknown>) | null = null;
 
 /** In memory until the gate has hydrated, and always on web, so a preview persists nothing. */
 export const usePreferences = create<Preferences>((set) => ({
@@ -20,7 +24,12 @@ export const usePreferences = create<Preferences>((set) => ({
   setTheme: (theme) => {
     set({ theme });
     // A theme that fails to save costs one launch in the default. It must not disturb anything else.
-    persist?.(theme).catch(() => undefined);
+    persist?.(THEME_KEY, theme).catch(() => undefined);
+  },
+  volume: null,
+  setVolume: (volume) => {
+    set({ volume });
+    persist?.(VOLUME_KEY, volume).catch(() => undefined);
   },
 }));
 
@@ -34,18 +43,24 @@ export async function hydratePreferences(
   const row = await db.first<{ value: string }>('SELECT value FROM preferences WHERE key = ?', [
     THEME_KEY,
   ]);
-  usePreferences.setState({ theme: isTheme(row?.value) ? row.value : DEFAULT_THEME });
-  persist = (theme) =>
+  const chosen = await db.first<{ value: string }>('SELECT value FROM preferences WHERE key = ?', [
+    VOLUME_KEY,
+  ]);
+  usePreferences.setState({
+    theme: isTheme(row?.value) ? row.value : DEFAULT_THEME,
+    volume: chosen?.value ?? null,
+  });
+  persist = (key, value) =>
     serial(() =>
       db.run(
         `INSERT INTO preferences (key, value) VALUES (?, ?)
          ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
-        [THEME_KEY, theme],
+        [key, value],
       ),
     );
 }
 
 export function resetPreferences(): void {
   persist = null;
-  usePreferences.setState({ theme: DEFAULT_THEME });
+  usePreferences.setState({ theme: DEFAULT_THEME, volume: null });
 }

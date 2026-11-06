@@ -48,7 +48,20 @@ const SHADOW = {
  * the person's words. First Echo keeps its golden. Setting `onboarding` to true is the whole change
  * to give First Echo the same moment.
  */
-const IMMERSIVE: Record<SessionVariant, boolean> = { onboarding: false, daily: true };
+const IMMERSIVE: Record<SessionVariant, boolean> = { onboarding: true, daily: true };
+
+/**
+ * What the daily echo writes on (D-004). `vellum`: the person's book rises after the stillness, the
+ * cover opens, and the words sit on translucent vellum with the mountains showing through. `sky`
+ * returns to D-003 as first built: words directly on the mountains, with no book at all.
+ */
+const DAILY_PAGE: 'vellum' | 'sky' = 'vellum';
+
+/**
+ * First Echo (D-004): the shelf, a volume chosen, the cover opening, and the first page. False
+ * returns to the golden's glass writing card, header, heading and Reflect button.
+ */
+const ONBOARDING_BOOK = true;
 
 function useKeyboardOpen() {
   const [open, setOpen] = useState(false);
@@ -77,15 +90,15 @@ type Props = SessionOptions;
  */
 export function JournalSession(props: Props) {
   const session = useSessionController(props);
-  return IMMERSIVE[props.variant] ? (
-    <ImmersiveSession session={session} />
-  ) : (
-    <WrittenSession session={session} />
-  );
+  if (props.variant === 'onboarding' && !ONBOARDING_BOOK)
+    return <WrittenSession session={session} />;
+  if (!IMMERSIVE[props.variant]) return <WrittenSession session={session} />;
+  const page = props.variant === 'daily' ? DAILY_PAGE : 'paper';
+  return <ImmersiveSession session={session} page={page} />;
 }
 
 /** First Echo's page: header, prompt, a glass writing surface, Write or Speak, and Reflect. */
-function WrittenSession({ session }: { session: SessionController }) {
+export function WrittenSession({ session }: { session: SessionController }) {
   const {
     target,
     prompt,
