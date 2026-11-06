@@ -12,8 +12,8 @@ import { ProgressSegments } from './ProgressSegments';
 // The wordmark's width at the reference size, measured. It is read again from layout, so a larger
 // text size keeps its clearance too.
 const WORDMARK_WIDTH = 105;
-// The least air between the wordmark and the progress. The goldens leave about 29 pt at 393 pt wide.
-const MIN_GAP = 12;
+// The least air between the wordmark and the progress: what a 360 pt phone has. The golden leaves 29 pt.
+const MIN_GAP = 13;
 
 type Props = { step: number; onBack?: () => void };
 
@@ -22,7 +22,7 @@ export function OnboardingHeader({ step, onBack }: Props) {
   const { width, gutter } = useLayout();
   const [wordmark, setWordmark] = useState(WORDMARK_WIDTH);
   // The wordmark stays centred. The progress sits to its right, so it can take half the row less half
-  // the wordmark, less the gap. On a 320 pt phone that is about 76 pt, and the segments shrink to it.
+  // the wordmark, less the gap. On a 320 pt phone that is about 74 pt, and the segments shrink to it.
   const progressRoom = (width - gutter * 2) / 2 - wordmark / 2 - MIN_GAP;
   return (
     <View style={styles.root}>

@@ -20,8 +20,8 @@ const widths = () =>
 const rowWidth = () =>
   widths().reduce((sum, width) => sum + width, 0) + GAP * (widths().length - 1);
 
-// Half the header row, less half the 105 pt wordmark, less the 12 pt of air beside it.
-const roomAt = (phone: number, gutter: number) => (phone - gutter * 2) / 2 - 105 / 2 - 12;
+// Half the header row, less half the 105 pt wordmark, less the 13 pt of air beside it.
+const roomAt = (phone: number, gutter: number) => (phone - gutter * 2) / 2 - 105 / 2 - 13;
 
 describe('OnboardingHeader on small phones', () => {
   it('keeps the golden’s 96 pt progress where it fits', async () => {
