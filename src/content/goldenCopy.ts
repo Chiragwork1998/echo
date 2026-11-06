@@ -7,6 +7,7 @@ export const goldenCopy = {
   nightBegin: 'Begin',
   nightBeginArc: 'Your seven minutes',
   nightSpeakInstead: 'Speak instead',
-  nightRhythm: (count: number) => `${count} reflections · your rhythm is taking shape`,
+  nightRhythm: (count: number) =>
+    `${count} ${count === 1 ? 'reflection' : 'reflections'} · your rhythm is taking shape`,
   minutesLeft: (minutes: number) => `${minutes} min left`,
 } as const;
