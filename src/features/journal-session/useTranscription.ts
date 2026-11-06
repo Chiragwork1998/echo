@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 
 import type { DraftController } from '@/features/journal';
-import { getEntry, notifyJournalChanged, openEntryAudio, saveDraft } from '@/features/journal/api';
+import { notifyJournalChanged, openEntryAudio, updateDraft } from '@/features/journal/api';
 import type { EntryAudio, PlayableAudio } from '@/features/journal/types';
 import type { LiveOutcome } from '@/services/liveTake';
 import {
@@ -97,12 +97,10 @@ const endBusy = (draftId: string, owner: string) => {
  * so nothing typed or saved since is overwritten. Returns false only if they could not be kept.
  */
 async function storeTranscript(draftId: string, audioId: string, text: string): Promise<boolean> {
-  const found = await getEntry(draftId);
-  if (!found.ok) return false;
-  const entry = found.value;
-  // Discarded, or already kept as an echo: the person decided, and the words have nowhere to go.
-  if (!entry || entry.status !== 'draft') return true;
-  const saved = await saveDraft(draftId, {
+  // Read and written back with nothing else written between: a reopened session's autosave must not
+  // land in the gap and be written over. A draft that was discarded, or already kept as an echo, is
+  // left alone: the person decided, and the words have nowhere to go.
+  const saved = await updateDraft(draftId, (entry) => ({
     title: entry.title,
     body: appendTranscript(entry.body, text),
     mode: entry.mode,
@@ -111,7 +109,7 @@ async function storeTranscript(draftId: string, audioId: string, text: string): 
     promptText: entry.promptText,
     durationSeconds: entry.durationSeconds,
     transcribedAudioId: audioId,
-  });
+  }));
   if (saved.ok) notifyJournalChanged();
   return saved.ok;
 }

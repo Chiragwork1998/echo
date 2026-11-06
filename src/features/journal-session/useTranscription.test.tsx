@@ -1,7 +1,7 @@
 import { act, renderHook } from '@testing-library/react-native';
 
 import { createMemoryJournal, setJournal, useDraft, type Journal } from '@/features/journal';
-import { openEntryAudio } from '@/features/journal/api';
+import { openEntryAudio, saveDraft } from '@/features/journal/api';
 import { failure, type Entry, type EntryAudio } from '@/features/journal/types';
 import {
   transcribeEntryAudio,
@@ -451,6 +451,41 @@ describe('when the session closes mid-request', () => {
     const saved = await stored();
     expect(saved.body).toBe('Before. Typed just before leaving.\n\nArrived late.');
     expect(saved.transcribedAudioId).toBe('a1');
+    expect(saved.audio?.id).toBe('a1');
+  });
+
+  it('does not overwrite text another session saved in the instant it was storing late words', async () => {
+    const request = pending();
+    send.mockReturnValue(request.promise);
+    const view = await mount();
+    await act(async () => view.result.current.words.enqueue(audio('a1')));
+    await view.unmount();
+
+    // A reopened session autosaves what was typed there, just after this one has read the draft.
+    const real = journal.getEntry.bind(journal);
+    let once = true;
+    jest.spyOn(journal, 'getEntry').mockImplementation(async (id) => {
+      const found = await real(id);
+      if (once) {
+        once = false;
+        void saveDraft(id, {
+          body: 'Before. Typed meanwhile.',
+          mode: 'voice',
+          durationSeconds: 10,
+        });
+      }
+      return found;
+    });
+    await act(async () => request.settle(said('Arrived late.')));
+    await settle();
+    await settle();
+
+    const saved = await stored();
+    // What a person typed is never what is lost. The words may be written over by that other
+    // session's older copy of the page, but then the draft does not claim to have them, and the
+    // recording is still there for Try again.
+    expect(saved.body).toContain('Typed meanwhile.');
+    expect(saved.body.includes('Arrived late.') || saved.transcribedAudioId !== 'a1').toBe(true);
     expect(saved.audio?.id).toBe('a1');
   });
 

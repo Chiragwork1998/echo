@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { getJournal } from './runtime';
 import {
   failure,
+  type Entry,
   type EntryContent,
   type Journal,
   type JournalResult,
@@ -58,10 +59,41 @@ export const newDraftId = async (): Promise<JournalResult<string>> => {
   }
 };
 
+const writing = new Map<string, Promise<unknown>>();
+
+/**
+ * One write to a draft at a time, in the order they were asked for. A session that has closed and a
+ * session that has reopened can both write the same draft, and a save that reads the draft and then
+ * writes it back must not have another save land between the two.
+ */
+function inOrder<T>(id: string, task: () => Promise<T>): Promise<T> {
+  const run = (writing.get(id) ?? Promise.resolve()).then(task, task);
+  const tail = run.catch(() => undefined);
+  writing.set(id, tail);
+  void tail.then(() => {
+    if (writing.get(id) === tail) writing.delete(id);
+  });
+  return run;
+}
+
 // Autosave deliberately does not notify. Home stays mounted under the session, and refreshing it on
 // every save would decrypt rows every few hundred milliseconds. useDraft notifies when it closes.
 export const saveDraft = (id: string, content: EntryContent) =>
-  withJournal((journal) => journal.saveDraft(id, content));
+  inOrder(id, () => withJournal((journal) => journal.saveDraft(id, content)));
+
+/**
+ * Reads a draft and writes back what `change` makes of it, with no other write to that draft between
+ * the two. A draft that is gone, or already kept, is left as it is and the answer is ok.
+ */
+export const updateDraft = (id: string, change: (entry: Entry) => EntryContent) =>
+  inOrder(id, async (): Promise<JournalResult<void>> => {
+    const found = await withJournal((journal) => journal.getEntry(id));
+    if (!found.ok) return found;
+    const entry = found.value;
+    if (!entry || entry.status !== 'draft') return { ok: true, value: undefined };
+    const saved = await withJournal((journal) => journal.saveDraft(id, change(entry)));
+    return saved.ok ? { ok: true, value: undefined } : saved;
+  });
 export const commitEntry = (id: string, content: EntryContent) =>
   mutate((journal) => journal.commitEntry(id, content));
 export const discardDraft = (id: string) => mutate((journal) => journal.discardDraft(id));
