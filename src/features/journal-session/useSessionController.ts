@@ -16,6 +16,7 @@ import type { SessionMode } from './SegmentedMode';
 import type { ConsentKind } from './VoiceConsentSheet';
 import { sessionCopy } from './sessionCopy';
 import type { SpeakView } from './SpeakPanel';
+import { useKeepAwakeWhile } from './useKeepAwake';
 import { useLiveWords } from './useLiveWords';
 import { useSessionTimer } from './useSessionTimer';
 import {
@@ -155,6 +156,9 @@ export function useSessionController({ variant, initialMode, draftId }: SessionO
   const recordingBusy =
     voice.state === 'starting' || voice.state === 'recording' || voice.state === 'saving';
   const hasWork = draft.hasContent || recordingBusy || transcription.active;
+  // The screen stays on for the whole of a take: recording, sealing, and sending the words. A person
+  // who speaks does not touch it, and a phone that slept would end the take (useKeepAwake.ts).
+  useKeepAwakeWhile(recordingBusy || transcription.active);
   const canReflect = ready && draft.canReflect && !recordingBusy;
 
   // First Echo shows only one thing at a time, so the words are brought to the page as they land. The
