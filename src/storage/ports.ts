@@ -44,7 +44,10 @@ export interface FileWriter {
 
 export interface FilePort {
   read(uri: string): Promise<Uint8Array>;
-  /** Writes beside the target then renames, so a crash never leaves a half-written file there. */
+  /**
+   * Writes beside the target then renames, so an app crash never leaves a half-written file there.
+   * Not a promise against power loss on a device: see nativePorts.ts.
+   */
   writeAtomic(uri: string, bytes: Uint8Array): Promise<void>;
   /** No error if the file is already gone. */
   remove(uri: string): void;

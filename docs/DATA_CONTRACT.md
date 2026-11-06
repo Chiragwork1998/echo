@@ -11,7 +11,7 @@ import { useOnboarding, completeOnboarding } from '@/state/onboarding';
 
 `app/_layout.tsx` mounts no screen until encryption, onboarding, and the biometric lock are resolved. By the time your screen renders:
 
-- `useOnboarding` holds the user's saved choices.
+- `useOnboarding` holds the user's saved choices. In the rare case the sealed record will not open, it holds defaults with the lock on, and nothing is saved until a later launch can read that record. Screens need no handling for this, and `completeOnboarding()` still resolves true.
 - The route is correct: completed users are on `/home`, others are on the step they left.
 - Unsaved work survives a re-lock. The lock covers the navigator and does not unmount it.
 
@@ -53,7 +53,7 @@ const draft = useDraft({
 const voice = useVoiceRecorder(draft);
 ```
 
-`useDraft()` resumes the newest draft, or starts a new one. `seed` applies only to a new draft. Pass `{ draftId }` to open a specific draft.
+`useDraft()` resumes the newest draft that can be read, or starts a new one. A draft that fails decryption is skipped and never deleted. `seed` applies only to a new draft. Pass `{ draftId }` to open a specific draft. If that one fails decryption, `status` is `error`.
 
 **`DraftController`**
 
@@ -69,7 +69,7 @@ const voice = useVoiceRecorder(draft);
 | `canReflect`                | `boolean`                                 | Enables Reflect: 10 non-space characters or 3 seconds of audio       |
 | `hasContent`                | `boolean`                                 | True means Back asks Keep draft / Discard / Stay                     |
 | `update(patch)`             | `void`                                    | On every change. Autosaves, encrypted                                |
-| `flush()`                   | `Promise<JournalResult<void>>`            | Keep draft: await, then leave                                        |
+| `flush()`                   | `Promise<JournalResult<void>>`            | Keep draft: await, then leave. `ok` means every change so far is on disk. On failure, stay and show the error |
 | `commit(patch?)`            | `Promise<JournalResult<Entry>>`           | Reflect                                                              |
 | `discard()`                 | `Promise<JournalResult<void>>`            | Discard. Removes text and audio                                      |
 | `reload()`                  | `Promise<void>`                           | Retry after `status: 'error'`                                        |
@@ -164,7 +164,8 @@ const { status, rhythm, recent, continueDraft, error, refresh } = useHomeSummary
 | “2 min left”                     | `continueDraft.minutesLeft`                                    |
 
 - `title` falls back to the body's first line. A voice-only entry has an empty title and preview, so choose your own display.
-- If `readable` is false, the row failed decryption. Show that it can't be opened, and never hide it.
+- `recent` and `continueDraft` are the newest rows that open, so neither is ever unreadable. An unreadable row is not deleted, and stays in `useEntries()`.
+- In `useEntries()`, if `readable` is false, the row failed decryption. Show that it can't be opened, and never hide it.
 - `recent` or `continueDraft` can be null while `status` is `error`. Keep the scenic layout and show an inline retry using `refresh()`.
 
 ## Other screens
@@ -225,6 +226,12 @@ Readable without the key: ids, timestamps, status, the local day of each entry, 
 
 Every launch removes leftover export and playback files, whatever else happens. Leftover recordings wait for the key, so they can be rescued.
 
+**Deleted content does not leave the disk at once in every case.** It leaves the database and its write-ahead log when a delete or discard finishes, and if that step fails, on the next launch. A draft's earlier revisions stay in the log as ciphertext until that draft is committed, discarded, or deleted, or until the next launch, because emptying the log on every autosave would be too slow.
+
+**A sudden power loss can cost a recording.** Text cannot be lost once a save or commit reports ok: SQLite syncs it to disk first. Audio has no such guarantee, because `expo-file-system` offers no fsync on either platform. When `stop()` resolves, the `.enc` may still be in the OS cache with its plaintext already deleted. An app crash does not touch it, but if the phone loses power in the next few seconds, that recording can be gone. `openEntryAudio` then fails, and the entry itself is intact. Closing this needs a native change.
+
+**Turn off lock appears only when the device has no passcode or biometrics left.** No failed prompt earns it. If the OS prompt stays broken, the journal stays shut and intact, and Unlock keeps retrying.
+
 ## Device checks
 
 Native behaviour cannot be proved in Jest. Each of these needs a real device.
@@ -234,34 +241,39 @@ Native behaviour cannot be proved in Jest. Each of these needs a real device.
 1. Fresh install: write, commit, kill, relaunch. The entry reads back.
 2. Pull `echo.db` with `run-as`. No text or mood is readable with `strings`.
 3. Clear only the key (uninstall with backup restore on Android, or a new device). The key-loss screen appears, and no key is created until Start over.
+4. Delete an entry, then pull `echo.db-wal` with `run-as`. It is 0 bytes. Do the same after Discard.
 
 **Recording**
 
-4. Record 30 seconds and stop. Check `cache/Audio` is empty and `files/echo/audio` holds one `.enc`. The recording plays.
-5. Confirm `recorder.uri` is inside `cache/Audio`. The sweep only looks there and in `cache/ExpoAudio`.
-6. Force stop mid-recording, then relaunch. A draft appears, and on Android the `.aac` plays up to the cut.
-7. Background mid-recording. The plaintext is gone within a few seconds.
-8. Deny the microphone, then allow it through Settings.
+5. Record 30 seconds and stop. Check `cache/Audio` is empty and `files/echo/audio` holds one `.enc`. The recording plays.
+6. Confirm `recorder.uri` is inside `cache/Audio`. The sweep only looks there and in `cache/ExpoAudio`.
+7. Force stop mid-recording, then relaunch. A draft appears, and on Android the `.aac` plays up to the cut.
+8. Background mid-recording. The plaintext is gone within a few seconds.
+9. Deny the microphone, then allow it through Settings.
+10. With a recording waiting after `save_failed`, clear the app's cache in Settings and relaunch. The next draft opened shows `audio_failed` once, and nothing else changes.
 
 **Biometric lock**
 
-9. Enable, then kill and relaunch. The prompt shows before any content.
-10. Remove all fingerprints with a PIN set. The PIN opens the app.
-11. Remove the PIN as well. Turn off lock appears and works.
-12. Cancel the prompt. It must not re-prompt in a loop.
-13. Open the passcode screen and take over 30 seconds. It must not re-lock in a loop.
+11. Enable, then kill and relaunch. The prompt shows before any content.
+12. Remove all fingerprints with a PIN set. The PIN opens the app.
+13. Remove the PIN as well. Turn off lock appears and works.
+14. Cancel the prompt. It must not re-prompt in a loop.
+15. Open the passcode screen and take over 30 seconds. It must not re-lock in a loop.
+16. On Android, leave the prompt up until it times out, three times. It waits for a tap each time, and Turn off lock never appears.
+17. Background the app, set the clock back an hour, and return. It locks.
+18. Return after more than 30 seconds, watching closely. No content shows between the cover lifting and the lock.
 
 **Privacy cover**
 
-14. Open recents with an entry on screen, lock on. The thumbnail is blank on both platforms. On Android this is `FLAG_SECURE`, so screenshots and screen recording are blocked too.
-15. Same with the lock off. iOS shows the cover. **On Android this is best effort**: the thumbnail races the cover, and a screenshot works.
-16. On Android with the lock on, rotate, change the system theme, and split the screen, then open recents. The thumbnail is still blank.
-17. Background and return. The cover lifts and nothing was lost.
+19. Open recents with an entry on screen, lock on. The thumbnail shows no content on either platform. On Android this is `FLAG_SECURE`, so screenshots and screen recording are blocked too.
+20. Same with the lock off. iOS shows the cover. **On Android this is best effort**: the thumbnail races the cover, and a screenshot works.
+21. On Android with the lock on, rotate, change the system theme, and split the screen, then open recents. The thumbnail is still blank.
+22. Background and return. The cover lifts and nothing was lost.
 
 **Other**
 
-18. Schedule a reminder two minutes ahead with the app killed. The body is exactly the fixed line.
-19. Change timezone with the reminder set. It stays at the local time.
-20. Export to Files and to an email app. The zip opens with `entries.json`, `entries.md`, and `audio/`. On Android, check `cache/echo-temp` three ways. Stay in the app: empty a minute later. Background the app inside that minute and return after it: empty on return, and not before. Background it, then force stop: empty after the next launch.
-21. Delete all. The app returns to Landing, and `files/echo` is gone.
-22. Change the timezone, and confirm past days in the week strip do not move.
+23. Schedule a reminder two minutes ahead with the app killed. The body is exactly the fixed line.
+24. Change timezone with the reminder set. It stays at the local time.
+25. Export to Files and to an email app. The zip opens with `entries.json`, `entries.md`, and `audio/`. On Android, check `cache/echo-temp` three ways. Stay in the app: empty a minute later. Background the app inside that minute and return after it: empty on return, and not before. Background it, then force stop: empty after the next launch.
+26. Delete all. The app returns to Landing, and `files/echo` is gone.
+27. Change the timezone, and confirm past days in the week strip do not move.

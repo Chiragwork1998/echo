@@ -91,6 +91,9 @@ export async function openNativeDatabase(): Promise<SqlDb> {
 
 export const expoFiles: FilePort = {
   read: (uri) => new File(uri).bytes(),
+  // Honest limit: expo-file-system has no fsync on either platform, so the bytes and the rename can
+  // both still be in the OS cache when this resolves. That survives an app crash, not a power loss.
+  // sealRecording's read-back is served from the same cache, so it cannot prove more than that.
   async writeAtomic(uri, bytes) {
     const target = new File(uri);
     target.parentDirectory.create({ idempotent: true, intermediates: true });
