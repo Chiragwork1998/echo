@@ -1,5 +1,6 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import Svg, { Path } from 'react-native-svg';
 import Animated, {
   ReduceMotion,
   useAnimatedStyle,
@@ -13,11 +14,26 @@ import { tokens } from '@/design/tokens';
 
 import { EchoText } from './EchoText';
 import { GlassCard } from './GlassCard';
-import { Icon } from './Icon';
 
+const ARROW_PATH = 'M4 12h16M14 6l6 6-6 6';
 const DISABLED_OPACITY = 0.42;
 const PRESS_SCALE = 0.985;
 const CREAM_STOPS = ['#FBF8F2', '#EDE6DC'] as const; // tokens.gradient.creamButton
+
+/** The goldens show a long arrow. The handoff's arrow-right icon is a chevron. */
+function ArrowGlyph({ color }: { color: string }) {
+  return (
+    <Svg width={14} height={14} viewBox="0 0 24 24" fill="none" accessible={false}>
+      <Path
+        d={ARROW_PATH}
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
 
 type Props = {
   label: string;
@@ -65,7 +81,7 @@ export function PrimaryCTA({
           >
             {label}
           </EchoText>
-          {arrow && <Icon name="arrow-right" size={16} color={labelColor} />}
+          {arrow && <ArrowGlyph color={labelColor} />}
         </>
       )}
     </View>

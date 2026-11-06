@@ -27,6 +27,10 @@ call so the build can proceed. **Owner review** marks the ones Chirag should con
 - **Five handoff plates are truncated:** day `06-arrival`, day `09-home`, night `02-horizon`, night `05-privacy`, night `09-home`. The app does not use them. `CHECKSUMS.sha256` passes because it was generated from the damaged files.
 - **Handoff night plates are tinted day images**, which the plate README forbids. The app uses the 1290 × 2796 masters from `ECHO-Production-Backgrounds-Complete-20.zip` instead, and identical masters are on `origin/yash/echo`.
 
+## Plate differences to review
+
+- **Voice:** the golden shows a stacked-stone cairn with prayer flags at the lower left. The production `03-voice` plates do not have it. **Owner review**
+
 ## Known visual difference
 
 Production plates are richer and more saturated than the plates inside the goldens, and small details differ because they were regenerated (the Night Landing moon sits about 13 pt further left). The harness mismatch percentage therefore never reaches zero. Judge the four-panel image by eye.
