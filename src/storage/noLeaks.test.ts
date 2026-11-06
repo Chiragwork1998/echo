@@ -45,26 +45,27 @@ describe('privacy rules', () => {
     expect(read(path)).not.toMatch(/\bconsole\s*\./);
   });
 
-  // D-005: spoken entries are transcribed by ECHO's voice server, after the person agrees. That is
-  // the one place a request is made. Every other file here stays offline, and adding a second one
-  // should be a decision, not an accident.
-  const NETWORK = ['src/services/transcription.ts'];
+  // D-005: spoken entries are transcribed by ECHO's voice server, after the person agrees, and
+  // Pattern Cards are read there too, under their own consent. Those are the only places a request
+  // is made. Every other file here stays offline, and adding one should be a decision, not an
+  // accident.
+  const NETWORK = ['src/services/transcription.ts', 'src/services/patterns.ts'];
   it.each(production.filter((path) => !NETWORK.includes(path)))(
     '%s makes no network call',
     (path) => {
-      expect(read(path)).not.toMatch(/\bfetch\s*\(|XMLHttpRequest|axios|WebSocket/);
+      expect(read(path)).not.toMatch(/\bfetch\b|XMLHttpRequest|axios|WebSocket/);
     },
   );
 
-  it('keeps the voice upload in one file, which sends only to the configured address', () => {
+  it('keeps requests to the named files, which send only to the configured address', () => {
     for (const path of NETWORK) {
       expect(production).toContain(path);
       const source = read(path);
       expect(source).not.toMatch(/XMLHttpRequest|axios|WebSocket/);
       // The address and token come from the environment, never from the source.
       expect(source).not.toMatch(/https?:\/\/(?!127\.0\.0\.1|localhost)[a-z0-9.-]+\.[a-z]{2,}/i);
-      expect(source).toMatch(/env\.EXPO_PUBLIC_VOICE_URL/);
-      expect(source).toMatch(/env\.EXPO_PUBLIC_VOICE_TOKEN/);
+      expect(source).toMatch(/env\.EXPO_PUBLIC_VOICE_URL|from '\.\/voiceApi'/);
+      expect(source).toMatch(/env\.EXPO_PUBLIC_VOICE_TOKEN|from '\.\/voiceApi'/);
     }
   });
 

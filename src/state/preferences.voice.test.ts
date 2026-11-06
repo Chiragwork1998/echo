@@ -94,4 +94,5 @@ describe('the mode a session opens in', () => {
     await rt.db.run('INSERT INTO preferences (key, value) VALUES (?, ?)', ['sessionMode', 'poem']);
     await hydratePreferences(rt.db);
     expect(usePreferences.getState().lastMode).toBe('speak');
+  });
 });
