@@ -8,6 +8,7 @@ Development of the locked onboarding and Today experience can begin. These decis
 - Approved golden screens and behavior specifications for Patterns.
 - Approved golden screens and behavior specifications for You.
 - Final app icon and store marketing artwork.
+  - An interim icon is in use until the owner decides: the locked ECHO wordmark on Night navy `#13263A` (`assets/app/`, regenerate with `node scripts/generate-app-icon.mjs`).
 
 ## Security and backend gates
 
