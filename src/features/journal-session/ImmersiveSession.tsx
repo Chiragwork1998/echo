@@ -43,6 +43,8 @@ import { appendTranscript } from './useTranscription';
 import { VOICE_NOTES, VoiceNote } from './VoiceNote';
 import { GROUND_FADE, Wash } from './Wash';
 
+/** A book that has not opened by now will not: notes stop waiting for it. A little over the full ritual. */
+export const OPEN_GRACE_MS = 8000;
 const NOTE_WIDTH = 320;
 /** How far the shade behind the words reaches below the sky, and above the controls. */
 const SKY_WASH_BELOW = 70;
@@ -152,6 +154,17 @@ export function ImmersiveSession({
   };
   const bookInView = book && !shelf;
   const pageOpen = !book || opened;
+  // A note about the voice, or about a draft that will not open, is words on a page. Said before the
+  // cover has opened it sits on the closed book or the bare scenery, over bright river and lit
+  // windows. So it waits for the page. A book that cannot open must not swallow it: after a grace the
+  // note comes anyway, because a person with nothing to read is worse off.
+  const [openingStalled, setOpeningStalled] = useState(false);
+  useEffect(() => {
+    if (!bookInView || opened) return;
+    const timer = setTimeout(() => setOpeningStalled(true), OPEN_GRACE_MS);
+    return () => clearTimeout(timer);
+  }, [bookInView, opened]);
+  const notesMayShow = !book || (bookInView && (opened || openingStalled));
 
   // The keyboard rises over the lower scenery. The photograph and the words stay where they are:
   // only the quiet controls ride above it.
@@ -364,7 +377,7 @@ export function ImmersiveSession({
         />
       )}
 
-      {(voiceNote || failure !== null) && (!book || bookInView) && (
+      {(voiceNote || failure !== null) && notesMayShow && (
         <View
           pointerEvents="box-none"
           style={[
