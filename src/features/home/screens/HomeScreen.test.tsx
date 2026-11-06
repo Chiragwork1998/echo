@@ -124,7 +124,7 @@ describe('Home, Night', () => {
     expect(screen.getByRole('header', { name: copy.home.nightHeadline })).toBeTruthy();
     expect(screen.getByText(copy.home.nightSubtitle)).toBeTruthy();
     expect(button(`${goldenCopy.nightBegin}. ${goldenCopy.nightBeginArc}`)).toBeTruthy();
-    expect(button(goldenCopy.nightSpeakInstead)).toBeTruthy();
+    expect(button(goldenCopy.nightWriteInstead)).toBeTruthy();
     await waitFor(() => expect(screen.getByText(goldenCopy.nightRhythm(5))).toBeTruthy());
     expect(screen.getByText(copy.home.thisWeek.toUpperCase())).toBeTruthy();
     expect(screen.getByText(copy.home.continueEcho.toUpperCase())).toBeTruthy();
@@ -146,14 +146,14 @@ describe('Home, Night', () => {
     expect(screen.queryByText(/Spiti/)).toBeNull();
   });
 
-  it('begins a session from the stone, and a voice session from Speak instead', async () => {
+  it('begins a session from the stone, and a written one from Write instead', async () => {
     await render(<HomeScreen />);
     await fireEvent.press(button(`${goldenCopy.nightBegin}. ${goldenCopy.nightBeginArc}`));
     expect(router.push).toHaveBeenCalledWith('/home/session');
-    await fireEvent.press(button(goldenCopy.nightSpeakInstead));
+    await fireEvent.press(button(goldenCopy.nightWriteInstead));
     expect(router.push).toHaveBeenCalledWith({
       pathname: '/home/session',
-      params: { mode: 'voice' },
+      params: { mode: 'write' },
     });
   });
 
@@ -208,7 +208,7 @@ describe('Home, Night', () => {
     );
     await render(<HomeScreen />);
     expect(screen.getByText(homeLabels.loadError)).toBeTruthy();
-    expect(button(goldenCopy.nightSpeakInstead)).toBeTruthy();
+    expect(button(goldenCopy.nightWriteInstead)).toBeTruthy();
     await fireEvent.press(button(homeLabels.retry));
     expect(refresh).toHaveBeenCalledTimes(1);
   });
@@ -277,6 +277,16 @@ describe('Home, Day', () => {
     await render(<HomeScreen />);
     await fireEvent.press(button(copy.home.begin));
     expect(router.push).toHaveBeenCalledWith('/home/session');
+  });
+
+  it('offers Write instead under the CTA, and opens the session in Write', async () => {
+    await render(<HomeScreen />);
+    await fireEvent.press(button(goldenCopy.dayWriteInstead));
+    expect(router.push).toHaveBeenCalledWith({
+      pathname: '/home/session',
+      params: { mode: 'write' },
+    });
+    expect(router.push).not.toHaveBeenCalledWith('/home/session');
   });
 
   it('shows From your path with the latest entry, and opens it in Echoes', async () => {

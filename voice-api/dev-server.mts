@@ -6,11 +6,15 @@ import { createServer } from 'node:http';
 process.env.OPENAI_API_KEY = readFileSync(process.env.ECHO_KEY_FILE ?? '', 'utf8').trim();
 process.env.ECHO_VOICE_TOKEN = readFileSync(process.env.ECHO_TOKEN_FILE ?? '', 'utf8').trim();
 process.env.ECHO_FFMPEG ??= 'ffmpeg';
-const { POST } = await import('./api/transcribe.ts');
+const routes = {
+  '/api/transcribe': (await import('./api/transcribe.ts')).POST,
+  '/api/patterns': (await import('./api/patterns.js')).POST,
+} as const;
 
 const PORT = Number(process.env.PORT ?? 8787);
 createServer(async (req, res) => {
-  if (req.method !== 'POST' || req.url !== '/api/transcribe') {
+  const POST = req.method === 'POST' ? routes[req.url as keyof typeof routes] : undefined;
+  if (!POST) {
     res.writeHead(404).end();
     return;
   }

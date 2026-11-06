@@ -22,6 +22,7 @@ import {
   SURFACE_MIN_HEIGHT,
   SURFACE_RADIUS,
 } from './geometry';
+import { ArrivalFade } from './ArrivalFade';
 import { GlassPanel, useSurfaceInk } from './GlassPanel';
 import { sessionCopy } from './sessionCopy';
 
@@ -44,6 +45,8 @@ type Props = PropsWithChildren<{
   hideField?: boolean;
   /** The keyboard is up and the surface gives way to the controls above it. */
   squeezed?: boolean;
+  /** Counts the times spoken words have landed, so they settle in rather than jump. */
+  arrival?: number;
 }>;
 
 /** The tick beside the note. Decorative: the words say it. */
@@ -119,6 +122,7 @@ export function WritingSurface({
   saveState,
   hideField = false,
   squeezed = false,
+  arrival = 0,
   children,
 }: Props) {
   const { name } = useTheme();
@@ -139,24 +143,26 @@ export function WritingSurface({
         children
       ) : (
         <>
-          <TextInput
-            value={value}
-            onChangeText={onChangeText}
-            editable={editable}
-            multiline
-            scrollEnabled
-            textAlignVertical="top"
-            placeholder={placeholder}
-            placeholderTextColor={muted}
-            accessibilityLabel={label}
-            // Autofill and suggestion stores sit outside encryption (docs/DATA_CONTRACT.md).
-            autoComplete="off"
-            importantForAutofill="no"
-            textContentType="none"
-            keyboardAppearance={name === 'night' ? 'dark' : 'light'}
-            selectionColor={text}
-            style={[styles.input, textStyle('bodyM'), styles.size, { color: text }, shadow]}
-          />
+          <ArrivalFade arrival={arrival} style={styles.fill}>
+            <TextInput
+              value={value}
+              onChangeText={onChangeText}
+              editable={editable}
+              multiline
+              scrollEnabled
+              textAlignVertical="top"
+              placeholder={placeholder}
+              placeholderTextColor={muted}
+              accessibilityLabel={label}
+              // Autofill and suggestion stores sit outside encryption (docs/DATA_CONTRACT.md).
+              autoComplete="off"
+              importantForAutofill="no"
+              textContentType="none"
+              keyboardAppearance={name === 'night' ? 'dark' : 'light'}
+              selectionColor={text}
+              style={[styles.input, textStyle('bodyM'), styles.size, { color: text }, shadow]}
+            />
+          </ArrivalFade>
           <SavedNote visible={noteVisible} saved={saveState === 'saved'} />
         </>
       )}
@@ -166,6 +172,7 @@ export function WritingSurface({
 
 const styles = StyleSheet.create({
   surface: { flex: 1, marginHorizontal: SURFACE_INSET },
+  fill: { flex: 1 },
   input: {
     flex: 1,
     paddingTop: PADDING.top,

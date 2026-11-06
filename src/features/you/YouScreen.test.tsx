@@ -9,8 +9,10 @@ import { authenticate, verifyLockAvailable } from '@/services/biometric';
 import { exportJournal } from '@/services/exportJournal';
 import { getNotificationPermission, openAppSettings } from '@/services/permissions';
 import { initialOnboarding, useOnboarding } from '@/state/onboarding';
-import { usePreferences } from '@/state/preferences';
+import { usePreferences, VOICE_POLICY_VERSION } from '@/state/preferences';
 import { render } from '@/testing/render';
+
+import { sessionCopy } from '@/features/journal-session/sessionCopy';
 
 import { SUPPORT_EMAIL } from './support';
 import { YouScreen } from './YouScreen';
@@ -183,7 +185,59 @@ describe('You: privacy', () => {
     await render(<YouScreen />);
     expect(screen.getByLabelText(new RegExp(`${youCopy.backup}. Not available yet`))).toBeTruthy();
     expect(screen.getByLabelText(new RegExp(`${youCopy.ai}. Not available yet`))).toBeTruthy();
-    expect(screen.getAllByRole('switch')).toHaveLength(2);
+    expect(screen.getAllByRole('switch')).toHaveLength(3);
+  });
+});
+
+describe('You: Turn my voice into words', () => {
+  const voiceSwitch = () => screen.getByRole('switch', { name: youCopy.voiceWords });
+
+  beforeEach(() => usePreferences.setState({ voiceConsent: null }));
+
+  it('is off until the person has agreed, and sends nothing by being looked at', async () => {
+    await render(<YouScreen />);
+    expect(voiceSwitch()).not.toBeChecked();
+    expect(screen.queryByText(sessionCopy.consent.title)).toBeNull();
+  });
+
+  it('shows what leaves the phone before turning on, and turns on only with Allow', async () => {
+    await render(<YouScreen />);
+    await fireEvent.press(voiceSwitch());
+    expect(await screen.findByText(sessionCopy.consent.title)).toBeTruthy();
+    for (const fact of sessionCopy.consent.facts) expect(screen.getByText(fact)).toBeTruthy();
+    expect(voiceSwitch()).not.toBeChecked();
+    expect(usePreferences.getState().voiceConsent).toBeNull();
+
+    await fireEvent.press(screen.getByRole('button', { name: sessionCopy.consent.allow }));
+    expect(usePreferences.getState().voiceConsent).toEqual({
+      choice: 'allowed',
+      version: VOICE_POLICY_VERSION,
+    });
+    expect(voiceSwitch()).toBeChecked();
+  });
+
+  it('keeps the voice on the phone with Keep my voice only', async () => {
+    await render(<YouScreen />);
+    await fireEvent.press(voiceSwitch());
+    await fireEvent.press(await screen.findByRole('button', { name: sessionCopy.consent.keep }));
+    expect(usePreferences.getState().voiceConsent?.choice).toBe('voice_only');
+    expect(voiceSwitch()).not.toBeChecked();
+  });
+
+  it('turns off at once, and a choice made under an older policy asks again', async () => {
+    usePreferences.setState({
+      voiceConsent: { choice: 'allowed', version: VOICE_POLICY_VERSION },
+    });
+    await render(<YouScreen />);
+    expect(voiceSwitch()).toBeChecked();
+    await fireEvent.press(voiceSwitch());
+    expect(usePreferences.getState().voiceConsent?.choice).toBe('voice_only');
+    expect(voiceSwitch()).not.toBeChecked();
+
+    await act(async () =>
+      usePreferences.setState({ voiceConsent: { choice: 'allowed', version: 0 } }),
+    );
+    expect(voiceSwitch()).not.toBeChecked();
   });
 });
 

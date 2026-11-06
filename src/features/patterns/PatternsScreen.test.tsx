@@ -18,6 +18,12 @@ jest.mock(
   () => jest.requireActual('react-native-safe-area-context/jest/mock').default,
 );
 
+jest.mock('./readingStore', () => ({
+  loadReading: async () => ({ ok: true, value: null }),
+  saveReading: async () => ({ ok: true, value: null }),
+  clearReading: async () => ({ ok: true, value: null }),
+}));
+
 const today = deviceClock.localDay(deviceClock.now());
 const entry = (id: string, patch: Partial<Entry> = {}): Entry => ({
   id,
@@ -65,5 +71,20 @@ describe('PatternsScreen', () => {
     expect(screen.getByLabelText(patternsCopy.moodCount('Light', 5))).toBeTruthy();
     expect(screen.getByLabelText(patternsCopy.moodCount('Heavy', 0))).toBeTruthy();
     expect(screen.queryByText(patternsCopy.locked)).toBeNull();
+  });
+
+  it('offers the pattern cards first, and keeps the plain facts beneath them', async () => {
+    seed(5);
+    await render(<PatternsScreen />);
+    expect(await screen.findByRole('button', { name: patternsCopy.cards.read })).toBeTruthy();
+    expect(screen.getByText(patternsCopy.cards.intro)).toBeTruthy();
+    expect(screen.getByText(patternsCopy.intro)).toBeTruthy();
+  });
+
+  it('offers no pattern cards below five reflections', async () => {
+    seed(4);
+    await render(<PatternsScreen />);
+    expect(await screen.findByText(patternsCopy.locked)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: patternsCopy.cards.read })).toBeNull();
   });
 });

@@ -6,7 +6,9 @@ export const goldenCopy = {
   dayRhythm: (days: number) => `${days} day rhythm`,
   nightBegin: 'Begin',
   nightBeginArc: 'Your seven minutes',
-  nightSpeakInstead: 'Speak instead',
+  // ECHO is voice first (D-006): Begin speaks, and this is the other way in.
+  nightWriteInstead: 'Write instead',
+  dayWriteInstead: 'Write instead',
   nightRhythm: (count: number) =>
     `${count} ${count === 1 ? 'reflection' : 'reflections'} · your rhythm is taking shape`,
   minutesLeft: (minutes: number) => `${minutes} min left`,

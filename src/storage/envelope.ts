@@ -3,7 +3,8 @@ import type { AesKey, AesPort } from './ports';
 
 const ENVELOPE_VERSION = 1;
 
-export type ObjectKind = 'entry' | 'audio' | 'audio_meta' | 'reflection' | 'onboarding' | 'canary';
+export type ObjectKind =
+  'entry' | 'audio' | 'audio_meta' | 'reflection' | 'onboarding' | 'canary' | 'patterns';
 
 /** Deliberately carries nothing from the failed object: errors can reach logs and crash reports. */
 export class DecryptionError extends Error {

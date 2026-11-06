@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
   ReduceMotion,
+  cancelAnimation,
   interpolate,
   useAnimatedStyle,
   useSharedValue,
@@ -15,16 +16,17 @@ import { useReduceMotion } from '@/design/useReduceMotion';
 
 import { BookCover } from './CoverArt';
 import { usePaperLook, type Surface } from './paper';
+import { HURRY_MS, type Ritual } from './ritual';
 import { VOLUMES, type Volume } from './volumes';
 
-// The original timings. The book comes forward in 420 ms and its cover swings in 1100 ms, hinged at
-// the spine with the same deep perspective. Rising from the lower edge for the daily echo is gentler
-// and longer, since there is no shelf to leave first.
-const FORWARD_MS = 420;
-const RISE_MS = 1500;
-export const COVER_MS = 1100;
+// The original timings: the book comes forward in 420 ms and its cover swings in 1100 ms, hinged at
+// the spine with the same deep perspective (see ./ritual for these, and how they shorten with use).
+// Rising from the lower edge for the daily echo is gentler and longer, since there is no shelf to
+// leave first.
 const PERSPECTIVE = 1600;
 const SWING = -170;
+/** A book that has barely begun to rise when a tap comes appears where it is, rather than sweeping. */
+const BARELY = 0.05;
 
 export type Entrance = 'rise' | 'forward';
 
@@ -38,6 +40,10 @@ type Props = {
   start: boolean;
   /** How far below its place the book begins, for `rise`. */
   riseFrom: number;
+  /** How long each part takes. It shortens as the book is opened more often (D-008). */
+  ritual: Ritual;
+  /** A tap said enough: whatever is left finishes together, at once, and softly. */
+  hurry: boolean;
   onOpened?: () => void;
   /** The page, which is there from the first moment, and is told when the cover has opened. */
   children: (open: boolean) => ReactNode;
@@ -55,6 +61,8 @@ export function BookStage({
   entrance,
   start,
   riseFrom,
+  ritual,
+  hurry,
   onOpened,
   children,
 }: Props) {
@@ -69,46 +77,49 @@ export function BookStage({
     report.current = onOpened;
   });
 
+  // A book that has barely begun to rise when a tap comes appears where it is and fades in, rather
+  // than sweeping up in a fraction of a second.
+  const still = useSharedValue(0);
   useEffect(() => {
-    if (!start) return;
-    // Reduce Motion: the book fades in already open, in the time of a blink.
-    const first = reduced ? 0 : entrance === 'rise' ? RISE_MS : FORWARD_MS;
-    const total = reduced ? tokens.motion.fast : first + COVER_MS;
+    if (!start || opened) return;
+    const ease = Easing.out(Easing.cubic);
+    const timing = (duration: number, easing = ease) => ({
+      duration,
+      easing,
+      reduceMotion: ReduceMotion.Never,
+    });
+    let total: number;
     if (reduced) {
+      // Reduce Motion: the book fades in already open, in the time of a blink.
       cover.set(1);
-      arrive.set(withTiming(1, { duration: tokens.motion.fast, reduceMotion: ReduceMotion.Never }));
+      arrive.set(withTiming(1, timing(tokens.motion.fast)));
+      total = tokens.motion.fast;
+    } else if (hurry) {
+      cancelAnimation(arrive);
+      cancelAnimation(cover);
+      if (arrive.get() < BARELY) still.set(1);
+      arrive.set(withTiming(1, timing(HURRY_MS)));
+      cover.set(withTiming(1, timing(HURRY_MS, Easing.inOut(Easing.cubic))));
+      total = HURRY_MS;
     } else {
-      arrive.set(
-        withTiming(1, {
-          duration: first,
-          easing: Easing.out(Easing.cubic),
-          reduceMotion: ReduceMotion.Never,
-        }),
-      );
-      cover.set(
-        withDelay(
-          first,
-          withTiming(1, {
-            duration: COVER_MS,
-            easing: Easing.inOut(Easing.cubic),
-            reduceMotion: ReduceMotion.Never,
-          }),
-        ),
-      );
+      const first = entrance === 'rise' ? ritual.rise : ritual.forward;
+      arrive.set(withTiming(1, timing(first)));
+      cover.set(withDelay(first, withTiming(1, timing(ritual.cover, Easing.inOut(Easing.cubic)))));
+      total = first + ritual.cover;
     }
     const done = setTimeout(() => {
       setOpened(true);
       report.current?.();
     }, total);
     return () => clearTimeout(done);
-  }, [start, reduced, entrance, arrive, cover]);
+  }, [start, opened, hurry, reduced, entrance, ritual, arrive, cover, still]);
 
   const motion = useAnimatedStyle(() => {
     const t = arrive.get();
     return entrance === 'rise'
       ? {
           opacity: interpolate(t, [0, 0.3], [0, 1], 'clamp'),
-          transform: [{ translateY: (1 - t) * riseFrom }],
+          transform: [{ translateY: (1 - t) * riseFrom * (1 - still.get()) }],
         }
       : { opacity: t, transform: [{ scale: interpolate(t, [0, 1], [0.6, 1]) }] };
   }, [entrance, riseFrom]);

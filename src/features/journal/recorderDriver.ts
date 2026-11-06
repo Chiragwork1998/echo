@@ -28,14 +28,25 @@ function loadExpoAudio(): ExpoAudio | null {
 
 const audio = loadExpoAudio();
 
-function recordingOptions(module: ExpoAudio): RecordingOptions {
+/**
+ * Speech, not music. Mono at 22.05 kHz and 40 kbps keeps a minute of speech near 300 KB, so the
+ * voice server's 4.4 MB limit is about 14 minutes (voice-api/api/transcribe.ts). It is also plenty
+ * for transcription. Both platforms use the same numbers.
+ */
+export const SPEECH = { sampleRate: 22050, numberOfChannels: 1, bitRate: 40000 } as const;
+
+export function recordingOptions(module: ExpoAudio): RecordingOptions {
   const preset = module.RecordingPresets.HIGH_QUALITY;
   return {
     ...preset,
+    ...SPEECH,
     // MPEG-4 writes its index last, so a recording cut off by a crash cannot be played. ADTS frames
     // are self-contained: everything flushed before the crash survives. AVAudioRecorder has no
-    // equivalent for AAC, so on iOS a crashed recording is preserved but may not play.
+    // equivalent for AAC, so on iOS a crashed recording is preserved but may not play. The voice
+    // server rewraps .aac as .m4a before it goes on, with no re-encoding.
     android: { ...preset.android, extension: '.aac', outputFormat: 'aac_adts' },
+    // MAX quality asks for more than a 40 kbps speech stream can carry. The bit rate is the limit.
+    ios: { ...preset.ios, audioQuality: module.AudioQuality?.MEDIUM ?? 64 },
   };
 }
 

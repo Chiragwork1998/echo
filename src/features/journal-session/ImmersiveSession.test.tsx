@@ -12,12 +12,13 @@ import {
 import { emptyContent } from '@/features/journal/content';
 import { requestMicrophonePermission } from '@/services/permissions';
 import { initialOnboarding, useOnboarding } from '@/state/onboarding';
+import { usePreferences, VOICE_POLICY_VERSION } from '@/state/preferences';
+import { transcribeEntryAudio } from '@/services/transcription';
 import { render } from '@/testing/render';
 
-import { ImmersiveSession } from './ImmersiveSession';
+import { JournalSession } from './JournalSession';
 import { sessionCopy } from './sessionCopy';
 import { QUIET_MS } from './sky';
-import { useSessionController, type SessionOptions } from './useSessionController';
 
 jest.mock('expo-haptics', () => ({
   impactAsync: jest.fn(),
@@ -49,6 +50,10 @@ jest.mock('@/services/permissions', () => ({
   requestMicrophonePermission: jest.fn(),
   openAppSettings: jest.fn(),
 }));
+jest.mock('@/services/transcription', () => ({
+  ...jest.requireActual('@/services/transcription'),
+  transcribeEntryAudio: jest.fn(),
+}));
 
 const BODY = 'something I have carried';
 type Voice = ReturnType<typeof useVoiceRecorder>;
@@ -62,6 +67,8 @@ beforeEach(() => {
   jest.useFakeTimers();
   jest.clearAllMocks();
   useOnboarding.setState({ ...initialOnboarding, mode: undefined, mood: undefined });
+  // Speak is the default (D-006). These tests start from a person who last wrote.
+  usePreferences.setState({ lastMode: 'write', voiceConsent: null });
   const inner = createMemoryJournal({ entries: [] });
   saveFails = false;
   commitFails = false;
@@ -97,14 +104,9 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
-/** The daily echo on the open sky: D-003 as first built, and what DAILY_PAGE = 'sky' returns to. */
-function SkySession(props: Omit<SessionOptions, 'variant'>) {
-  const session = useSessionController({ variant: 'daily', ...props });
-  return <ImmersiveSession session={session} page="sky" />;
-}
-
 async function open(props = {}) {
-  await render(<SkySession {...props} />);
+  // The open sky: D-003 as first built, and what DAILY_PAGE = 'sky' returns to.
+  await render(<JournalSession variant="daily" plain {...props} />);
   const input = () => screen.getByLabelText(copy.home.prompt);
   // The draft has opened once the scenery can be touched.
   await waitFor(() =>
@@ -241,13 +243,17 @@ describe('speaking', () => {
     expect(voice.start).toHaveBeenCalledTimes(1);
   });
 
-  it('stops, as a pause, from a tap on the scenery while recording', async () => {
+  it('keeps Stop in the quiet row while recording, and stops from a tap on the scenery too', async () => {
     voice = { ...voice, state: 'recording' } as Voice;
     await open({ initialMode: 'speak' });
-    // Nothing but the point of light: the controls wait for the pause.
-    expect(controls()).toBeNull();
-    await fireEvent.press(screen.getByTestId('session-scenery'));
+    // The light is the only thing on the sky, and Stop is one glance away.
+    expect(controls()).not.toBeNull();
+    expect(screen.getByRole('button', { name: sessionCopy.quiet.stop })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: copy.firstEcho.cta })).toBeNull();
+    await fireEvent.press(screen.getByRole('button', { name: sessionCopy.quiet.stop }));
     expect(voice.stop).toHaveBeenCalledTimes(1);
+    await fireEvent.press(screen.getByTestId('session-scenery'));
+    expect(voice.stop).toHaveBeenCalledTimes(2);
   });
 
   it('explains the microphone in plain words before the system asks', async () => {
@@ -261,5 +267,83 @@ describe('speaking', () => {
     await fireEvent.press(screen.getByRole('button', { name: sessionCopy.speak.allow }));
     await waitFor(() => expect(requestMicrophonePermission).toHaveBeenCalled());
     await waitFor(() => expect(voice.start).toHaveBeenCalledTimes(2));
+  });
+});
+
+describe('the spoken daily echo (D-006)', () => {
+  const send = jest.mocked(transcribeEntryAudio);
+  const said = (text: string) => ({
+    ok: true as const,
+    value: { text, polished: true, languages: ['en'], seconds: 2 },
+  });
+  const scenery = () => screen.getByTestId('session-scenery');
+
+  beforeEach(() => {
+    usePreferences.setState({
+      lastMode: 'speak',
+      voiceConsent: { choice: 'allowed', version: VOICE_POLICY_VERSION },
+    });
+  });
+
+  it('opens on the light, in Speak, and never starts recording by itself', async () => {
+    await open();
+    expect(screen.getByRole('button', { name: sessionCopy.speak.record })).toBeTruthy();
+    await tick(10_000);
+    expect(voice.start).not.toHaveBeenCalled();
+    await fireEvent.press(scenery());
+    expect(voice.start).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows ...listening on the sky, then lets the words in, and the light is ready for another take', async () => {
+    let arrive: (value: ReturnType<typeof said>) => void = () => undefined;
+    send.mockReturnValue(new Promise((resolve) => (arrive = resolve)));
+    voice = { ...voice, state: 'recording' } as Voice;
+    voice.stop = jest.fn(async () => {
+      voice.state = 'idle';
+      return {
+        ok: true,
+        value: { id: 'a1', extension: '.m4a', durationSeconds: 5, recovered: false },
+      };
+    }) as never;
+    const input = await open();
+    await fireEvent.press(screen.getByRole('button', { name: sessionCopy.quiet.stop }));
+    expect(await screen.findByText(sessionCopy.transcribe.listening)).toBeTruthy();
+    // The quiet row stays; nothing traps the person while the words come.
+    expect(controls()).toBeTruthy();
+
+    await act(async () => arrive(said('Something I have been avoiding.')));
+    await waitFor(() => expect(input().props.value).toBe('Something I have been avoiding.'));
+    expect(screen.queryByText(sessionCopy.transcribe.listening)).toBeNull();
+
+    // A second take: a tap on the sky begins it, whether or not the first has landed.
+    await fireEvent.press(scenery());
+    expect(voice.start).toHaveBeenCalledTimes(1);
+  });
+
+  it('says the recording is safe when the words do not come, with Try again', async () => {
+    send.mockResolvedValueOnce({ ok: false, error: { code: 'offline', retryable: true } });
+    voice = { ...voice, state: 'recording' } as Voice;
+    voice.stop = jest.fn(async () => {
+      voice.state = 'idle';
+      return {
+        ok: true,
+        value: { id: 'a1', extension: '.m4a', durationSeconds: 5, recovered: false },
+      };
+    }) as never;
+    await open();
+    await fireEvent.press(screen.getByRole('button', { name: sessionCopy.quiet.stop }));
+    expect(await screen.findByText(sessionCopy.transcribe.failed.offline)).toBeTruthy();
+    send.mockResolvedValueOnce(said('Back online.'));
+    await fireEvent.press(screen.getByRole('button', { name: sessionCopy.errors.retry }));
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+  });
+
+  it('brings Back and Write after a few quiet seconds on the light, and remembers Write', async () => {
+    await open();
+    expect(controls()).toBeNull();
+    await tick(QUIET_MS);
+    expect(controls()).toBeTruthy();
+    await fireEvent.press(screen.getByRole('button', { name: copy.firstEcho.write }));
+    expect(usePreferences.getState().lastMode).toBe('write');
   });
 });

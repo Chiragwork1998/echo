@@ -15,6 +15,9 @@ export const VOICE_NOTES: readonly SpeakView[] = [
   'unavailable',
   'failed',
   'kept',
+  'untranscribed',
+  'transcribe_failed',
+  'transcribe_unavailable',
 ];
 
 const LINES: Partial<Record<SpeakView, string>> = {
@@ -23,6 +26,9 @@ const LINES: Partial<Record<SpeakView, string>> = {
   unavailable: sessionCopy.speak.unavailable,
   failed: sessionCopy.speak.failed,
   kept: sessionCopy.speak.kept,
+  untranscribed: sessionCopy.transcribe.untranscribed,
+  transcribe_failed: sessionCopy.transcribe.failed.server,
+  transcribe_unavailable: sessionCopy.transcribe.unavailable,
 };
 
 function Action({ label, onPress }: { label: string; onPress: () => void }) {
@@ -52,13 +58,17 @@ type Props = {
   onAllow: () => void;
   onSettings: () => void;
   onWrite: () => void;
+  /** Try again, or turn a recording with no words yet into words. */
+  onRetry: () => void;
+  /** The sentence for the transcription states, from the failure's code. */
+  line: string | null;
 };
 
 /**
  * What the microphone needs the person to know: why it asks, that it is off, that it could not
  * start. Plain words on the sky with one or two quiet actions, never a card.
  */
-export function VoiceNote({ view, onAllow, onSettings, onWrite }: Props) {
+export function VoiceNote({ view, onAllow, onSettings, onWrite, onRetry, line }: Props) {
   const { text, shadow } = useSkyInk();
   return (
     <View style={styles.root} accessibilityLiveRegion="polite">
@@ -70,10 +80,16 @@ export function VoiceNote({ view, onAllow, onSettings, onWrite }: Props) {
         maxFontSizeMultiplier={1.5}
         style={[styles.line, { color: text }, shadow]}
       >
-        {LINES[view]}
+        {line ?? LINES[view]}
       </EchoText>
       {view === 'explain' && <Action label={sessionCopy.speak.allow} onPress={onAllow} />}
       {view === 'denied' && <Action label={sessionCopy.speak.settings} onPress={onSettings} />}
+      {view === 'untranscribed' && (
+        <Action label={sessionCopy.transcribe.action} onPress={onRetry} />
+      )}
+      {view === 'transcribe_failed' && (
+        <Action label={sessionCopy.errors.retry} onPress={onRetry} />
+      )}
       <Action label={sessionCopy.speak.writeInstead} onPress={onWrite} />
     </View>
   );

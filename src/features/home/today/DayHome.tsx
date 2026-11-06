@@ -114,6 +114,27 @@ function BeginCta() {
   );
 }
 
+/** Voice is the way in (D-006). Writing is one quiet step away, never a second button. */
+function WriteInstead() {
+  const { writeInstead } = useSessionEntry();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={goldenCopy.dayWriteInstead}
+      onPress={() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        writeInstead();
+      }}
+      hitSlop={{ top: 10, bottom: 10, left: 24, right: 24 }}
+      style={({ pressed }) => [styles.writeInstead, pressed && styles.ctaPressed]}
+    >
+      <EchoText variant="caption" color="textSecondary" style={styles.writeInsteadLabel}>
+        {goldenCopy.dayWriteInstead}
+      </EchoText>
+    </Pressable>
+  );
+}
+
 function TodayCard({ summary, strong }: { summary: HomeSummary; strong: boolean }) {
   const { rhythm } = summary;
   const done = rhythm.week.filter((day) => day.completed).length;
@@ -128,6 +149,7 @@ function TodayCard({ summary, strong }: { summary: HomeSummary; strong: boolean 
           {copy.home.prompt}
         </EchoText>
         <BeginCta />
+        <WriteInstead />
         {showRhythm && (
           <>
             <Pebbles count={Math.max(done, 1)} />
@@ -314,6 +336,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   ctaPressed: { opacity: 0.9, transform: [{ scale: 0.985 }] },
+  writeInstead: { minHeight: 24, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
+  writeInsteadLabel: {
+    fontSize: 11,
+    lineHeight: 15,
+    letterSpacing: 0.6,
+    textDecorationLine: 'underline',
+  },
   pebbles: { marginTop: 10, flexDirection: 'row', justifyContent: 'center', gap: STONE },
   pebble: { width: STONE, height: STONE, borderRadius: STONE / 2 },
   rhythm: {

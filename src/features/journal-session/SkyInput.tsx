@@ -3,6 +3,7 @@ import { StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { useTheme } from '@/design/theme';
 
+import { ArrivalFade } from './ArrivalFade';
 import { Beacon } from './Beacon';
 import { FadeEdge } from './FadeEdge';
 import { CARET, WRITING, useSkyInk } from './sky';
@@ -23,6 +24,8 @@ type Props = {
   focused: boolean;
   /** Writing: touches reach the words. Speaking: they pass through to the scenery beneath. */
   interactive: boolean;
+  /** Counts the times spoken words have landed, so they settle in rather than jump. */
+  arrival?: number;
 };
 
 const FONT = 'CormorantGaramond_500Medium';
@@ -43,6 +46,7 @@ export function SkyInput({
   caret,
   focused,
   interactive,
+  arrival = 0,
 }: Props) {
   const { name } = useTheme();
   const ink = useSkyInk();
@@ -63,7 +67,8 @@ export function SkyInput({
   const fits = at !== null && at.y + WRITING.line <= frame.height - frame.fade;
 
   return (
-    <View
+    <ArrivalFade
+      arrival={arrival}
       pointerEvents={interactive ? 'box-none' : 'none'}
       style={[styles.area, { top: frame.top, height: frame.height }]}
     >
@@ -113,7 +118,7 @@ export function SkyInput({
         x={WRITING.side + (at?.x ?? 0) + 1}
         y={frame.fade + (at?.y ?? 0) + lineOffset}
       />
-    </View>
+    </ArrivalFade>
   );
 }
 

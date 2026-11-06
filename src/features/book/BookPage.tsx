@@ -5,6 +5,7 @@ import { useLayout } from '@/design/layout';
 
 import { BookStage, type Entrance } from './BookStage';
 import { Pages } from './Pages';
+import type { Ritual } from './ritual';
 import { PaperProvider, usePaperLook, type Surface } from './paper';
 import type { Volume } from './volumes';
 
@@ -46,6 +47,9 @@ type Props = {
   entrance: Entrance;
   start: boolean;
   riseFrom: number;
+  ritual: Ritual;
+  /** A tap said enough: the opening finishes at once. */
+  hurry: boolean;
   onOpened?: () => void;
   inputRef: RefObject<ComponentRef<typeof TextInput> | null>;
   value: string;
@@ -60,13 +64,29 @@ type Props = {
   onBlur: () => void;
   onTap: () => void;
   lead?: PagesProps['lead'];
+  /** The words are kept but not shown (D-008). */
+  concealed?: boolean;
+  /** Counts the times spoken words have landed. */
+  arrival?: number;
   /** Drawn over the page, in its ink: the breathing light, notes about the microphone. */
   children?: (open: boolean) => ReactNode;
 };
 
 /** The book in its place on the screen: it arrives, opens, and the open page takes the words. */
 export function BookPage(props: Props) {
-  const { frame, surface, volume, entrance, start, riseFrom, onOpened, children, ...page } = props;
+  const {
+    frame,
+    surface,
+    volume,
+    entrance,
+    start,
+    riseFrom,
+    ritual,
+    hurry,
+    onOpened,
+    children,
+    ...page
+  } = props;
   const look = usePaperLook(surface);
   return (
     <View
@@ -84,6 +104,8 @@ export function BookPage(props: Props) {
         entrance={entrance}
         start={start}
         riseFrom={riseFrom}
+        ritual={ritual}
+        hurry={hurry}
         onOpened={onOpened}
       >
         {(open) => (

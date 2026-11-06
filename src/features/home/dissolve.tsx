@@ -175,7 +175,7 @@ export function useSessionEntry() {
   return useMemo(
     () => ({
       begin: () => dissolve('/home/session'),
-      speakInstead: () => dissolve({ pathname: '/home/session', params: { mode: 'voice' } }),
+      writeInstead: () => dissolve({ pathname: '/home/session', params: { mode: 'write' } }),
       continueDraft: (draftId: string) =>
         dissolve({ pathname: '/home/session', params: { draftId } }),
     }),

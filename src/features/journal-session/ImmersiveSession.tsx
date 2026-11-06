@@ -21,6 +21,7 @@ import { useLayout } from '@/design/layout';
 import { useTheme } from '@/design/theme';
 import { BookPage, useBookFrame } from '@/features/book/BookPage';
 import { PaperProvider, usePaperLook, type Surface } from '@/features/book/paper';
+import { ritualFor } from '@/features/book/ritual';
 import { Shelf, ShelfBackdrop, useShelfOffset } from '@/features/book/Shelf';
 import { volumeById, volumeIndex, VOLUMES } from '@/features/book/volumes';
 import { usePreferences } from '@/state/preferences';
@@ -56,8 +57,14 @@ const SERIF = 'CormorantGaramond_500Medium';
 export function ImmersiveSession({
   session,
   page = 'sky',
+  concealed = false,
 }: {
   session: SessionController;
+  /**
+   * The words are kept but not shown, so the page is empty with only the breathing light (D-008).
+   * They fade away and back; every word is still in the draft.
+   */
+  concealed?: boolean;
   /**
    * What the words sit on. `sky`: straight on the mountains, as D-003 first drew it. `vellum`: a
    * translucent page in a book that rises and opens (D-004). `paper`: the same book with an opaque
@@ -73,12 +80,21 @@ export function ImmersiveSession({
   const reduced = useReduceMotion();
   const screenReader = useScreenReader();
   const here = useWhileHere();
-  const settled = useStillness(reduced);
+  // The ritual of opening plays in full for the first few sessions and then shortens (D-008). What
+  // applies is what it was when this session began, so it never changes under the person's eyes.
+  const [ritual] = useState(() => ritualFor(usePreferences.getState().bookOpens));
+  const countOpen = usePreferences((state) => state.countBookOpen);
+  // A tap anywhere before the page is open says enough: it comes at once, and softly.
+  const [tapped, setTapped] = useState(false);
+  const stilled = useStillness(reduced, ritual.stillness);
+  const settled = stilled || tapped;
   const frame = useSkyFrame(plate, insets.top);
   const inputRef = useRef<ComponentRef<typeof TextInput>>(null);
   const [focused, setFocused] = useState(false);
 
-  const { draft, mode, speakView, ready, canReflect, failure, notice, retryable } = session;
+  const { draft, mode, speakView, ready, canReflect, failure, retryable } = session;
+  // Spoken words on their way are a quiet line above the controls, not a card over the sky.
+  const notice = session.notice ?? session.quietLine;
   const writing = mode === 'write';
   const recording = speakView === 'recording';
   const busy = speakView === 'starting' || speakView === 'saving';
@@ -142,12 +158,16 @@ export function ImmersiveSession({
     return { height: (height > 0 ? height + CONTROLS.aboveKeyboard : resting) + GROUND_FADE };
   });
 
-  // Recording is only a point of light. A pause, with a take to show for it, brings the controls.
-  const { hide, show } = quiet;
+  // Recording is a point of light, and Stop is always one glance away in the quiet row. A pause,
+  // with a take to show for it, brings the controls too.
+  const { hide, show, arm } = quiet;
   useEffect(() => {
-    if (speakView === 'recording' || speakView === 'starting') hide();
+    if (speakView === 'starting') hide();
+    else if (speakView === 'recording') show();
     else if (speakView === 'recorded' && !writing) show();
-  }, [speakView, writing, hide, show]);
+    // Waiting on the light: after the same few quiet seconds as writing, Back and Write come.
+    else if (speakView === 'ready' && !writing) arm();
+  }, [speakView, writing, hide, show, arm]);
 
   // Choosing Write from the controls puts the caret straight back on the sky.
   const refocus = useRef(false);
@@ -167,6 +187,8 @@ export function ImmersiveSession({
   // Anywhere on the scenery. Writing: the keyboard comes, and the caret lands. Speaking: tap to
   // start, tap to pause.
   const touchScenery = () => {
+    // Before the book is open, any touch skips the rest of the ritual.
+    if (book && (!settled || !pageOpen)) return setTapped(true);
     if (!ready || failure !== null) return;
     if (writing) {
       if (focused) quiet.show();
@@ -174,8 +196,10 @@ export function ImmersiveSession({
       return;
     }
     if (recording) void session.stop();
-    else if (speakView === 'ready') session.record();
-    else quiet.show();
+    // A further take can begin while the last is still becoming words.
+    else if (speakView === 'ready' || speakView === 'recorded' || speakView === 'listening') {
+      session.record();
+    } else quiet.show();
   };
 
   const onMiddle = () => {
@@ -220,7 +244,7 @@ export function ImmersiveSession({
 
       <Pressable
         {...scenery}
-        disabled={!ready || !pageOpen}
+        disabled={!ready && (!book || pageOpen)}
         onPress={touchScenery}
         style={StyleSheet.absoluteFill}
         testID="session-scenery"
@@ -252,6 +276,7 @@ export function ImmersiveSession({
               quiet.show();
             }}
             frame={frame}
+            arrival={session.arrival}
             caret={settled && writing && ready && failure === null}
             focused={focused}
             interactive={writing}
@@ -267,7 +292,15 @@ export function ImmersiveSession({
           entrance={onboarding ? 'forward' : 'rise'}
           start={onboarding ? true : settled}
           riseFrom={bookFrame.top + bookFrame.height + 40}
-          onOpened={() => setOpened(true)}
+          ritual={ritual}
+          // A screen reader is not made to wait for the book either.
+          hurry={tapped || screenReader}
+          concealed={concealed}
+          arrival={session.arrival}
+          onOpened={() => {
+            setOpened(true);
+            countOpen();
+          }}
           inputRef={inputRef}
           value={draft.content.body}
           label={session.prompt}
@@ -296,7 +329,11 @@ export function ImmersiveSession({
                 visible={open && ready && !voiceNote && failure === null}
                 live={recording || busy}
                 x={bookFrame.width / 2}
-                y={draft.content.body.length === 0 ? bookFrame.height / 2 : bookFrame.height - 30}
+                y={
+                  concealed || draft.content.body.length === 0
+                    ? bookFrame.height / 2
+                    : bookFrame.height - 30
+                }
               />
             )
           }
@@ -307,7 +344,7 @@ export function ImmersiveSession({
         <Beacon
           kind="light"
           visible={settled && ready && !voiceNote && failure === null}
-          live={recording || busy}
+          live={recording || busy || session.listening}
           x={width / 2}
           y={frame.top + frame.height / 2}
         />
@@ -344,6 +381,8 @@ export function ImmersiveSession({
                   refocus.current = true;
                   session.writeInstead();
                 }}
+                onRetry={session.retryTranscription}
+                line={session.speakLine}
               />
             )}
           </PaperProvider>

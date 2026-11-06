@@ -33,6 +33,7 @@ import {
   type SessionOptions,
   type SessionVariant,
 } from './useSessionController';
+import { VoiceConsentSheet } from './VoiceConsentSheet';
 import { WritingSurface } from './WritingSurface';
 
 export type { SessionVariant } from './useSessionController';
@@ -81,7 +82,13 @@ function useKeyboardOpen() {
   return open;
 }
 
-type Props = SessionOptions;
+type Props = SessionOptions & {
+  /**
+   * The surfaces as they were before the book (D-004): First Echo's glass writing card, and the daily
+   * echo's words straight on the sky. For tests of the session itself, and as a way back.
+   */
+  plain?: boolean;
+};
 
 /**
  * The writing session, used by First Echo and by the daily echo. Write or speak, seven minutes, and
@@ -90,11 +97,25 @@ type Props = SessionOptions;
  */
 export function JournalSession(props: Props) {
   const session = useSessionController(props);
-  if (props.variant === 'onboarding' && !ONBOARDING_BOOK)
-    return <WrittenSession session={session} />;
-  if (!IMMERSIVE[props.variant]) return <WrittenSession session={session} />;
-  const page = props.variant === 'daily' ? DAILY_PAGE : 'paper';
-  return <ImmersiveSession session={session} page={page} />;
+  const written =
+    props.variant === 'onboarding' ? props.plain === true || !ONBOARDING_BOOK : !IMMERSIVE.daily;
+  const page = props.variant === 'daily' ? (props.plain ? 'sky' : DAILY_PAGE) : 'paper';
+  return (
+    <>
+      {written ? (
+        <WrittenSession session={session} />
+      ) : (
+        <ImmersiveSession session={session} page={page} />
+      )}
+      {/* Before a voice first leaves the phone, over whichever page this is. */}
+      <VoiceConsentSheet
+        visible={session.consentOpen}
+        onAllow={() => session.chooseConsent('allowed')}
+        onKeep={() => session.chooseConsent('voice_only')}
+        onClose={() => session.chooseConsent('later')}
+      />
+    </>
+  );
 }
 
 /** First Echo's page: header, prompt, a glass writing surface, Write or Speak, and Reflect. */
@@ -159,6 +180,7 @@ export function WrittenSession({ session }: { session: SessionController }) {
     onChangeText: change,
     saveState: draft.saveState,
     squeezed: keyboardOpen,
+    arrival: session.arrival,
   };
 
   return (
@@ -210,6 +232,8 @@ export function WrittenSession({ session }: { session: SessionController }) {
               onAllow={() => void allowMicrophone()}
               onSettings={openSettings}
               onWrite={writeInstead}
+              onRetry={session.retryTranscription}
+              line={session.speakLine}
             />
           </WritingSurface>
         )}

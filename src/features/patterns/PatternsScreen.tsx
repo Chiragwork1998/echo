@@ -5,6 +5,7 @@ import { TabPage } from '@/features/tab-pages/TabPage';
 import { onPlate } from '@/features/tab-pages/textStyles';
 
 import type { MoodCounts, Patterns, WeekCounts } from './computePatterns';
+import { PatternCardsSection } from './PatternCardsSection';
 import { patternsCopy } from './patternsCopy';
 import { usePatterns } from './usePatterns';
 
@@ -67,9 +68,12 @@ function Facts({ patterns }: { patterns: Patterns }) {
   );
 }
 
-/** Opt-in by being opened: nothing here is pushed to Home or sent anywhere. Plain counts only. */
+/**
+ * Opening this page sends nothing anywhere and is never pushed to Home. The pattern cards come first,
+ * and read only when asked for, after an agreement. The plain counts sit beneath them.
+ */
 export function PatternsScreen() {
-  const { state, retry } = usePatterns();
+  const { state, entries, retry } = usePatterns();
   return (
     <TabPage title={patternsCopy.title}>
       {state.kind === 'loading' && <Quiet busy>{patternsCopy.loading}</Quiet>}
@@ -78,7 +82,10 @@ export function PatternsScreen() {
       )}
       {state.kind === 'ready' &&
         (state.patterns.unlocked ? (
-          <Facts patterns={state.patterns} />
+          <>
+            <PatternCardsSection entries={entries} />
+            <Facts patterns={state.patterns} />
+          </>
         ) : (
           <Quiet>{patternsCopy.locked}</Quiet>
         ))}

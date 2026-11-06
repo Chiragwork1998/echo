@@ -1,6 +1,7 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
+import type { ComponentProps } from 'react';
 import { Alert, Text } from 'react-native';
 
 import { copy } from '@/content/copy';
@@ -17,10 +18,8 @@ import { initialOnboarding, useOnboarding } from '@/state/onboarding';
 import { usePreferences } from '@/state/preferences';
 import { render } from '@/testing/render';
 
-import { ImmersiveSession } from './ImmersiveSession';
-import { WrittenSession, type SessionVariant } from './JournalSession';
+import { JournalSession as Session, type SessionVariant } from './JournalSession';
 import { sessionCopy } from './sessionCopy';
-import { useSessionController, type SessionOptions } from './useSessionController';
 
 jest.mock('expo-haptics', () => ({
   impactAsync: jest.fn(),
@@ -53,18 +52,9 @@ jest.mock('@/services/permissions', () => ({
   openAppSettings: jest.fn(),
 }));
 
-/**
- * The two fallbacks, which the constants in JournalSession.tsx return to: First Echo's golden writing
- * card (ONBOARDING_BOOK = false) and the daily echo on the open sky (DAILY_PAGE = 'sky'). The book
- * has its own tests, in features/book.
- */
-function JournalSession(props: SessionOptions) {
-  const session = useSessionController(props);
-  return props.variant === 'onboarding' ? (
-    <WrittenSession session={session} />
-  ) : (
-    <ImmersiveSession session={session} page="sky" />
-  );
+/** These tests are of the session itself, on the surfaces it had before the book. */
+function JournalSession(props: ComponentProps<typeof Session>) {
+  return <Session plain {...props} />;
 }
 
 const BODY = 'something I have carried';
@@ -78,6 +68,8 @@ let commitFails: boolean;
 beforeEach(() => {
   jest.clearAllMocks();
   useOnboarding.setState({ ...initialOnboarding, mode: undefined, mood: undefined });
+  // Speak is the default (D-006). The writing tests below start from a person who last wrote.
+  usePreferences.setState({ lastMode: 'write', voiceConsent: null });
   const inner = createMemoryJournal({ entries: [] });
   commitFails = false;
   journal = {
@@ -147,21 +139,46 @@ describe('JournalSession layout and states', () => {
     expect(reflect()).toBeEnabled();
   });
 
-  it.each([
-    ['guide', 'write'],
-    ['space', 'write'],
-    ['speak', 'speak'],
-  ] as const)('opens in %s mode as %s', async (chosen, expected) => {
-    useOnboarding.setState({ mode: chosen });
+  it('opens in Speak when nothing has been chosen yet, whatever onboarding said', async () => {
+    usePreferences.setState({ lastMode: 'speak' });
+    useOnboarding.setState({ mode: 'guide' });
     await render(<JournalSession variant="onboarding" />);
-    const field = screen.queryByLabelText(copy.firstEcho.title);
+    expect(screen.queryByLabelText(copy.firstEcho.title)).toBeNull();
+    expect(tab(copy.firstEcho.speak)).toHaveProp(
+      'accessibilityState',
+      expect.objectContaining({ selected: true }),
+    );
+    expect(await screen.findByRole('button', { name: sessionCopy.speak.record })).toBeTruthy();
+  });
+
+  it('opens in Write for a person who last chose to write', async () => {
+    await render(<JournalSession variant="onboarding" />);
+    expect(await screen.findByLabelText(copy.firstEcho.title)).toBeTruthy();
     expect(tab(copy.firstEcho.write)).toHaveProp(
       'accessibilityState',
-      expect.objectContaining({ selected: expected === 'write' }),
+      expect.objectContaining({ selected: true }),
     );
-    expect(field === null).toBe(expected === 'speak');
-    // The prompt is the same in every mode.
-    expect(screen.getByRole('header', { name: copy.firstEcho.title })).toBeTruthy();
+  });
+
+  it('lets an explicit mode win over the remembered one', async () => {
+    await render(<JournalSession variant="onboarding" initialMode="speak" />);
+    expect(await screen.findByRole('button', { name: sessionCopy.speak.record })).toBeTruthy();
+    expect(usePreferences.getState().lastMode).toBe('write');
+  });
+
+  it('remembers the mode the person chooses, for next time', async () => {
+    await open();
+    await fireEvent.press(tab(copy.firstEcho.speak));
+    expect(usePreferences.getState().lastMode).toBe('speak');
+    await fireEvent.press(tab(copy.firstEcho.write));
+    expect(usePreferences.getState().lastMode).toBe('write');
+  });
+
+  it('opens in Write where there is no microphone to speak into', async () => {
+    usePreferences.setState({ lastMode: 'speak' });
+    voice = { ...voice, available: false };
+    await render(<JournalSession variant="onboarding" />);
+    expect(await screen.findByLabelText(copy.firstEcho.title)).toBeTruthy();
   });
 
   it('opens the daily session in Speak for mode=voice', async () => {
@@ -337,8 +354,7 @@ describe('JournalSession Back', () => {
 
 describe('JournalSession Speak', () => {
   const speak = async () => {
-    useOnboarding.setState({ mode: 'speak' });
-    await render(<JournalSession variant="onboarding" />);
+    await render(<JournalSession variant="onboarding" initialMode="speak" />);
     await screen.findByText(copy.firstEcho.title);
   };
 
@@ -385,7 +401,8 @@ describe('JournalSession Speak', () => {
 
   it('offers Write when recording is unavailable', async () => {
     voice = { ...voice, available: false };
-    await speak();
+    await render(<JournalSession variant="onboarding" initialMode="speak" />);
+    await screen.findByText(copy.firstEcho.title);
     expect(screen.getByText(sessionCopy.speak.unavailable)).toBeTruthy();
     expect(screen.queryByRole('button', { name: sessionCopy.speak.record })).toBeNull();
     expect(screen.getByRole('button', { name: sessionCopy.speak.writeInstead })).toBeTruthy();

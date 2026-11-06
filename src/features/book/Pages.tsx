@@ -9,6 +9,7 @@ import {
 } from 'react';
 import {
   PanResponder,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -16,6 +17,7 @@ import {
   View,
   useWindowDimensions,
   type TextStyle,
+  type ViewStyle,
 } from 'react-native';
 import Animated, {
   Easing,
@@ -32,6 +34,8 @@ import { tokens } from '@/design/tokens';
 import { useReduceMotion } from '@/design/useReduceMotion';
 
 import { bookCopy } from './bookCopy';
+import { ArrivalFade } from '@/features/journal-session/ArrivalFade';
+
 import { linesOf, measuredText, pageCount, pageOfLine } from './pagination';
 import { Sheet, type PaperLook } from './paper';
 import type { Volume } from './volumes';
@@ -47,6 +51,8 @@ const PAD = { top: 10, left: 30, right: 24, bottom: 20 };
 const HEAD = 34;
 const MIN_LINES = 3;
 const FADE_MS = tokens.motion.fast;
+/** Words fade away, and back, over this long. */
+const VEIL_MS = 450;
 /** A drag shorter than this does not turn the page. */
 const SWIPE = 60;
 
@@ -64,6 +70,10 @@ type Metrics = ReturnType<typeof usePageMetrics>;
 
 /** Web draws a focus ring around a text field, and an `auto` ring ignores a width of nothing. */
 const noRing = { outlineStyle: 'none', outlineWidth: 0 } as unknown as TextStyle;
+
+// On web a focused field scrolls an `overflow: hidden` parent to bring its caret into view, which
+// would slide the page out of its window. `clip` cannot be scrolled.
+const webClip = (Platform.OS === 'web' ? { overflow: 'clip' } : {}) as unknown as ViewStyle;
 
 const textStyle = {
   fontFamily: SERIF,
@@ -95,6 +105,13 @@ type Props = {
   lead?: Lead;
   /** Nothing is readable until the cover is open. */
   hidden?: boolean;
+  /**
+   * The words are kept but not shown: the page is empty, and the breathing light is all there is
+   * (D-008). They fade away and back, and every page, line and word is still where it was.
+   */
+  concealed?: boolean;
+  /** Counts the times spoken words have landed, so they settle in rather than jump. */
+  arrival?: number;
   children?: ReactNode;
 };
 
@@ -121,6 +138,8 @@ export function Pages({
   onTap,
   lead,
   hidden = false,
+  concealed = false,
+  arrival = 0,
   children,
 }: Props) {
   const { name } = useTheme();
@@ -147,6 +166,17 @@ export function Pages({
   const [turn, setTurn] = useState<{ from: number; to: number } | null>(null);
   const flip = useSharedValue(0);
   const dim = useSharedValue(1);
+  const veil = useSharedValue(concealed ? 0 : 1);
+  useEffect(() => {
+    veil.set(
+      withTiming(concealed ? 0 : 1, {
+        duration: reduced ? FADE_MS : VEIL_MS,
+        easing: Easing.out(Easing.quad),
+        reduceMotion: ReduceMotion.Never,
+      }),
+    );
+  }, [concealed, reduced, veil]);
+  const veiled = useAnimatedStyle(() => ({ opacity: veil.get() }));
 
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   useEffect(() => {
@@ -160,6 +190,11 @@ export function Pages({
   const fading = useRef<number | null>(null);
   const turnTo = (to: number) => {
     if (turn || to < 0 || to >= count || to === shown) return;
+    if (concealed) {
+      // Nothing is on show, so there is nothing to turn: the view moves, and no leaf carries words.
+      setPage(to);
+      return;
+    }
     if (reduced) {
       // A short fade in place of the swing: the old words go, the new ones come.
       if (fading.current === to) return;
@@ -319,55 +354,61 @@ export function Pages({
           style={StyleSheet.absoluteFill}
         >
           <Head look={look} metrics={metrics} volume={volume} />
-          <View style={[styles.fill, { opacity: hidden ? 0 : 1 }]}>
-            <Animated.View style={[styles.fill, fresh]}>
-              <View
-                style={[styles.window, { top: PAD.top + metrics.head, height: metrics.window }]}
-              >
-                <View style={{ transform: [{ translateY: -base * per * line }] }}>
-                  {lead && <Heading look={look} metrics={metrics} text={lead.text} />}
-                  <TextInput
-                    ref={inputRef}
-                    value={value}
-                    onChangeText={change}
-                    onSelectionChange={(event) => {
-                      const end = event.nativeEvent.selection.end;
-                      setCaretAt(end >= value.length ? null : end);
-                    }}
-                    onFocus={onFocus}
-                    onBlur={onBlur}
-                    editable={editable}
-                    pointerEvents={interactive ? 'auto' : 'none'}
-                    multiline
-                    scrollEnabled={false}
-                    textAlignVertical="top"
-                    placeholder={placeholder}
-                    placeholderTextColor={look.muted}
-                    accessibilityLabel={label}
-                    // Autofill and suggestion stores sit outside encryption (docs/DATA_CONTRACT.md).
-                    autoComplete="off"
-                    importantForAutofill="no"
-                    textContentType="none"
-                    keyboardAppearance={name === 'night' ? 'dark' : 'light'}
-                    selectionColor={look.glow}
-                    cursorColor={look.glow}
-                    underlineColorAndroid="transparent"
-                    maxFontSizeMultiplier={2}
-                    style={[
-                      styles.input,
-                      noRing,
-                      textStyle,
-                      {
-                        color: look.ink,
-                        paddingTop: leadLines * line,
-                        height: (lines + leadLines + 2) * line,
-                      },
-                    ]}
-                  />
+          <ArrivalFade arrival={arrival} style={[styles.fill, { opacity: hidden ? 0 : 1 }]}>
+            <Animated.View
+              style={[styles.fill, veiled]}
+              accessibilityElementsHidden={concealed}
+              importantForAccessibility={concealed ? 'no-hide-descendants' : 'auto'}
+            >
+              <Animated.View style={[styles.fill, fresh]}>
+                <View
+                  style={[styles.window, { top: PAD.top + metrics.head, height: metrics.window }]}
+                >
+                  <View style={{ transform: [{ translateY: -base * per * line }] }}>
+                    {lead && <Heading look={look} metrics={metrics} text={lead.text} />}
+                    <TextInput
+                      ref={inputRef}
+                      value={value}
+                      onChangeText={change}
+                      onSelectionChange={(event) => {
+                        const end = event.nativeEvent.selection.end;
+                        setCaretAt(end >= value.length ? null : end);
+                      }}
+                      onFocus={onFocus}
+                      onBlur={onBlur}
+                      editable={editable}
+                      pointerEvents={interactive ? 'auto' : 'none'}
+                      multiline
+                      scrollEnabled={false}
+                      textAlignVertical="top"
+                      placeholder={placeholder}
+                      placeholderTextColor={look.muted}
+                      accessibilityLabel={label}
+                      // Autofill and suggestion stores sit outside encryption (docs/DATA_CONTRACT.md).
+                      autoComplete="off"
+                      importantForAutofill="no"
+                      textContentType="none"
+                      keyboardAppearance={name === 'night' ? 'dark' : 'light'}
+                      selectionColor={look.glow}
+                      cursorColor={look.glow}
+                      underlineColorAndroid="transparent"
+                      maxFontSizeMultiplier={2}
+                      style={[
+                        styles.input,
+                        noRing,
+                        textStyle,
+                        {
+                          color: look.ink,
+                          paddingTop: leadLines * line,
+                          height: (lines + leadLines + 2) * line,
+                        },
+                      ]}
+                    />
+                  </View>
                 </View>
-              </View>
+              </Animated.View>
             </Animated.View>
-          </View>
+          </ArrivalFade>
           {/* Never seen: these only tell us how many lines the words take, and where the caret is. */}
           <Text
             pointerEvents="none"
@@ -429,14 +470,16 @@ export function Pages({
         </>
       )}
 
-      <Pager
-        look={look}
-        metrics={metrics}
-        page={shown}
-        count={count}
-        busy={turn !== null}
-        onTurn={(by) => turnByHand(shown + by)}
-      />
+      {!concealed && (
+        <Pager
+          look={look}
+          metrics={metrics}
+          page={shown}
+          count={count}
+          busy={turn !== null}
+          onTurn={(by) => turnByHand(shown + by)}
+        />
+      )}
       {children}
     </View>
   );
@@ -552,7 +595,7 @@ function Pager(props: {
 
 const styles = StyleSheet.create({
   fill: { ...StyleSheet.absoluteFill },
-  window: { position: 'absolute', left: 0, right: 0, overflow: 'hidden' },
+  window: { position: 'absolute', left: 0, right: 0, overflow: 'hidden', ...webClip },
   input: {
     paddingLeft: PAD.left,
     paddingRight: PAD.right,

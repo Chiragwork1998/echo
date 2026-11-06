@@ -76,24 +76,24 @@ function Header({ inset }: { inset: number }) {
   );
 }
 
-function SpeakInstead() {
-  const { speakInstead } = useSessionEntry();
+function WriteInstead() {
+  const { writeInstead } = useSessionEntry();
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={goldenCopy.nightSpeakInstead}
+      accessibilityLabel={goldenCopy.nightWriteInstead}
       onPress={() => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        speakInstead();
+        writeInstead();
       }}
       hitSlop={{ top: 6, bottom: 6, left: 8, right: 8 }}
       style={({ pressed }) => [styles.pillTouch, pressed && styles.pillPressed]}
     >
       <GlassCard radius={PILL_HEIGHT / 2}>
         <View style={styles.pill}>
-          <Icon name="mic" size={16} color="#F7F3EB" />
+          <Icon name="pen" size={16} color="#F7F3EB" />
           <EchoText variant="bodyM" serif style={styles.pillText} maxFontSizeMultiplier={1.3}>
-            {goldenCopy.nightSpeakInstead}
+            {goldenCopy.nightWriteInstead}
           </EchoText>
         </View>
       </GlassCard>
@@ -192,7 +192,7 @@ export function NightHome({ summary }: { summary: HomeSummary }) {
         onPress={begin}
       />
       <View style={styles.pillSlot}>
-        <SpeakInstead />
+        <WriteInstead />
       </View>
       <View style={styles.spaceBelow} />
       <View style={{ paddingHorizontal: 4 }}>
