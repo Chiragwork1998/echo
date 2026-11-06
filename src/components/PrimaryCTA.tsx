@@ -13,7 +13,7 @@ import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 
 import { EchoText } from './EchoText';
-import { GlassCard } from './GlassCard';
+import { GlassBlur } from './GlassCard';
 
 const ARROW_PATH = 'M4 12h16M14 6l6 6-6 6';
 const DISABLED_OPACITY = 0.42;
@@ -65,6 +65,7 @@ export function PrimaryCTA({
   };
   const blocked = disabled || loading;
   const labelColor = variant === 'cream' ? colors.textInk : colors.textPrimary;
+  const dimLabel = disabled && variant === 'glass';
 
   const content = (
     <View style={styles.content}>
@@ -74,7 +75,7 @@ export function PrimaryCTA({
         <>
           <EchoText
             variant="label"
-            style={{ color: labelColor }}
+            style={[{ color: labelColor }, dimLabel && styles.dimLabel]}
             numberOfLines={1}
             adjustsFontSizeToFit
             minimumFontScale={0.8}
@@ -90,7 +91,12 @@ export function PrimaryCTA({
   return (
     <Animated.View
       style={[
-        { width: ctaWidth, opacity: disabled ? DISABLED_OPACITY : 1, alignSelf: 'center' },
+        {
+          width: ctaWidth,
+          // The goldens keep the frosted pill visible while disabled, and dim only its label.
+          opacity: disabled && variant === 'cream' ? DISABLED_OPACITY : 1,
+          alignSelf: 'center',
+        },
         animated,
       ]}
     >
@@ -114,7 +120,11 @@ export function PrimaryCTA({
             {content}
           </LinearGradient>
         ) : (
-          <GlassCard radius={tokens.radius.button}>{content}</GlassCard>
+          <View style={styles.frost}>
+            <GlassBlur />
+            <View style={[StyleSheet.absoluteFill, styles.frostFill]} />
+            {content}
+          </View>
         )}
       </Pressable>
     </Animated.View>
@@ -122,6 +132,14 @@ export function PrimaryCTA({
 }
 
 const styles = StyleSheet.create({
+  frost: {
+    borderRadius: tokens.radius.button,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.42)',
+    overflow: 'hidden',
+  },
+  frostFill: { backgroundColor: 'rgba(246,241,232,0.2)' },
+  dimLabel: { opacity: DISABLED_OPACITY },
   cream: { borderRadius: tokens.radius.button },
   content: {
     height: tokens.size.primaryButtonHeight,

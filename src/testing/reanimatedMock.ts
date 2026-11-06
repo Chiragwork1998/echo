@@ -26,6 +26,10 @@ export const reanimatedMock = {
   useAnimatedStyle: (compute: () => object) => compute(),
   useAnimatedProps: (compute: () => object) => compute(),
   useReducedMotion: () => false,
+  useAnimatedKeyboard: () => ({
+    height: { value: 0, get: () => 0 },
+    state: { value: 0, get: () => 0 },
+  }),
   useAnimatedReaction: () => undefined,
   withTiming: identity,
   withSpring: identity,

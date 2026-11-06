@@ -242,7 +242,11 @@ export function JournalSession({ variant, initialMode, draftId }: Props) {
 
   // Reflect and Back are never hidden by the keyboard: it lifts them, and the title folds away.
   const insets = useSafeAreaInsets();
-  const keyboard = useAnimatedKeyboard();
+  // Without these Android leaves edge-to-edge, and the plate stops short of the system bars.
+  const keyboard = useAnimatedKeyboard({
+    isStatusBarTranslucentAndroid: true,
+    isNavigationBarTranslucentAndroid: true,
+  });
   const resting = insets.bottom + CTA_FOOTER;
   const lift = useAnimatedStyle(() => ({
     paddingBottom: Math.max(0, keyboard.height.get() + KEYBOARD_GAP - resting),
