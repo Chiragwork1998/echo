@@ -131,7 +131,7 @@ const result = await transcribeEntryAudio(draftId, { signal });
 // { ok: false, error: { code, retryable } }
 ```
 
-The request carries `style`: `exact` (the default: every filler and self-correction stays, and the only second step is writing Hindi in Roman script) or `tidy` (`usePreferences().tidyWords`). A WAV longer than the server takes, which is what a live take is, is cut at its quietest moments into pieces of about 4 MB, sent in order, and joined.
+The request carries `style`: `exact` (the default: every filler and self-correction stays, and the only second step is writing Hindi in Roman script) or `tidy` (`usePreferences().tidyWords`). A recording longer than the server takes is sent in pieces, up to three at a time, and joined in the order it was spoken. A WAV, which is what a live take is, is cut at its quietest moments into pieces of about 4 MB. An Android `.aac`, which is a hidden take (ADTS), is cut between frames into pieces of at most five minutes of sound, because the voice server refuses an `.aac` of more than about 380 seconds (378 were taken and 381 were not, however small the file, though the same audio sent as an `.m4a` was taken at ten minutes), and one of under about five and a half; an end shorter than 20 seconds is sent with the piece before it. Quiet moments cannot be found in AAC without decoding it, so its pieces overlap by about three seconds, and the words of the overlap are matched and kept once (`src/services/joinWords.ts`). With no confident match of at least three words they are joined with a space and nothing is dropped. Every piece is asked for in the style chosen before the first one. If any piece fails, the take fails with that piece's code, none of its words are delivered, and Try again sends the whole take afresh; the sealed recording is untouched either way. An iOS `.m4a` cannot be cut: see `docs/SPEC_CONFLICTS.md`.
 
 | `error.code`        | Meaning                                                      | What the person sees                         |
 | ------------------- | ------------------------------------------------------------ | -------------------------------------------- |
@@ -141,9 +141,9 @@ The request carries `style`: `exact` (the default: every filler and self-correct
 | `offline`           | The phone itself reports no connection. Said only when true  | Recording is safe, Try again                 |
 | `unexpected`        | The request could not be built or sent, and the phone does not say it is offline | Something went wrong, recording is safe, Try again |
 | `timeout`           | No reply within 100 s                                        | Recording is safe, Try again                 |
-| `too_long`          | 413, or an AAC/M4A past about 14 minutes at 40 kbps. A WAV is split instead | Recording is safe, Write instead |
+| `too_long`          | 413, an `.m4a` past about 4.4 MB, or an `.aac` whose frames cannot be followed. A WAV and an ADTS `.aac` are split instead | Recording is safe, Write instead |
 | `no_speech`         | 422: nothing was heard                                       | Recording is safe, Try again                 |
-| `unsupported`       | 415, or 422 `unsupported_audio`                              | Recording is safe, Try again                 |
+| `unsupported`       | 415, or 422 `unsupported_audio` (which the server also gives an `.aac` outside about 5.5 to 380 seconds; the app cuts to stay inside) | Recording is safe, Try again                 |
 | `rate_limited`, `server`, `invalid_response` | 429, 5xx, or a reply that is not the contract | Recording is safe, Try again       |
 | `audio_unavailable` | The sealed recording would not open                          | Recording is safe, Try again                 |
 
