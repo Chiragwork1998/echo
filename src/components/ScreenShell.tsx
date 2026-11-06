@@ -20,8 +20,8 @@ type Props = PropsWithChildren<{
   footer?: ReactNode;
   /**
    * Full-screen layer pinned to the photograph, for controls that sit on scenery such as the river
-   * points on Intent or the stones on Arrival. Position children with usePlatePoint. It renders after
-   * the header and content, so screen readers reach the title before the controls.
+   * points on Intent or the stones on Arrival. Position children with usePlatePoint. Screen readers
+   * meet it after the header and content, and before the footer.
    */
   plateOverlay?: ReactNode;
 }>;
@@ -43,6 +43,10 @@ export function ScreenShell({ screen, header, footer, plateOverlay, children }: 
     </View>
   );
 
+  const footerNode = footer ? (
+    <View style={[styles.footer, { width, paddingHorizontal: gutter }]}>{footer}</View>
+  ) : null;
+
   return (
     <View style={styles.root}>
       <BlurSurface backdrop={<EchoBackground screen={screen} />}>
@@ -63,13 +67,20 @@ export function ScreenShell({ screen, header, footer, plateOverlay, children }: 
           ) : (
             body
           )}
-          {footer && (
-            <View style={[styles.footer, { width, paddingHorizontal: gutter }]}>{footer}</View>
-          )}
+          {!plateOverlay && footerNode}
         </View>
         {plateOverlay && (
           <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
             {plateOverlay}
+          </View>
+        )}
+        {plateOverlay && footer && (
+          // Rendered last so screen readers meet the choices before the button that confirms them.
+          <View
+            pointerEvents="box-none"
+            style={[styles.pinnedFooter, { bottom: insets.bottom + FOOTER_ABOVE_SAFE_BOTTOM }]}
+          >
+            {footerNode}
           </View>
         )}
       </BlurSurface>
@@ -85,4 +96,5 @@ const styles = StyleSheet.create({
   column: { flex: 1 },
   content: { flex: 1 },
   footer: { paddingTop: 12 },
+  pinnedFooter: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
 });

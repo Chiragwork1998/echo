@@ -6,7 +6,6 @@ import Animated, {
   Easing,
   ReduceMotion,
   useAnimatedStyle,
-  useReducedMotion,
   useSharedValue,
   withRepeat,
   withTiming,
@@ -16,6 +15,7 @@ import { GlassBlur } from '@/components/GlassCard';
 import { TrackedText } from '@/components/TrackedText';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
+import { useReduceMotion } from '@/design/useReduceMotion';
 
 // Owner-directed design (docs/OWNER_DECISIONS.md, D-002). Size and position follow the Landing golden.
 const WIDTH = 316;
@@ -56,7 +56,7 @@ function Hairline({ color, flip }: { color: string; flip?: boolean }) {
 
 export function BeginButton({ label, onPress }: { label: string; onPress: () => void }) {
   const { colors } = useTheme();
-  const reducedMotion = useReducedMotion();
+  const reducedMotion = useReduceMotion();
   const breath = useSharedValue(HALO_REST);
   const press = useSharedValue(0);
 

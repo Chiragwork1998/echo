@@ -38,7 +38,7 @@ You may edit only:
 - Never hardcode a font. Use `EchoText`.
 - Tests use `render` from `@/testing/render`, and `render` and `fireEvent` must be awaited. See `src/components/PrimaryCTA.test.tsx`. Mock `expo-haptics` as in `src/features/onboarding/landing/BeginButton.test.tsx`.
 - Selection must show through shape as well as colour, with a 44 pt minimum target and correct accessibility role, label, and state.
-- Honour Reduce Motion through Reanimated's `ReduceMotion.System`.
+- Honour Reduce Motion through Reanimated's `ReduceMotion.System`, and use `useReduceMotion` from `@/design/useReduceMotion` for looping animation.
 - No journal content in logs. No `console.log` left behind.
 - Do not invent anything absent from the goldens and specs.
 

@@ -1,5 +1,5 @@
-import { useEffect, useId, useState } from 'react';
-import { AccessibilityInfo, StyleSheet } from 'react-native';
+import { useEffect, useId } from 'react';
+import { StyleSheet } from 'react-native';
 import Animated, {
   Easing,
   ReduceMotion,
@@ -7,7 +7,6 @@ import Animated, {
   interpolate,
   useAnimatedProps,
   useAnimatedStyle,
-  useReducedMotion,
   useSharedValue,
   withDelay,
   withRepeat,
@@ -26,6 +25,7 @@ import Svg, {
 
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
+import { useReduceMotion } from '@/design/useReduceMotion';
 
 import { FLATTEN, type Point } from './geometry';
 
@@ -72,20 +72,6 @@ const GLINT = {
 };
 const PAD = 8;
 const TWINKLE = 2600;
-
-/**
- * Reduce Motion, live. Reanimated's own hook reads the setting once at launch, so a change made in
- * Settings while this screen is open would be missed.
- */
-function useReduceMotion() {
-  const [reduced, setReduced] = useState(useReducedMotion());
-  useEffect(() => {
-    AccessibilityInfo.isReduceMotionEnabled().then(setReduced);
-    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduced);
-    return () => subscription.remove();
-  }, []);
-  return reduced;
-}
 
 type Props = {
   /** Centre of the stone on screen. */

@@ -29,6 +29,7 @@ call so the build can proceed. **Owner review** marks the ones Chirag should con
 
 ## Plate differences to review
 
+- **Arrival:** the production plates' stones are smaller and placed differently from the golden, and differ between Day and Night. In Night, the Light stone sits at the left edge. Labels are pinned to the real stones. A regenerated plate could restore the golden's composition. **Owner review**
 - **Voice:** the golden shows a stacked-stone cairn with prayer flags at the lower left. The production `03-voice` plates do not have it. **Owner review**
 
 ## Known visual difference
