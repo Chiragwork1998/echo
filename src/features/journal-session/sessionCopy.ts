@@ -37,7 +37,7 @@ export const sessionCopy = {
     writeInstead: 'Write instead',
     unavailable: 'Recording isn’t available here.',
     failed: 'We couldn’t start recording.',
-    kept: 'Your recording is kept, and will return when you reopen ECHO.',
+    kept: 'We couldn’t finish saving this recording. It’s kept for now, so try again before leaving.',
     recovered: 'Rescued after ECHO closed. It may end early.',
     replaceTitle: 'Record again?',
     replaceMessage: 'A new recording replaces this one.',
