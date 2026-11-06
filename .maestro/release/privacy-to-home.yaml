@@ -1,0 +1,37 @@
+appId: com.thesaturnlabs.echo
+name: Release build, Leave no trace to Home
+# Run after onboard-to-rhythm.yaml and the reminder step by hand. Synthetic text only.
+---
+- extendedWaitUntil:
+    visible: 'Leave no trace.'
+    timeout: 30000
+- tapOn: 'Protect my journal'
+- extendedWaitUntil:
+    visible: 'Arrive as you are.'
+    timeout: 30000
+- tapOn: 'Steady'
+- tapOn: 'That’s close'
+- takeScreenshot: first-echo-shelf
+- tapOn:
+    point: 50%,53%
+- extendedWaitUntil:
+    visible: 'A PRIVATE JOURNAL'
+    timeout: 60000
+- extendedWaitUntil:
+    visible: 'Write'
+    timeout: 60000
+- tapOn: 'Write'
+- inputText: 'Today I sat by the window.'
+- extendedWaitUntil:
+    visible: 'Reflect'
+    timeout: 60000
+- tapOn: 'Reflect'
+- extendedWaitUntil:
+    visible: 'You made space for yourself.'
+    timeout: 120000
+- takeScreenshot: completion
+- tapOn: 'Enter your space'
+- extendedWaitUntil:
+    visible: 'Where are you, really\?'
+    timeout: 120000
+- takeScreenshot: home

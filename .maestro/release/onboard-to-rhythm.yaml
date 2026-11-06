@@ -1,0 +1,27 @@
+appId: com.thesaturnlabs.echo
+name: Release build, Landing to the reminder step
+# Run with run-release.sh. Stops on the Rhythm screen so the reminder switch can be tapped by hand.
+---
+- extendedWaitUntil:
+    visible: 'Meet the hidden parts of you.'
+    timeout: 60000
+- tapOn: 'BEGIN'
+- extendedWaitUntil:
+    visible: 'What brought you here?'
+    timeout: 30000
+- tapOn: 'Quiet the noise'
+- tapOn: 'Begin with this'
+- extendedWaitUntil:
+    visible: 'Which horizon needs your attention?'
+    timeout: 30000
+- tapOn: 'Where I am'
+- tapOn: 'Start here'
+- extendedWaitUntil:
+    visible: 'How should ECHO meet you?'
+    timeout: 30000
+- tapOn: 'Let me speak'
+- tapOn: 'Walk this way'
+- extendedWaitUntil:
+    visible: 'When can we meet you?'
+    timeout: 30000
+- takeScreenshot: rhythm
