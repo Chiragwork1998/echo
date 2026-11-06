@@ -37,6 +37,18 @@ const TARGETS = {
   daily: { back: '/home', next: '/home/complete', step: undefined },
 } as const;
 const go = (path: string | undefined) => path && router.navigate(path as never);
+/**
+ * Leaves for the screen this one opened from. The daily session is pushed over Home in the same
+ * stack, and `navigate` pushes a second Home over it instead of closing it. The session then stays
+ * mounted behind a Home that is still dissolved, and the person sees only the photograph.
+ * `dismissTo` pops to the Home that is already there, which closes the session and brings Home back.
+ */
+const goBack = (variant: SessionVariant) => {
+  const path = TARGETS[variant].back;
+  if (!path) return;
+  if (variant === 'daily') router.dismissTo(path as never);
+  else go(path);
+};
 
 /** Where a touch on the open sky starts another take: not mid-question, and not before the microphone is allowed. */
 const CAN_START: readonly SpeakView[] = [
@@ -168,9 +180,9 @@ export function useSessionController({ variant, initialMode, draftId }: SessionO
   // Opening a draft that no longer needs this screen.
   const failedCode = draft.status === 'error' ? draft.error?.code : undefined;
   useEffect(() => {
-    if (failedCode === 'not_found') go(target.back);
+    if (failedCode === 'not_found') goBack(variant);
     if (failedCode === 'not_draft') go(target.next);
-  }, [failedCode, target]);
+  }, [failedCode, target, variant]);
 
   const change = (body: string) => {
     if (body.length > 0) startTimer();
@@ -325,7 +337,7 @@ export function useSessionController({ variant, initialMode, draftId }: SessionO
       const result = await draft.commit({ durationSeconds: elapsed });
       // Only once the entry is durable. A failure leaves the draft whole, and Reflect ready to retry.
       if (result.ok || result.error.code === 'not_draft') go(target.next);
-      else if (result.error.code === 'not_found') go(target.back);
+      else if (result.error.code === 'not_found') goBack(variant);
     } finally {
       reflecting.current = false;
     }
@@ -388,7 +400,7 @@ export function useSessionController({ variant, initialMode, draftId }: SessionO
     if (voice.state === 'recording') await voice.stop();
     draft.update({ durationSeconds: elapsed });
     const saved = await draft.flush();
-    if (saved.ok) go(target.back);
+    if (saved.ok) goBack(variant);
     else setProblem(sessionCopy.errors.save);
   };
   const discardDraft = async () => {
@@ -396,13 +408,13 @@ export function useSessionController({ variant, initialMode, draftId }: SessionO
     if (voice.state === 'recording') await voice.cancel();
     transcription.abandon();
     const removed = await draft.discard();
-    if (removed.ok) go(target.back);
+    if (removed.ok) goBack(variant);
     else setProblem(sessionCopy.errors.save);
   };
   const back = () => {
     if (!hasWork) {
       void draft.discard();
-      go(target.back);
+      goBack(variant);
       return;
     }
     const { title, message, keep, discard, stay } = sessionCopy.leave;

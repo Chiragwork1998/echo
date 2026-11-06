@@ -28,7 +28,7 @@ jest.mock('expo-haptics', () => ({
 jest.mock('expo-router', () => {
   const { useEffect } = jest.requireActual('react');
   return {
-    router: { navigate: jest.fn() },
+    router: { navigate: jest.fn(), dismissTo: jest.fn() },
     Stack: { Screen: () => null },
     usePathname: () => '/home/session',
     // The screen is always focused here: run the effect on mount, and clean it up on unmount.
@@ -308,11 +308,28 @@ describe('JournalSession Back', () => {
     expect(router.navigate).toHaveBeenCalledWith('/onboarding/arrival');
   });
 
-  it('returns the daily session to Home', async () => {
+  // The daily session is pushed above Home in the same stack. `navigate` would push a second Home
+  // over it and leave the session mounted behind a Home that is still dissolved, so the person sees
+  // only the photograph. Returning pops to the Home that is already there.
+  it('returns the daily session to Home by popping to it', async () => {
     const input = await open('daily');
     await fireEvent(input(), 'blur');
     await fireEvent.press(screen.getByTestId('quiet-back'));
-    expect(router.navigate).toHaveBeenCalledWith('/home');
+    expect(router.dismissTo).toHaveBeenCalledWith('/home');
+    expect(router.navigate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['Keep draft', sessionCopy.leave.keep],
+    ['Discard', sessionCopy.leave.discard],
+  ])('%s also pops the daily session back to Home', async (_name, label) => {
+    const input = await open('daily');
+    await write(input);
+    await fireEvent(input(), 'blur');
+    await fireEvent.press(screen.getByTestId('quiet-back'));
+    await choose(label);
+    expect(router.dismissTo).toHaveBeenCalledWith('/home');
+    expect(router.navigate).not.toHaveBeenCalled();
   });
 
   it('asks Keep draft, Discard or Stay when there is writing', async () => {
