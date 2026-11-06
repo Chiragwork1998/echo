@@ -40,6 +40,7 @@ import type { SessionController } from './useSessionController';
 import { useQuietControls } from './useQuietControls';
 import { useScreenReader } from './useScreenReader';
 import { useStillness } from './useStillness';
+import { appendTranscript } from './useTranscription';
 import { VOICE_NOTES, VoiceNote } from './VoiceNote';
 import { GROUND_FADE, Wash } from './Wash';
 
@@ -101,7 +102,15 @@ export function ImmersiveSession({
   const voiceNote = !writing && VOICE_NOTES.includes(speakView);
   const pinned = retryable || failure !== null || voiceNote;
   // Shade only comes with words on the sky: the mountains are left alone until then.
-  const washed = draft.content.body.length > 0 || voiceNote || failure !== null;
+  // Words hidden (D-008): a spoken session shows the photograph and the breathing light, and nothing
+  // else. The words are still in the draft. Writing always shows what is typed.
+  const hidden = concealed || !session.bodyVisible;
+  const shownBody = hidden
+    ? ''
+    : writing
+      ? draft.content.body
+      : appendTranscript(draft.content.body, session.liveText);
+  const washed = shownBody.length > 0 || voiceNote || failure !== null;
   const quiet = useQuietControls({ always: screenReader, pinned });
 
   // The book (D-004). First Echo begins at the shelf, and the person chooses a volume. The daily
@@ -195,11 +204,9 @@ export function ImmersiveSession({
       else focusEnd();
       return;
     }
-    if (recording) void session.stop();
-    // A further take can begin while the last is still becoming words.
-    else if (speakView === 'ready' || speakView === 'recorded' || speakView === 'listening') {
-      session.record();
-    } else quiet.show();
+    // Speaking: stop what is recording, or begin another take. That includes after words failed to
+    // arrive, and while the last take is still becoming words.
+    if (!session.touchSky()) quiet.show();
   };
 
   const onMiddle = () => {
@@ -260,7 +267,8 @@ export function ImmersiveSession({
 
           <SkyInput
             inputRef={inputRef}
-            value={draft.content.body}
+            // Spoken words stay off the sky unless the person chose to see them. Writing always shows.
+            value={shownBody}
             label={session.prompt}
             editable={ready && writing}
             onChangeText={(body) => {
@@ -295,14 +303,16 @@ export function ImmersiveSession({
           ritual={ritual}
           // A screen reader is not made to wait for the book either.
           hurry={tapped || screenReader}
-          concealed={concealed}
+          concealed={hidden}
           arrival={session.arrival}
           onOpened={() => {
             setOpened(true);
             countOpen();
           }}
           inputRef={inputRef}
-          value={draft.content.body}
+          value={
+            writing ? draft.content.body : appendTranscript(draft.content.body, session.liveText)
+          }
           label={session.prompt}
           placeholder={onboarding ? copy.firstEcho.placeholder : undefined}
           lead={onboarding ? { lines: 2, text: copy.firstEcho.title } : undefined}
@@ -327,10 +337,10 @@ export function ImmersiveSession({
               <Beacon
                 kind="light"
                 visible={open && ready && !voiceNote && failure === null}
-                live={recording || busy}
+                live={recording || busy || session.listening}
                 x={bookFrame.width / 2}
                 y={
-                  concealed || draft.content.body.length === 0
+                  hidden || draft.content.body.length === 0
                     ? bookFrame.height / 2
                     : bookFrame.height - 30
                 }
@@ -445,6 +455,11 @@ export function ImmersiveSession({
           middleDisabled={busy || !ready}
           canReflect={canReflect}
           reflecting={draft.commitState === 'committing'}
+          words={
+            writing || !session.daily
+              ? undefined
+              : { label: session.wordsLabel, onPress: session.toggleWords }
+          }
           onBack={session.back}
           onMiddle={onMiddle}
           onReflect={() => void session.reflect()}

@@ -82,6 +82,7 @@ beforeEach(() => {
   setJournal(journal);
   voice = {
     available: true,
+    liveAvailable: false,
     state: 'idle',
     elapsedSeconds: 0,
     error: null,

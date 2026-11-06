@@ -282,8 +282,11 @@ describe('the spoken daily echo (D-006)', () => {
     usePreferences.setState({
       lastMode: 'speak',
       voiceConsent: { choice: 'allowed', version: VOICE_POLICY_VERSION },
+      // Words are hidden by default (D-008). This is the person who chose to see them.
+      wordsShown: true,
     });
   });
+  afterEach(() => usePreferences.setState({ wordsShown: false }));
 
   it('opens on the light, in Speak, and never starts recording by itself', async () => {
     await open();

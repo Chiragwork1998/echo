@@ -1,36 +1,19 @@
-import { timingSafeEqual } from 'node:crypto';
-
 import { normalise } from '../src/audio.js';
-import { run, VoiceError, type Config } from '../src/pipeline.js';
+import { clientIp, createLimiter, fail, json, tokenMatches } from '../src/guard.js';
+import { run, styleOf, VoiceError, type Config } from '../src/pipeline.js';
 
 const MAX_BYTES = 4_400_000;
 const ALLOWED = /\.(m4a|mp4|aac|mp3|wav|webm)$/i;
 const WINDOW_MS = 10 * 60 * 1000;
-const WINDOW_LIMIT = 30;
-const hits = new Map<string, number[]>();
+// A long live take that has to be sent after it ends arrives in pieces, one request each.
+const WINDOW_LIMIT = 60;
+const limited = createLimiter(WINDOW_MS, WINDOW_LIMIT);
 
-const json = (status: number, body: unknown) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
-  });
-
-const fail = (status: number, code: string, retryable = false) => json(status, { code, retryable });
-
-function tokenMatches(given: string | null, expected: string) {
-  const a = Buffer.from(given ?? '');
-  const b = Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a, b);
-}
-
-/** Best effort: per instance. Real protection before launch is noted in the README. */
-function limited(ip: string, now: number) {
-  const recent = (hits.get(ip) ?? []).filter((at) => now - at < WINDOW_MS);
-  recent.push(now);
-  hits.set(ip, recent);
-  return recent.length > WINDOW_LIMIT;
-}
-
+/**
+ * `POST /api/transcribe`, multipart `file` and an optional `style`: 'exact' (the default) returns
+ * the words as heard, 'tidy' returns the polished text. Holds nothing: the audio and the words
+ * exist in memory for the length of the request.
+ */
 export async function POST(request: Request) {
   const started = Date.now();
   const { OPENAI_API_KEY, ECHO_VOICE_TOKEN } = process.env;
@@ -38,8 +21,7 @@ export async function POST(request: Request) {
   if (!tokenMatches(request.headers.get('x-echo-voice-token'), ECHO_VOICE_TOKEN)) {
     return fail(401, 'unauthorized');
   }
-  const ip = (request.headers.get('x-forwarded-for') ?? 'unknown').split(',')[0]?.trim() ?? 'unknown';
-  if (limited(ip, started)) return fail(429, 'rate_limited', true);
+  if (limited(clientIp(request), started)) return fail(429, 'rate_limited', true);
   if (Number(request.headers.get('content-length') ?? 0) > MAX_BYTES + 2048) {
     return fail(413, 'too_long');
   }
@@ -50,6 +32,7 @@ export async function POST(request: Request) {
     if (!(file instanceof File) || file.size === 0) return fail(400, 'no_audio');
     if (file.size > MAX_BYTES) return fail(413, 'too_long');
     if (!ALLOWED.test(file.name)) return fail(415, 'unsupported_audio');
+    const style = styleOf(form.get('style'));
 
     const audio = await normalise({
       bytes: new Uint8Array(await file.arrayBuffer()),
@@ -62,10 +45,17 @@ export async function POST(request: Request) {
       polishModel: process.env.ECHO_POLISH_MODEL ?? 'gpt-6.1-terra',
       fetch,
     };
-    const result = await run(audio, config);
-    // Sizes and timing only. Never audio, text, or anything derived from them.
+    const result = await run(audio, config, style);
+    // Sizes, timing and which steps ran. Never audio, text, or anything derived from them.
     console.log(
-      JSON.stringify({ route: 'transcribe', bytes: file.size, ms: Date.now() - started, polished: result.polished }),
+      JSON.stringify({
+        route: 'transcribe',
+        bytes: file.size,
+        ms: Date.now() - started,
+        style,
+        polished: result.polished,
+        romanised: result.romanised,
+      }),
     );
     return json(200, result);
   } catch (error) {

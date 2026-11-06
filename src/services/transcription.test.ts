@@ -1,14 +1,19 @@
 import type { JournalResult, PlayableAudio } from '@/features/journal/types';
 
 import {
+  bytesPart,
   MAX_UPLOAD_BYTES,
+  PIECE_BYTES,
+  refineWords,
   TOKEN_HEADER,
   TRANSCRIBE_TIMEOUT_MS,
   transcribeEntryAudio,
   voiceEndpoint,
+  type RefineDeps,
   type TranscribeDeps,
   type TranscriptionErrorCode,
 } from './transcription';
+import { wavHeader } from './wav';
 
 jest.mock('@/features/journal/api', () => ({ openEntryAudio: jest.fn() }));
 
@@ -27,12 +32,11 @@ const reply = (status: number, body: unknown) =>
   }) as Response;
 const good = { text: SPOKEN, raw: 'um honestly', polished: true, languages: ['en'], seconds: 4.2 };
 
-// Expo's fetch needs a part with bytes(), such as an expo-file-system File, and rejects React
-// Native's { uri, name, type } on a device. Jest cannot show that, so this records what was sent.
+// Jest's FormData is not Expo's. This keeps every part, and the filename it was appended with.
 class RecordedForm {
   parts: [string, unknown, string?][] = [];
   append(name: string, value: unknown, filename?: string) {
-    this.parts.push([name, value, filename]);
+    this.parts.push(filename === undefined ? [name, value] : [name, value, filename]);
   }
 }
 const sentParts = (init: RequestInit) => (init.body as unknown as RecordedForm).parts;
@@ -52,11 +56,23 @@ let status: TranscribeDeps['status'];
 function audioAt(uri: string): JournalResult<PlayableAudio> {
   return { ok: true, value: { uri, release } };
 }
+// A part Expo's fetch can read has bytes(): an expo-file-system File. The tests stand one in.
+const filePart = (uri: string) =>
+  ({ uri, bytes: async () => new Uint8Array([1]) }) as unknown as Blob;
 const run = (overrides: Partial<TranscribeDeps> = {}, options = {}) =>
   transcribeEntryAudio(
     'draft-1',
     { open, ...options },
-    { fetch: send, url: URL_LOCAL, token: TOKEN, status, ...overrides },
+    {
+      fetch: send,
+      url: URL_LOCAL,
+      token: TOKEN,
+      status,
+      filePart,
+      style: () => 'exact',
+      online: async () => true,
+      ...overrides,
+    },
   );
 const failedWith = async (promise: ReturnType<typeof run>) => {
   const result = await promise;
@@ -119,21 +135,30 @@ describe('request building', () => {
     // No Content-Type: React Native adds the multipart boundary itself.
     expect(init.headers).toEqual({ [TOKEN_HEADER]: TOKEN, Accept: 'application/json' });
     expect(init.signal).toBeInstanceOf(AbortSignal);
-    const [part] = sentParts(init);
-    expect(part?.[0]).toBe('file');
-    expect(part?.[1]).toHaveProperty('bytes');
-    expect(part?.[2]).toBe('speech.aac');
+    // A file Expo's fetch can read (it has bytes()), named for an extension the server accepts, and
+    // the words the person asked for. Never React Native's { uri, name, type } part.
+    expect(sentParts(init)).toEqual([
+      ['file', expect.objectContaining({ uri: 'file:///cache/echo/take.aac' }), 'speech.aac'],
+      ['style', 'exact'],
+    ]);
+    expect(typeof (sentParts(init)[0]?.[1] as { bytes: unknown }).bytes).toBe('function');
+  });
+
+  it('asks for tidy words only when Tidy my words is on', async () => {
+    await run({ style: () => 'tidy' });
+    expect(sentParts(send.mock.calls[0]![1] as RequestInit)[1]).toEqual(['style', 'tidy']);
   });
 
   it.each([
-    ['file:///cache/take.m4a', 'speech.m4a'],
-    ['file:///cache/take.AAC', 'speech.aac'],
-    ['file:///cache/take.wav', 'speech.wav'],
-  ])('names %s as %s, an extension the server accepts', async (uri, name) => {
+    ['file:///cache/take.m4a', 'speech.m4a', 'audio/mp4'],
+    ['file:///cache/take.AAC', 'speech.aac', 'audio/aac'],
+    ['file:///cache/take.wav', 'speech.wav', 'audio/wav'],
+  ])('names %s as %s, an extension the server accepts', async (uri, name, type) => {
     open.mockResolvedValue(audioAt(uri));
     await run();
     const [, init] = send.mock.calls[0] as [string, RequestInit];
     expect(sentParts(init)[0]?.[2]).toBe(name);
+    expect(type).toMatch(/^audio\//);
     // The server's own rule: voice-api/api/transcribe.ts.
     expect(name).toMatch(/\.(m4a|mp4|aac|mp3|wav|webm)$/i);
   });
@@ -149,13 +174,7 @@ describe('request building', () => {
 
 describe('a recording too long for the server', () => {
   it('is refused before anything is sent, and the recording stays', async () => {
-    expect(
-      await failedWith(
-        run({
-          sizeOf: () => MAX_UPLOAD_BYTES + 1,
-        }),
-      ),
-    ).toEqual({
+    expect(await failedWith(run({ sizeOf: () => MAX_UPLOAD_BYTES + 1 }))).toEqual({
       code: 'too_long',
       retryable: false,
     });
@@ -203,10 +222,38 @@ describe('every way the server can answer', () => {
     expect(await failedWith(run())).toEqual({ code: 'no_speech', retryable: false });
   });
 
-  it('says offline when the phone cannot reach the server', async () => {
+  it('says offline only when the phone itself reports that it has no connection', async () => {
     send.mockRejectedValue(new TypeError('Network request failed'));
-    expect(await failedWith(run())).toEqual({ code: 'offline', retryable: true });
+    expect(await failedWith(run({ online: async () => false }))).toEqual({
+      code: 'offline',
+      retryable: true,
+    });
     expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not blame the connection for something unexpected', async () => {
+    send.mockRejectedValue(new Error('Unsupported FormDataPart implementation'));
+    for (const online of [
+      async () => true,
+      async () => null,
+      async () => Promise.reject(new Error('x')),
+    ]) {
+      expect(await failedWith(run({ online }))).toEqual({ code: 'unexpected', retryable: true });
+    }
+  });
+
+  it('does not blame the connection when the part cannot even be built', async () => {
+    const result = await failedWith(
+      run({
+        filePart: () => {
+          throw new Error('no such file');
+        },
+        online: async () => false,
+      }),
+    );
+    // Nothing was sent, so the network cannot be to blame, whatever the phone reports.
+    expect(send).not.toHaveBeenCalled();
+    expect(result).toEqual({ code: 'unexpected', retryable: true });
   });
 });
 
@@ -333,7 +380,7 @@ describe('the decrypted copy', () => {
     send.mockImplementation(() => {
       throw new Error('boom');
     });
-    expect((await failedWith(run())).code).toBe('offline');
+    expect((await failedWith(run())).code).toBe('unexpected');
     expect(release).toHaveBeenCalledTimes(1);
   });
 
@@ -367,5 +414,206 @@ describe('privacy', () => {
     await run();
     for (const spy of spies) expect(spy).not.toHaveBeenCalled();
     jest.restoreAllMocks();
+  });
+});
+
+// A live take is a 24 kHz WAV, far past what the server takes in one request.
+describe('a long WAV is sent in pieces', () => {
+  const RATE = 24_000;
+  /** About 4.8 MB of tone, with a quiet moment near where the first piece has to end. */
+  const wav = (() => {
+    const seconds = 100;
+    const samples = new Int16Array(RATE * seconds);
+    for (let i = 0; i < samples.length; i += 1) {
+      const at = i / RATE;
+      samples[i] = at >= 82.3 && at < 82.4 ? 0 : Math.round(8000 * Math.sin(i / 7));
+    }
+    const pcm = new Uint8Array(samples.buffer);
+    const file = new Uint8Array(44 + pcm.length);
+    file.set(wavHeader({ sampleRate: RATE, channels: 1 }, pcm.length));
+    file.set(pcm, 44);
+    return file;
+  })();
+  const readRange = async (_uri: string, offset: number, length: number) =>
+    wav.slice(offset, offset + length);
+  const long = (overrides: Partial<TranscribeDeps> = {}, options = {}) =>
+    run({ sizeOf: () => wav.length, readRange, ...overrides }, options);
+  const partBytes = async (init: RequestInit) =>
+    (await (sentParts(init)[0]![1] as { bytes: () => Promise<Uint8Array> }).bytes()) as Uint8Array;
+
+  beforeEach(() => open.mockResolvedValue(audioAt('file:///cache/echo/take.wav')));
+
+  it('sends each piece as a WAV of its own, in order, and joins the words', async () => {
+    send
+      .mockResolvedValueOnce(reply(200, { ...good, text: 'First part,' }))
+      .mockResolvedValueOnce(reply(200, { ...good, text: 'second part.', seconds: 3 }));
+    const result = await long();
+    expect(result).toEqual({
+      ok: true,
+      value: { text: 'First part, second part.', polished: true, languages: ['en'], seconds: 7.2 },
+    });
+    expect(send).toHaveBeenCalledTimes(2);
+
+    const sent: Uint8Array[] = [];
+    for (const call of send.mock.calls) {
+      const init = call[1] as RequestInit;
+      const bytes = await partBytes(init);
+      sent.push(bytes);
+      expect(bytes.length).toBeLessThanOrEqual(PIECE_BYTES);
+      expect(sentParts(init)[0]![2]).toBe('speech.wav');
+      expect(sentParts(init)[1]).toEqual(['style', 'exact']);
+      expect(String.fromCharCode(...bytes.subarray(0, 4))).toBe('RIFF');
+    }
+    // Nothing is lost or repeated: the pieces' samples are the file's samples, in order.
+    const joined = new Uint8Array(sent.reduce((total, piece) => total + piece.length - 44, 0));
+    let at = 0;
+    for (const piece of sent) {
+      joined.set(piece.subarray(44), at);
+      at += piece.length - 44;
+    }
+    expect(joined.length).toBe(wav.length - 44);
+    expect(joined.every((byte, index) => byte === wav[44 + index])).toBe(true);
+    // The first cut is in the quiet moment, not in the middle of a word.
+    const firstSeconds = (sent[0]!.length - 44) / 2 / RATE;
+    expect(firstSeconds).toBeGreaterThan(82.3);
+    expect(firstSeconds).toBeLessThan(82.4);
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not treat a piece with nothing said in it as a failure', async () => {
+    send
+      .mockResolvedValueOnce(reply(422, { code: 'empty', retryable: false }))
+      .mockResolvedValueOnce(reply(200, { ...good, text: 'Only this.' }));
+    expect(await long()).toMatchObject({ ok: true, value: { text: 'Only this.' } });
+    send.mockReset();
+    send.mockResolvedValue(reply(422, { code: 'empty', retryable: false }));
+    expect(await failedWith(long())).toEqual({ code: 'no_speech', retryable: false });
+  });
+
+  it('fails the whole take when a piece fails, and the recording stays', async () => {
+    send
+      .mockResolvedValueOnce(reply(200, good))
+      .mockResolvedValueOnce(reply(503, { code: 'internal', retryable: true }));
+    expect(await failedWith(long())).toEqual({ code: 'server', retryable: true });
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops at once when the person goes on', async () => {
+    const outside = new AbortController();
+    send.mockImplementation(async () => {
+      outside.abort();
+      return reply(200, good);
+    });
+    expect(await failedWith(long({}, { signal: outside.signal }))).toEqual({
+      code: 'cancelled',
+      retryable: false,
+    });
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('still refuses a long recording that is not a WAV', async () => {
+    open.mockResolvedValue(audioAt('file:///cache/echo/take.aac'));
+    expect(await failedWith(long())).toEqual({ code: 'too_long', retryable: false });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('says the recording could not be read when it will not open as a WAV', async () => {
+    expect(await failedWith(long({ readRange: async () => new Uint8Array(100) }))).toEqual({
+      code: 'unsupported',
+      retryable: false,
+    });
+    expect(
+      await failedWith(
+        long({
+          readRange: async () => {
+            throw new Error('io');
+          },
+        }),
+      ),
+    ).toEqual({ code: 'audio_unavailable', retryable: true });
+  });
+
+  it('wraps in-memory bytes as something Expo can send as a file', async () => {
+    const part = bytesPart(new Uint8Array([9, 8]), 'speech.wav', 'audio/wav') as unknown as {
+      bytes: () => Promise<Uint8Array>;
+      name: string;
+      type: string;
+    };
+    expect([...(await part.bytes())]).toEqual([9, 8]);
+    expect(part).toMatchObject({ name: 'speech.wav', type: 'audio/wav' });
+  });
+});
+
+describe('refineWords: the same rules for words heard live', () => {
+  const refineRun = (text: string, overrides: Partial<RefineDeps> = {}) =>
+    refineWords(
+      text,
+      {},
+      {
+        fetch: send,
+        url: URL_LOCAL,
+        token: TOKEN,
+        status,
+        style: () => 'exact',
+        online: async () => true,
+        ...overrides,
+      },
+    );
+
+  it('keeps exact words as they are without any request at all', async () => {
+    const said = 'Um, I miss him. Actually no, I needed him.';
+    expect(await refineRun(`  ${said} `)).toEqual({ ok: true, value: { text: said } });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('sends Hindi to be written in Roman script, as exact', async () => {
+    send.mockResolvedValue(reply(200, { text: 'yaar mujhe nahi pata', style: 'exact' }));
+    expect(await refineRun('यार मुझे नहीं पता')).toEqual({
+      ok: true,
+      value: { text: 'yaar mujhe nahi pata' },
+    });
+    const [endpoint, init] = send.mock.calls[0] as [string, RequestInit];
+    expect(endpoint).toBe('http://127.0.0.1:8787/api/refine');
+    expect(JSON.parse(String(init.body))).toEqual({ text: 'यार मुझे नहीं पता', style: 'exact' });
+    expect((init.headers as Record<string, string>)[TOKEN_HEADER]).toBe(TOKEN);
+  });
+
+  it('tidies when Tidy my words is on', async () => {
+    send.mockResolvedValue(reply(200, { text: 'I miss him.' }));
+    expect(await refineRun('um I miss him', { style: () => 'tidy' })).toEqual({
+      ok: true,
+      value: { text: 'I miss him.' },
+    });
+    expect(JSON.parse(String((send.mock.calls[0]![1] as RequestInit).body)).style).toBe('tidy');
+  });
+
+  it('sends nothing without consent', async () => {
+    expect(await refineRun('यार', { status: () => 'voice_only' })).toEqual({
+      ok: false,
+      error: { code: 'consent_required', retryable: false },
+    });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('names a failure as it was: offline only when it is', async () => {
+    send.mockRejectedValue(new Error('x'));
+    expect(await refineRun('यार', { online: async () => false })).toEqual({
+      ok: false,
+      error: { code: 'offline', retryable: true },
+    });
+    expect(await refineRun('यार')).toEqual({
+      ok: false,
+      error: { code: 'unexpected', retryable: true },
+    });
+    send.mockResolvedValue(reply(500, undefined));
+    expect(await refineRun('यार')).toEqual({
+      ok: false,
+      error: { code: 'server', retryable: true },
+    });
+    send.mockResolvedValue(reply(200, { nothing: 1 }));
+    expect(await refineRun('यार')).toEqual({
+      ok: false,
+      error: { code: 'invalid_response', retryable: false },
+    });
   });
 });

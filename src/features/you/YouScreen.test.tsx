@@ -185,7 +185,7 @@ describe('You: privacy', () => {
     await render(<YouScreen />);
     expect(screen.getByLabelText(new RegExp(`${youCopy.backup}. Not available yet`))).toBeTruthy();
     expect(screen.getByLabelText(new RegExp(`${youCopy.ai}. Not available yet`))).toBeTruthy();
-    expect(screen.getAllByRole('switch')).toHaveLength(3);
+    expect(screen.getAllByRole('switch')).toHaveLength(4);
   });
 });
 
@@ -238,6 +238,29 @@ describe('You: Turn my voice into words', () => {
       usePreferences.setState({ voiceConsent: { choice: 'allowed', version: 0 } }),
     );
     expect(voiceSwitch()).not.toBeChecked();
+  });
+});
+
+describe('You: Tidy my words (D-008)', () => {
+  const tidySwitch = () => screen.getByRole('switch', { name: youCopy.tidyWords });
+  beforeEach(() => usePreferences.setState({ tidyWords: false }));
+
+  it('is off by default, so a journal keeps the exact words', async () => {
+    await render(<YouScreen />);
+    expect(tidySwitch()).not.toBeChecked();
+    expect(usePreferences.getState().tidyWords).toBe(false);
+  });
+
+  it('turns on and off at once, and says what it does to the words and to OpenAI', async () => {
+    await render(<YouScreen />);
+    await fireEvent.press(tidySwitch());
+    expect(usePreferences.getState().tidyWords).toBe(true);
+    expect(tidySwitch()).toBeChecked();
+    await fireEvent.press(tidySwitch());
+    expect(usePreferences.getState().tidyWords).toBe(false);
+    expect(youCopy.tidyWordsDetail).toMatch(/exact words/);
+    expect(youCopy.tidyWordsDetail).toMatch(/30 days/);
+    expect(youCopy.voiceWordsDetail).toMatch(/not stored/);
   });
 });
 

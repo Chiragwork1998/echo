@@ -105,6 +105,12 @@ function Privacy() {
         hint={youCopy.voiceWordsDetail}
       />
       {voice.sheet}
+      <ToggleRow
+        label={youCopy.tidyWords}
+        value={voice.tidy}
+        onChange={voice.changeTidy}
+        hint={youCopy.tidyWordsDetail}
+      />
       <Section>
         <Row label={youCopy.voiceWordsRow} detail={youCopy.voiceWordsDetail} />
         <Row label={youCopy.backup} detail={youCopy.backupDetail} />

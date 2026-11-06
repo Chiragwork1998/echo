@@ -9,6 +9,8 @@ process.env.ECHO_FFMPEG ??= 'ffmpeg';
 const routes = {
   '/api/transcribe': (await import('./api/transcribe.ts')).POST,
   '/api/patterns': (await import('./api/patterns.js')).POST,
+  '/api/refine': (await import('./api/refine.js')).POST,
+  '/api/live-session': (await import('./api/live-session.js')).POST,
 } as const;
 
 const PORT = Number(process.env.PORT ?? 8787);

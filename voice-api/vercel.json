@@ -8,6 +8,14 @@
     "api/patterns.ts": {
       "maxDuration": 120,
       "memory": 1024
+    },
+    "api/refine.ts": {
+      "maxDuration": 60,
+      "memory": 512
+    },
+    "api/live-session.ts": {
+      "maxDuration": 30,
+      "memory": 256
     }
   }
 }

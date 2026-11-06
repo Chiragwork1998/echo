@@ -7,11 +7,18 @@ import { useTone } from '@/features/onboarding/rhythm/tone';
 
 import { sessionCopy } from './sessionCopy';
 
+/**
+ * 'voice' is the question before any voice is sent. 'live' is the first time Show words is turned
+ * on, which streams the voice while it is spoken and says so (docs/OWNER_DECISIONS.md, D-008).
+ */
+export type ConsentKind = 'voice' | 'live';
+
 type Props = {
   visible: boolean;
-  /** Allow: this voice, and the ones after it, may be sent. */
+  kind?: ConsentKind;
+  /** Allow: this voice, and the ones after it, may be sent. For 'live': Show words. */
   onAllow: () => void;
-  /** Keep my voice only: recordings stay on this phone and are never sent. */
+  /** Keep my voice only: recordings stay on this phone and are never sent. For 'live': keep words hidden. */
   onKeep: () => void;
   /**
    * The system Back button. The sheet cannot be waved away by touching outside it, and nothing is
@@ -25,9 +32,10 @@ type Props = {
  * rather than a screen, so the person never loses their place. Used before the first upload and
  * again from You.
  */
-export function VoiceConsentSheet({ visible, onAllow, onKeep, onClose }: Props) {
+export function VoiceConsentSheet({ visible, kind = 'voice', onAllow, onKeep, onClose }: Props) {
   const tone = useTone();
-  const { title, intro, facts, allow, keep, note } = sessionCopy.consent;
+  const { title, intro, facts, allow, keep, note } =
+    kind === 'live' ? sessionCopy.liveConsent : sessionCopy.consent;
   return (
     <Modal transparent animationType="fade" visible={visible} onRequestClose={onClose}>
       <View style={styles.scrim}>

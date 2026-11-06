@@ -110,6 +110,7 @@ export function JournalSession(props: Props) {
       {/* Before a voice first leaves the phone, over whichever page this is. */}
       <VoiceConsentSheet
         visible={session.consentOpen}
+        kind={session.consentKind}
         onAllow={() => session.chooseConsent('allowed')}
         onKeep={() => session.chooseConsent('voice_only')}
         onClose={() => session.chooseConsent('later')}
