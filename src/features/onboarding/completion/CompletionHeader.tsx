@@ -15,6 +15,9 @@ const RULE = { width: 20, height: 0.7, top: 11, opacity: 0.85 };
 // steps are counted.
 const DOT = { size: 6, pitch: 8.55 };
 const COUNT = { size: 10.7, line: 13, gap: 11.2 };
+// On a 320 pt phone the count and dots, at the golden's size, run into the wordmark. Smaller dots and
+// a tighter count leave the 13 pt a 360 pt phone has.
+const NARROW = { dot: { size: 5, pitch: 6.9 }, countGap: 7 };
 const PROGRESS_TOP = 13.5;
 const PROGRESS_EDGE = 16; // from the screen's right edge, past the gutter
 const INACTIVE_OPACITY = 0.28;
@@ -25,7 +28,8 @@ const INACTIVE_OPACITY = 0.28;
  */
 export function CompletionHeader({ step, total = 8 }: { step?: number; total?: number }) {
   const { colors } = useTheme();
-  const { gutter } = useLayout();
+  const { gutter, narrow } = useLayout();
+  const dot = narrow ? NARROW.dot : DOT;
   return (
     <View style={styles.band}>
       <View
@@ -45,7 +49,11 @@ export function CompletionHeader({ step, total = 8 }: { step?: number; total?: n
       </View>
       {step !== undefined && (
         <View
-          style={[styles.progress, { right: PROGRESS_EDGE - gutter }]}
+          style={[
+            styles.progress,
+            { right: PROGRESS_EDGE - gutter },
+            narrow && { gap: NARROW.countGap },
+          ]}
           accessible
           accessibilityRole="progressbar"
           accessibilityLabel={`Step ${step} of ${total}`}
@@ -60,13 +68,17 @@ export function CompletionHeader({ step, total = 8 }: { step?: number; total?: n
           >
             {`${step}/${total}`}
           </EchoText>
-          <View style={styles.dots}>
+          <View style={[styles.dots, { gap: dot.pitch - dot.size }]}>
             {Array.from({ length: total }, (_, index) => (
               <View
                 key={index}
+                testID="completion-dot"
                 style={[
                   styles.dot,
                   {
+                    width: dot.size,
+                    height: dot.size,
+                    borderRadius: dot.size / 2,
                     backgroundColor: colors.surfacePrimary,
                     opacity: index < step ? 1 : INACTIVE_OPACITY,
                   },

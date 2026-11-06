@@ -33,6 +33,24 @@ describe('useLayout on a tablet', () => {
   });
 });
 
+describe('useLayout on a narrow phone', () => {
+  it('is narrow at 320 pt, where three things in a header run out of room', async () => {
+    setWindow(320, 568);
+    expect((await layout()).narrow).toBe(true);
+  });
+
+  it('is not narrow at 360 pt or wider', async () => {
+    for (const [width, height] of [
+      [360, 780],
+      [393, 852],
+      [768, 1024],
+    ] as const) {
+      setWindow(width, height);
+      expect((await layout()).narrow).toBe(false);
+    }
+  });
+});
+
 describe('useLayout on a phone', () => {
   it.each([
     [320, 568],

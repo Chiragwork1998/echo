@@ -8,6 +8,11 @@ const TABLET_COLUMN = 430;
  * unfolded foldable, whose crop would carry the scenery controls off the rocks and the river.
  */
 const PHONE_MAX_WIDTH = 440;
+/**
+ * Below this the goldens' headers, which put the wordmark, the progress and a control side by side,
+ * run out of room: at 320 pt they touch. 360 pt phones still clear each other by 13 pt or more.
+ */
+const NARROW_MAX_WIDTH = 350;
 
 /** Responsive rules from product-handoff/specs/RESPONSIVE_ACCESSIBILITY.md. */
 export function useLayout() {
@@ -26,6 +31,8 @@ export function useLayout() {
     large,
     ctaWidth: Math.min(width - gutter * 2, CTA_MAX_WIDTH),
     landscape,
+    /** A 320 pt phone: headers that sit three things in a row give way. See NARROW_MAX_WIDTH. */
+    narrow: screenWidth < NARROW_MAX_WIDTH,
     /** 125-200% text: screens switch to the scrolling accessible layout. */
     accessibleLayout,
     /**

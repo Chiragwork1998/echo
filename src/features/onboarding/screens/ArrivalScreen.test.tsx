@@ -273,6 +273,15 @@ describe('ArrivalScreen at large text sizes and in landscape', () => {
     expect(screen.getAllByRole('radio')).toHaveLength(5);
   });
 
+  it('keeps the stones, the progress and Skip on a 320 pt phone, with the header set to fit', async () => {
+    setWindow(320, 568);
+    await render(<ArrivalScreen />);
+    expect(screen.getAllByTestId('stone-ripple', { includeHiddenElements: true }).length).toBe(5);
+    expect(screen.getByRole('progressbar', { name: 'Step 6 of 8' })).toBeTruthy();
+    expect(skip()).toBeTruthy();
+    expect(screen.getByRole('header', { name: copy.landing.wordmark })).toBeTruthy();
+  });
+
   it('uses the list on a tablet, where the stones would land off the water', async () => {
     setWindow(768, 1024);
     await render(<ArrivalScreen />);

@@ -59,7 +59,7 @@ function Stream({ mood, onChoose }: { mood?: Mood; onChoose: (value: Mood) => vo
 }
 
 export function ArrivalScreen() {
-  const { accessibleLayout, sceneryFits } = useLayout();
+  const { accessibleLayout, sceneryFits, narrow } = useLayout();
   const mood = useOnboarding((state) => state.mood);
   const update = useOnboarding((state) => state.update);
 
@@ -100,7 +100,9 @@ export function ArrivalScreen() {
   return (
     <ScreenShell
       screen="arrival"
-      header={<ArrivalHeader step={STEP} onSkip={skip} stacked={accessibleLayout} />}
+      // Large text, and a 320 pt phone, where the wordmark and the centred progress would touch:
+      // the progress drops beneath them.
+      header={<ArrivalHeader step={STEP} onSkip={skip} stacked={accessibleLayout || narrow} />}
       footer={
         <PrimaryCTA
           label={copy.arrival.cta}
