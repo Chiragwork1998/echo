@@ -6,6 +6,7 @@
 // The speech is synthetic (macOS `say`) and lives in assets/e2e. It holds no real person's words.
 import { Asset } from 'expo-asset';
 import { Directory, File, Paths } from 'expo-file-system';
+import { deactivateKeepAwake, ExpoKeepAwakeTag } from 'expo-keep-awake';
 import { useEffect, useMemo, useState } from 'react';
 
 // The two hooks below deliberately stand in for expo-audio's own.
@@ -19,6 +20,17 @@ const AAC = HINDI
 const WAV = HINDI
   ? require('../../../assets/e2e/speech-hi.wav')
   : require('../../../assets/e2e/speech-en.wav');
+
+// Expo's development wrapper (expo/src/launch/withDevTools) holds the screen awake, under this tag, in
+// every development build, Expo Go included. A release build does not, so left alone it hides every
+// bug that a sleeping screen causes: an emulator under it never sleeps, however it is set. This file
+// is only ever in an end-to-end run, so it lets go, and the screen sleeps as it does on a phone.
+const letGoOfDevelopmentKeepAwake = () =>
+  void deactivateKeepAwake(ExpoKeepAwakeTag).catch(() => undefined);
+const lettingGo = setInterval(letGoOfDevelopmentKeepAwake, 2000) as unknown as {
+  unref?: () => void;
+};
+lettingGo.unref?.();
 
 const RATE = 24_000;
 const WAV_HEADER = 44;

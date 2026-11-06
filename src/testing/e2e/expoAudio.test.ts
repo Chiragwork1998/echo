@@ -6,6 +6,10 @@ import { createRecorder, createStream } from './expoAudio';
 const mockFiles = new Set<string>();
 
 jest.mock('expo-audio', () => ({}));
+jest.mock('expo-keep-awake', () => ({
+  ExpoKeepAwakeTag: 'ExpoKeepAwakeDefaultTag',
+  deactivateKeepAwake: jest.fn(async () => undefined),
+}));
 jest.mock('expo-asset', () => ({
   Asset: {
     fromModule: () => ({
@@ -86,5 +90,26 @@ describe('the stand-in stream', () => {
     await stream.startFileRecordingAsync({ uri: 'file:///cache/Audio/live-1.wav' });
 
     expect(mockFiles.has('file:///cache/Audio/live-1.wav')).toBe(true);
+  });
+});
+
+describe("the stand-in and Expo's development keep-awake", () => {
+  // Expo's development wrapper (expo/src/launch/withDevTools) holds the screen awake in every
+  // development build, Expo Go included, and a release build does not. Left alone it hides every
+  // bug a sleeping screen causes, so the stand-in, which is only ever in an end-to-end run, lets go.
+  it('lets go of it, so the screen can sleep as it does on a phone', () => {
+    jest.useFakeTimers();
+    try {
+      const keepAwake = jest.requireMock('expo-keep-awake');
+      keepAwake.deactivateKeepAwake.mockClear();
+      jest.isolateModules(() => {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        require('./expoAudio');
+      });
+      jest.advanceTimersByTime(2100);
+      expect(keepAwake.deactivateKeepAwake).toHaveBeenCalledWith(keepAwake.ExpoKeepAwakeTag);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
