@@ -1,13 +1,17 @@
 import * as Haptics from 'expo-haptics';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, BackHandler, Keyboard } from 'react-native';
+import { Alert, AppState, BackHandler, Keyboard } from 'react-native';
 
 import { copy } from '@/content/copy';
 import { holdTheme } from '@/design/themeHold';
 import { useDraft, useVoiceRecorder, type JournalErrorCode } from '@/features/journal';
 import { backPath, nextPath, onboardingSteps } from '@/features/onboarding/flow';
-import { requestMicrophonePermission, openAppSettings } from '@/services/permissions';
+import {
+  getMicrophonePermission,
+  openAppSettings,
+  requestMicrophonePermission,
+} from '@/services/permissions';
 import { UNAVAILABLE_CODES } from '@/services/transcription';
 import { useOnboarding } from '@/state/onboarding';
 import { liveAllowed, usePreferences, useVoiceStatus } from '@/state/preferences';
@@ -123,6 +127,25 @@ export function useSessionController({ variant, initialMode, draftId }: SessionO
   const [permission, setPermission] = useState<'none' | 'explain' | 'denied'>('none');
   const [problem, setProblem] = useState<string | null>(null);
   const reflecting = useRef(false);
+
+  // A person told the microphone is off goes to Settings, allows it, and comes back. The note must
+  // not still say it is off over a page that does nothing when touched, so coming back to the
+  // foreground asks again, and the note goes if it was allowed. It only reads the state: nothing is
+  // asked of the person, and nothing starts the microphone.
+  useEffect(() => {
+    if (permission === 'none') return;
+    let live = true;
+    const subscription = AppState.addEventListener('change', (next) => {
+      if (next !== 'active') return;
+      void getMicrophonePermission().then((now) => {
+        if (live && now.status === 'granted') setPermission('none');
+      });
+    });
+    return () => {
+      live = false;
+      subscription.remove();
+    };
+  }, [permission]);
 
   const draft = useDraft({
     draftId,

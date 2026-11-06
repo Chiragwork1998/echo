@@ -2,7 +2,7 @@ import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import type { ComponentProps } from 'react';
-import { Alert, Text } from 'react-native';
+import { Alert, AppState, Text } from 'react-native';
 
 import { copy } from '@/content/copy';
 import { ThemeProvider, useTheme } from '@/design/theme';
@@ -13,7 +13,11 @@ import {
   useVoiceRecorder,
   type Journal,
 } from '@/features/journal';
-import { openAppSettings, requestMicrophonePermission } from '@/services/permissions';
+import {
+  getMicrophonePermission,
+  openAppSettings,
+  requestMicrophonePermission,
+} from '@/services/permissions';
 import { initialOnboarding, useOnboarding } from '@/state/onboarding';
 import { usePreferences } from '@/state/preferences';
 import { render } from '@/testing/render';
@@ -48,6 +52,7 @@ jest.mock('@/features/journal', () => ({
   useVoiceRecorder: jest.fn(),
 }));
 jest.mock('@/services/permissions', () => ({
+  getMicrophonePermission: jest.fn(),
   requestMicrophonePermission: jest.fn(),
   openAppSettings: jest.fn(),
 }));
@@ -59,6 +64,9 @@ function JournalSession(props: ComponentProps<typeof Session>) {
 
 const BODY = 'something I have carried';
 const alert = jest.spyOn(Alert, 'alert');
+/** The handlers the session gave the app's foreground/background events, so a test can fire them. */
+let appStateHandlers: ((state: string) => void)[] = [];
+const appState = (state: string) => appStateHandlers.forEach((handler) => handler(state));
 
 type Voice = ReturnType<typeof useVoiceRecorder>;
 let voice: Voice;
@@ -67,6 +75,14 @@ let commitFails: boolean;
 
 beforeEach(() => {
   jest.clearAllMocks();
+  appStateHandlers = [];
+  jest.spyOn(AppState, 'addEventListener').mockImplementation(((
+    type: string,
+    handler: (state: string) => void,
+  ) => {
+    if (type === 'change') appStateHandlers.push(handler);
+    return { remove: () => undefined };
+  }) as never);
   useOnboarding.setState({ ...initialOnboarding, mode: undefined, mood: undefined });
   // Speak is the default (D-006). The writing tests below start from a person who last wrote.
   usePreferences.setState({ lastMode: 'write', voiceConsent: null });
@@ -405,6 +421,35 @@ describe('JournalSession Speak', () => {
     expect(openAppSettings).toHaveBeenCalledTimes(1);
     await fireEvent.press(screen.getByRole('button', { name: sessionCopy.speak.writeInstead }));
     expect(screen.getByLabelText(copy.firstEcho.title)).toBeTruthy();
+  });
+
+  // The person leaves for Settings, allows the microphone, and comes back. A note that still says it
+  // is off, over a page that does nothing when touched, strands them: they would have to leave and
+  // begin again. So coming back checks, and the note goes if it was allowed.
+  it('clears the denial when the app comes back with the microphone allowed', async () => {
+    voice.start = jest.fn(async () => 'permission_required' as const);
+    jest
+      .mocked(requestMicrophonePermission)
+      .mockResolvedValue({ status: 'denied', canAskAgain: false });
+    await speak();
+    await fireEvent.press(screen.getByRole('button', { name: sessionCopy.speak.record }));
+    await fireEvent.press(await screen.findByRole('button', { name: sessionCopy.speak.allow }));
+    expect(await screen.findByText(sessionCopy.speak.denied)).toBeTruthy();
+
+    // Still off when the app comes back from somewhere else: the note stays.
+    jest
+      .mocked(getMicrophonePermission)
+      .mockResolvedValue({ status: 'denied', canAskAgain: false });
+    await act(async () => appState('active'));
+    expect(screen.getByText(sessionCopy.speak.denied)).toBeTruthy();
+
+    // Allowed in Settings: back to the page that can record.
+    jest
+      .mocked(getMicrophonePermission)
+      .mockResolvedValue({ status: 'granted', canAskAgain: true });
+    await act(async () => appState('active'));
+    await waitFor(() => expect(screen.queryByText(sessionCopy.speak.denied)).toBeNull());
+    expect(screen.getByRole('button', { name: sessionCopy.speak.record })).toBeTruthy();
   });
 
   it('shows one stop control, the time, and holds the mode switch while recording', async () => {
