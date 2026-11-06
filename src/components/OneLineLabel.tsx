@@ -24,14 +24,17 @@ export function OneLineLabel({ style, children, ...text }: ComponentProps<typeof
       >
         {children}
       </EchoText>
-      <EchoText {...text} numberOfLines={1} style={[style, styles.shown]}>
-        {children}
-      </EchoText>
+      <View pointerEvents="none" style={styles.room}>
+        <EchoText {...text} numberOfLines={1} style={[style, styles.shown]}>
+          {children}
+        </EchoText>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   sizer: { opacity: 0 },
-  shown: { position: 'absolute', top: 0, left: -SPARE, right: -SPARE, textAlign: 'center' },
+  room: { position: 'absolute', top: 0, left: -SPARE, right: -SPARE },
+  shown: { textAlign: 'center' },
 });

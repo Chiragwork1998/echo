@@ -10,11 +10,11 @@ describe('OneLineLabel', () => {
     await render(<OneLineLabel variant="bodyM">Write instead</OneLineLabel>);
     const shown = screen.getByText('Write instead');
     expect(shown.props.numberOfLines).toBe(1);
-    const style = StyleSheet.flatten(shown.props.style);
-    expect(style.position).toBe('absolute');
-    expect(style.left).toBeLessThan(0);
-    expect(style.right).toBeLessThan(0);
-    expect(style.textAlign).toBe('center');
+    expect(StyleSheet.flatten(shown.props.style).textAlign).toBe('center');
+    const room = StyleSheet.flatten(shown.parent?.props.style);
+    expect(room.position).toBe('absolute');
+    expect(room.left).toBeLessThan(0);
+    expect(room.right).toBeLessThan(0);
   });
 
   it('keeps its copy for sizing hidden, so a screen reader hears the label once', async () => {
