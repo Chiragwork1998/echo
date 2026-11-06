@@ -10,6 +10,7 @@ import { usePreferences, useVoiceStatus } from '@/state/preferences';
  */
 export function useVoiceSetting() {
   const status = useVoiceStatus();
+  const tidy = usePreferences((state) => state.tidyWords);
   const [asking, setAsking] = useState(false);
   const { setVoiceConsent } = usePreferences.getState();
 
@@ -30,6 +31,9 @@ export function useVoiceSetting() {
 
   return {
     enabled: status === 'allowed',
+    /** Tidy my words: off keeps the exact words. It changes what OpenAI does, not whether to ask. */
+    tidy,
+    changeTidy: (next: boolean) => usePreferences.getState().setTidyWords(next),
     change: (next: boolean) => (next ? setAsking(true) : setVoiceConsent('voice_only')),
     sheet,
   };

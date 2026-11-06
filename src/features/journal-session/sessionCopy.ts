@@ -43,6 +43,8 @@ export const sessionCopy = {
         'This recording is too long to turn into words in one go. It’s safe on this phone, and you can write instead.',
       noSpeech: 'ECHO didn’t hear any words. Your recording is safe.',
       unsupported: 'ECHO couldn’t read this recording. It’s safe on this phone.',
+      unexpected:
+        'Something went wrong while sending. Your recording is safe, and trying again may work.',
       audio: 'ECHO couldn’t open this recording just now. It’s safe on this phone.',
       lost: 'One part of what you said couldn’t be turned into words. The rest is here.',
     },
@@ -66,8 +68,9 @@ export const sessionCopy = {
   },
   /**
    * Said before a voice first leaves the phone, and again from You. Needs the owner's approval, and
-   * the facts need checking against OpenAI's current terms before release. Raise
-   * VOICE_POLICY_VERSION in state/preferences.ts whenever any of it changes.
+   * the facts need checking against OpenAI's current terms before release (checked 2026-11-06 against
+   * developers.openai.com/api/docs/guides/your-data). Raise VOICE_POLICY_VERSION in
+   * state/preferences.ts whenever any of it changes.
    */
   consent: {
     title: 'Turn your voice into words?',
@@ -75,14 +78,39 @@ export const sessionCopy = {
     facts: [
       'Your voice goes to OpenAI to become text, and is sent securely.',
       'OpenAI’s transcription service does not store it, and does not train on it.',
-      'The text then goes to OpenAI once more to be cleaned up. OpenAI may keep that text for up to 30 days to check for abuse, then deletes it. It is not used for training.',
       'ECHO’s own server keeps nothing.',
-      'Your recording and the words stay encrypted on this phone.',
+      'Your recording and your words stay encrypted on this phone.',
+      'If you speak Hindi, or turn on Tidy my words, the text also goes through a second step at OpenAI. OpenAI may keep that text for up to 30 days to check for abuse, then deletes it. It is not used for training.',
     ],
     allow: 'Allow',
     keep: 'Keep my voice only',
     note: 'Keep my voice only saves your recording on this phone and never sends it. You can change this any time in You.',
   },
+  /**
+   * The first time Show words is turned on. Live words stream the voice while it is spoken, and
+   * OpenAI's realtime service keeps abuse-monitoring data for up to 30 days, so this is said plainly
+   * and hiding words is offered as the way to avoid it. Needs the owner's approval.
+   */
+  liveConsent: {
+    title: 'Show your words as you speak?',
+    intro:
+      'To show words while you talk, ECHO has to send your voice to OpenAI as you speak. This is what that means.',
+    facts: [
+      'Your voice streams to OpenAI as you speak, sent securely, and comes back as words on the screen.',
+      'OpenAI may keep what is sent and received for up to 30 days to check for abuse, then deletes it. It is not used for training.',
+      'ECHO’s own server keeps nothing. Your recording and your words stay encrypted on this phone.',
+      'If you speak Hindi, or turn on Tidy my words, the finished text also goes through a second step at OpenAI, kept for up to 30 days in the same way.',
+      'Hiding words avoids all of this. Your voice is then sent once, when you stop, to a transcription service that does not store it.',
+    ],
+    allow: 'Show words',
+    keep: 'Keep words hidden',
+    note: 'You can change this any time, with Show words or Hide words while you speak.',
+  },
+  /** The quiet word for the words, beside Back and Stop. Names what a tap does. */
+  words: { show: 'Show words', hide: 'Hide words' },
+  /** Live words stopped, mid-take. Said calmly, and always visible. */
+  liveStopped:
+    'Live words stopped. Your recording carries on, and the words will follow when you stop.',
   speak: {
     ready: 'Tap when you’re ready.',
     starting: 'Getting ready…',
