@@ -1,5 +1,5 @@
-import { PlaceholderTab } from '@/features/home/PlaceholderTab';
+import { PatternsScreen } from '@/features/patterns/PatternsScreen';
 
 export default function PatternsRoute() {
-  return <PlaceholderTab title="Patterns" />;
+  return <PatternsScreen />;
 }

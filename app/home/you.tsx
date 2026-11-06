@@ -1,5 +1,5 @@
-import { PlaceholderTab } from '@/features/home/PlaceholderTab';
+import { YouScreen } from '@/features/you/YouScreen';
 
 export default function YouRoute() {
-  return <PlaceholderTab title="You" />;
+  return <YouScreen />;
 }
