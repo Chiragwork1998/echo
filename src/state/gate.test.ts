@@ -37,6 +37,21 @@ jest.mock('expo-local-authentication', () => ({
 const enrolled = jest.mocked(LocalAuthentication.getEnrolledLevelAsync);
 const authenticate = jest.mocked(LocalAuthentication.authenticateAsync);
 
+const FAILURES_THAT_ARE_NOT_NO_CREDENTIALS = [
+  'user_cancel',
+  'system_cancel',
+  'app_cancel',
+  'user_fallback',
+  'timeout',
+  'lockout',
+  'authentication_failed',
+  'not_available',
+  'no_space',
+  'invalid_context',
+  'unable_to_process',
+  'unknown',
+] satisfies LocalAuthentication.LocalAuthenticationError[];
+
 let rt: TestRuntime;
 
 /** Prepares a device that has already been used, then clears memory as a restart would. */
@@ -278,15 +293,44 @@ describe('biometric lock', () => {
     expect(lock()).toMatchObject({ kind: 'locked', canDisable: false });
   });
 
-  it('gives a way out after the OS prompt keeps failing', async () => {
+  // Any of these can be produced by the person holding the phone: leave the prompt to time out, cover
+  // a smudged sensor, fill the storage. Repeating one must never turn the lock off.
+  it.each(FAILURES_THAT_ARE_NOT_NO_CREDENTIALS)(
+    'never offers the way out however often the prompt reports %s',
+    async (error) => {
+      await lockedDevice();
+      authenticate.mockResolvedValue({ success: false, error });
+      for (let attempt = 0; attempt < 10; attempt += 1) await unlock();
+
+      expect(lock()).toMatchObject({ kind: 'locked', canDisable: false });
+      expect(await disableLock()).toBe(false);
+      expect(lock().kind).toBe('locked');
+      expect(useOnboarding.getState().privacy.biometricLock).toBe(true);
+    },
+  );
+
+  it('never offers the way out when the prompt keeps throwing', async () => {
     await lockedDevice();
-    authenticate.mockResolvedValue({ success: false, error: 'unknown' });
+    authenticate.mockRejectedValue(new Error('no activity'));
+    for (let attempt = 0; attempt < 10; attempt += 1) await unlock();
+    expect(lock()).toMatchObject({ kind: 'locked', failure: 'system', canDisable: false });
+    expect(await disableLock()).toBe(false);
+  });
+
+  it('keeps the lock when the prompt says no credentials but the device still has one', async () => {
+    await lockedDevice();
+    authenticate.mockResolvedValue({ success: false, error: 'not_enrolled' });
     await unlock();
+    expect(lock()).toMatchObject({ failure: 'no_credentials', canDisable: false });
+    expect(await disableLock()).toBe(false);
+  });
+
+  it('waits for a tap after a timeout instead of prompting again', async () => {
+    await lockedDevice();
+    authenticate.mockResolvedValue({ success: false, error: 'timeout' });
     await unlock();
-    expect(lock()).toMatchObject({ canDisable: false });
-    await unlock();
-    expect(lock()).toMatchObject({ canDisable: true, failure: 'system' });
-    expect(await disableLock()).toBe(true);
+    // A lock with failure: null prompts at once, which would put the prompt straight back up.
+    expect(lock()).toMatchObject({ kind: 'locked', failure: 'cancelled' });
   });
 
   it('wrong attempts never earn the way out', async () => {

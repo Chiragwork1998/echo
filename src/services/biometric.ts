@@ -22,7 +22,10 @@ export type AuthFailure =
   | 'failed'
   /** The device has no passcode or biometrics. */
   | 'no_credentials'
-  /** The OS could not run the prompt. Not something a person at the screen can cause. */
+  /**
+   * The OS could not run the prompt. A person at the screen can cause some of these, such as
+   * unable_to_process with a smudged sensor, so this must never count towards turning the lock off.
+   */
   | 'system';
 
 export type AuthOutcome = { ok: true } | { ok: false; reason: AuthFailure };
@@ -44,6 +47,7 @@ function classify(error: LocalAuthentication.LocalAuthenticationError): AuthFail
     case 'system_cancel':
     case 'app_cancel':
     case 'user_fallback':
+    case 'timeout': // Android: left on screen until it gave up. Nobody tried and failed.
       return 'cancelled';
     case 'lockout':
       return 'lockout';

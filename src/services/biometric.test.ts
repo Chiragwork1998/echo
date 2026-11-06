@@ -1,4 +1,5 @@
 import * as LocalAuthentication from 'expo-local-authentication';
+import type { LocalAuthenticationError } from 'expo-local-authentication';
 
 import { authenticate, getLockMethod, verifyLockAvailable } from './biometric';
 
@@ -36,16 +37,30 @@ describe('authenticate', () => {
     ['user_cancel', 'cancelled'],
     ['system_cancel', 'cancelled'],
     ['app_cancel', 'cancelled'],
+    ['user_fallback', 'cancelled'],
+    // Android: the prompt was left on screen until it gave up. Nobody tried and failed.
+    ['timeout', 'cancelled'],
     ['lockout', 'lockout'],
     ['authentication_failed', 'failed'],
     ['not_enrolled', 'no_credentials'],
     ['passcode_not_set', 'no_credentials'],
     ['not_available', 'system'],
+    ['no_space', 'system'],
+    ['invalid_context', 'system'],
     ['unknown', 'system'],
     ['unable_to_process', 'system'],
-  ] as const)('classifies %s as %s', async (error, reason) => {
+  ] satisfies [LocalAuthenticationError, string][])(
+    'classifies %s as %s',
+    async (error, reason) => {
+      prompt.mockResolvedValue({ success: false, error });
+      expect(await authenticate()).toEqual({ ok: false, reason });
+    },
+  );
+
+  it('classifies the string iOS builds for an error it has no name for as system', async () => {
+    const error = 'unknown: -1000, something' as LocalAuthenticationError;
     prompt.mockResolvedValue({ success: false, error });
-    expect(await authenticate()).toEqual({ ok: false, reason });
+    expect(await authenticate()).toEqual({ ok: false, reason: 'system' });
   });
 
   it('never disables the passcode fallback', async () => {

@@ -22,8 +22,6 @@ export const gateBypassed = qa.enabled || Platform.OS === 'web';
 
 /** Long enough to come back from a share sheet or a permission dialog without re-authenticating. */
 export const RELOCK_AFTER_MS = 30_000;
-/** Failures the OS reports repeatedly can no longer stand between someone and their journal. */
-const SYSTEM_FAILURES_BEFORE_ESCAPE = 3;
 
 export type GateStatus =
   | { kind: 'booting' }
@@ -55,7 +53,6 @@ export const useGate = create<Gate>(() => ({
 }));
 
 let booting: Promise<void> | null = null;
-let systemFailures = 0;
 let authInFlight = false;
 let backgroundedAt: number | null = null;
 
@@ -65,7 +62,7 @@ async function lockState(failure: AuthFailure | null = null): Promise<LockStatus
     kind: 'locked',
     method,
     failure,
-    canDisable: method === 'none' || systemFailures >= SYSTEM_FAILURES_BEFORE_ESCAPE,
+    canDisable: method === 'none',
   };
 }
 
@@ -135,18 +132,18 @@ export async function unlock(): Promise<void> {
   const outcome = await authenticate();
   authInFlight = false;
   if (outcome.ok) {
-    systemFailures = 0;
     backgroundedAt = null;
     useGate.setState({ lock: { kind: 'unlocked' } });
     return;
   }
-  if (outcome.reason === 'system') systemFailures += 1;
   useGate.setState({ lock: await lockState(outcome.reason) });
 }
 
 /**
- * The way out for someone the lock can no longer admit. Refuses unless canDisable holds: a Turn off
- * button that always worked would make the lock decorative.
+ * The way out for someone the lock can no longer admit, because the device has no credential left.
+ * Refuses unless canDisable holds: a Turn off button that always worked would make the lock
+ * decorative. No failed prompt ever earns it. A broken prompt keeps the journal shut and intact, and
+ * Unlock stays available to retry.
  */
 export async function disableLock(): Promise<boolean> {
   const { lock } = useGate.getState();
@@ -158,7 +155,6 @@ export async function disableLock(): Promise<boolean> {
   }
   const { privacy, update } = useOnboarding.getState();
   update({ privacy: { ...privacy, biometricLock: false } });
-  systemFailures = 0;
   useGate.setState({ lock: { kind: 'unlocked' } });
   return true;
 }
@@ -185,7 +181,6 @@ export function handleAppState(next: string, now: number = Date.now()): void {
 
 export function resetGateForTests(): void {
   booting = null;
-  systemFailures = 0;
   authInFlight = false;
   backgroundedAt = null;
   useGate.setState({ status: { kind: 'booting' }, lock: { kind: 'unlocked' } });
