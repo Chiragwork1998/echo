@@ -248,7 +248,7 @@ describe('words hidden, the default (D-008)', () => {
 });
 
 describe('Show words: the first time it is turned on', () => {
-  it('says plainly that the voice streams to OpenAI, may be kept 30 days, and that hiding avoids it', async () => {
+  it('says plainly that the voice streams to OpenAI, may be kept 30 days, and what hiding words changes', async () => {
     await open();
     await tick(QUIET_MS);
     await fireEvent.press(wordsControl());
@@ -257,7 +257,7 @@ describe('Show words: the first time it is turned on', () => {
     const all = sessionCopy.liveConsent.facts.join(' ');
     expect(all).toMatch(/streams to OpenAI as you speak/);
     expect(all).toMatch(/up to 30 days/);
-    expect(all).toMatch(/Hiding words avoids all of this/);
+    expect(all).toMatch(/Hiding words stops the streaming/);
     // Nothing is decided, sent, or shown yet.
     expect(usePreferences.getState().wordsShown).toBe(false);
     expect(openSocket).not.toHaveBeenCalled();

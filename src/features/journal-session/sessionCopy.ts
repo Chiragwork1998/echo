@@ -79,7 +79,7 @@ export const sessionCopy = {
       'Your voice goes to OpenAI to become text, and is sent securely.',
       'OpenAI’s transcription service does not store it, and does not train on it.',
       'ECHO’s own server keeps nothing.',
-      'Your recording and your words stay encrypted on this phone.',
+      'Your recording and your words are encrypted when saved on this phone.',
       'If you speak Hindi, or turn on Tidy my words, the text also goes through a second step at OpenAI. OpenAI may keep that text for up to 30 days to check for abuse, then deletes it. It is not used for training.',
     ],
     allow: 'Allow',
@@ -89,7 +89,9 @@ export const sessionCopy = {
   /**
    * The first time Show words is turned on. Live words stream the voice while it is spoken, and
    * OpenAI's realtime service keeps abuse-monitoring data for up to 30 days, so this is said plainly
-   * and hiding words is offered as the way to avoid it. Needs the owner's approval.
+   * and hiding words is offered as the way to stop the streaming. Hiding does not avoid the second
+   * step for Hindi and Tidy, and a long take is sent in parts, so the last fact says only what is
+   * true. Needs the owner's approval.
    */
   liveConsent: {
     title: 'Show your words as you speak?',
@@ -98,9 +100,9 @@ export const sessionCopy = {
     facts: [
       'Your voice streams to OpenAI as you speak, sent securely, and comes back as words on the screen.',
       'OpenAI may keep what is sent and received for up to 30 days to check for abuse, then deletes it. It is not used for training.',
-      'ECHO’s own server keeps nothing. Your recording and your words stay encrypted on this phone.',
+      'ECHO’s own server keeps nothing. Your recording and your words are encrypted when saved on this phone.',
       'If you speak Hindi, or turn on Tidy my words, the finished text also goes through a second step at OpenAI, kept for up to 30 days in the same way.',
-      'Hiding words avoids all of this. Your voice is then sent once, when you stop, to a transcription service that does not store it.',
+      'Hiding words stops the streaming. Your voice is sent after you stop, in parts if the take is long, to a transcription service that does not store it. The second step above still applies.',
     ],
     allow: 'Show words',
     keep: 'Keep words hidden',
