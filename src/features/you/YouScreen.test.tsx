@@ -4,7 +4,7 @@ import { Alert, Dimensions, Linking } from 'react-native';
 import { copy } from '@/content/copy';
 import { commitReminder } from '@/features/onboarding/rhythm/commitReminder';
 import { deleteAllLocal } from '@/services/deleteAllLocal';
-import { verifyLockAvailable } from '@/services/biometric';
+import { authenticate, verifyLockAvailable } from '@/services/biometric';
 import { exportJournal } from '@/services/exportJournal';
 import { getNotificationPermission, openAppSettings } from '@/services/permissions';
 import { initialOnboarding, useOnboarding } from '@/state/onboarding';
@@ -23,7 +23,10 @@ jest.mock(
   'react-native-safe-area-context',
   () => jest.requireActual('react-native-safe-area-context/jest/mock').default,
 );
-jest.mock('@/services/biometric', () => ({ verifyLockAvailable: jest.fn() }));
+jest.mock('@/services/biometric', () => ({
+  authenticate: jest.fn(),
+  verifyLockAvailable: jest.fn(),
+}));
 jest.mock('@/services/exportJournal', () => ({ exportJournal: jest.fn() }));
 jest.mock('@/services/deleteAllLocal', () => ({ deleteAllLocal: jest.fn() }));
 jest.mock('@/services/permissions', () => ({
@@ -130,12 +133,34 @@ describe('You: privacy', () => {
     expect(lock()).not.toBeChecked();
   });
 
-  it('turns the lock off without a check, and keeps the backup choice untouched', async () => {
+  it('turns the lock off only after the person passes it, keeping the backup choice', async () => {
     useOnboarding.setState({ privacy: { biometricLock: true, privateBackup: true } });
+    jest.mocked(authenticate).mockResolvedValue({ ok: true });
     await render(<YouScreen />);
     await fireEvent.press(lock());
-    expect(verifyLock).not.toHaveBeenCalled();
+    await waitFor(() => expect(lock()).not.toBeChecked());
+    expect(authenticate).toHaveBeenCalledTimes(1);
     expect(useOnboarding.getState().privacy).toEqual({ biometricLock: false, privateBackup: true });
+  });
+
+  it.each(['cancelled', 'failed', 'lockout', 'system'] as const)(
+    'keeps the lock on when turning it off ends with %s',
+    async (reason) => {
+      useOnboarding.setState({ privacy: { biometricLock: true, privateBackup: false } });
+      jest.mocked(authenticate).mockResolvedValue({ ok: false, reason });
+      await render(<YouScreen />);
+      await fireEvent.press(lock());
+      await waitFor(() => expect(authenticate).toHaveBeenCalled());
+      expect(useOnboarding.getState().privacy.biometricLock).toBe(true);
+    },
+  );
+
+  it('lets the lock go when the device has no credentials left, so nobody is trapped', async () => {
+    useOnboarding.setState({ privacy: { biometricLock: true, privateBackup: false } });
+    jest.mocked(authenticate).mockResolvedValue({ ok: false, reason: 'no_credentials' });
+    await render(<YouScreen />);
+    await fireEvent.press(lock());
+    await waitFor(() => expect(useOnboarding.getState().privacy.biometricLock).toBe(false));
   });
 
   it('shows private backup and AI reflection as not available yet, with no control', async () => {
