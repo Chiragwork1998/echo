@@ -15,6 +15,15 @@ export type LiveTakeDeps = {
 
 /** Audio waiting for a connection that is slow to open is kept for this long, and no longer. */
 const WAIT_SAMPLES = LIVE_RATE * 20;
+/**
+ * How much audio a connection is fed without a word back from the server before it is let go. The
+ * platform's socket queues what it is given, and on a dead network nothing says so for a long time, so
+ * without this a long take would pile up an hour of audio behind a connection that is not there. A
+ * healthy one answers all the time while there is speech, and a few minutes of silence is only a
+ * pause. This is about 15 MB of what has been handed to the socket, which is also where Android's own
+ * queue gives up (16 MiB).
+ */
+export const UNHEARD_SAMPLES = LIVE_RATE * 240;
 /** After the person stops, how long the last words are waited for. */
 export const FINISH_MS = 10_000;
 
@@ -38,6 +47,8 @@ export function createLiveTake(deps: LiveTakeDeps, onChange: () => void): LiveTa
   const transcript = createLiveTranscript();
   const outbox: Op[] = [];
   let waiting = 0;
+  /** Audio handed to the connection since it last said anything. */
+  let unheard = 0;
   /** Commits that went out on the connection. Each one is owed an acknowledgement, and a turn. */
   let commitsSent = 0;
   let socket: LiveSocket | null = null;
@@ -79,6 +90,9 @@ export function createLiveTake(deps: LiveTakeDeps, onChange: () => void): LiveTa
     try {
       if (op.kind === 'audio') {
         socket.appendAudio(pcmToBase64(op.samples));
+        unheard += op.samples.length;
+        // Only the words are given up on. The recording is made by something else and goes on.
+        if (unheard > UNHEARD_SAMPLES) fail();
       } else {
         // Counted before it goes: a connection may answer before commit() returns.
         commitsSent += 1;
@@ -117,6 +131,7 @@ export function createLiveTake(deps: LiveTakeDeps, onChange: () => void): LiveTa
   const handlers: LiveHandlers = {
     onEvent: (event) => {
       if (done) return;
+      unheard = 0;
       transcript.apply(event);
       // An error is not waited out. Whatever the server refused, the take is no longer known to be
       // whole, so it stops here and the sealed recording is sent. It does not reconnect.

@@ -164,6 +164,50 @@ describe('a live take', () => {
     expect(link.socket.close).toHaveBeenCalled();
   });
 
+  it('stops feeding a connection that has gone quiet for good, so a dead network cannot build a backlog', async () => {
+    const link = connection();
+    const take = createLiveTake({ open: link.open }, jest.fn());
+    take.push(sound(1, true));
+    await settle();
+    // The network dies without a word: nothing more comes back, and the phone keeps speaking.
+    let seconds = 0;
+    while (!take.failed() && seconds < 600) {
+      take.push(sound(1, false));
+      seconds += 1;
+    }
+    // Bounded: it gave up after minutes, not at the end of an hour of speaking.
+    expect(take.failed()).toBe(true);
+    expect(seconds).toBeGreaterThan(120);
+    expect(seconds).toBeLessThanOrEqual(300);
+    expect(await take.outcome).toEqual({ ok: false });
+    expect(link.socket.close).toHaveBeenCalledTimes(1);
+
+    // The recording is another thing entirely: the take is fed on without harm, and nothing is sent.
+    const sentBefore = link.sent.length;
+    expect(() => {
+      for (let i = 0; i < 50; i += 1) take.push(sound(1, true));
+      take.push(null);
+    }).not.toThrow();
+    expect(link.sent.length).toBe(sentBefore);
+  });
+
+  it('does not mistake a long quiet stretch for a dead network while the server is still answering', async () => {
+    const link = connection();
+    const take = createLiveTake({ open: link.open }, jest.fn());
+    take.push(sound(1, true));
+    await settle();
+    // An hour of sitting in silence, with the connection answering now and then.
+    for (let minute = 0; minute < 60; minute += 1) {
+      for (let second = 0; second < 60; second += 1) take.push(sound(1, false));
+      link.say({ kind: 'delta', itemId: `quiet_${minute}`, text: '' });
+    }
+    expect(take.failed()).toBe(false);
+    // And a few minutes of true silence is a pause, not a failure.
+    for (let second = 0; second < 100; second += 1) take.push(sound(1, false));
+    expect(take.failed()).toBe(false);
+    take.abort();
+  });
+
   it('falls back at once when the server reports an error mid-take, and does not reconnect', async () => {
     const link = connection();
     const take = createLiveTake({ open: link.open }, jest.fn());
