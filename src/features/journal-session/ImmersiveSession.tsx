@@ -18,6 +18,7 @@ import { copy } from '@/content/copy';
 import { useLayout } from '@/design/layout';
 import { useTheme } from '@/design/theme';
 import { BookPage, useBookFrame } from '@/features/book/BookPage';
+import { keyboardRise, restingDrop } from '@/features/book/bookPlace';
 import { PaperProvider, usePaperLook, type Surface } from '@/features/book/paper';
 import { ritualFor } from '@/features/book/ritual';
 import { Shelf, ShelfBackdrop, useShelfOffset } from '@/features/book/Shelf';
@@ -74,7 +75,7 @@ export function ImmersiveSession({
   const { colors } = useTheme();
   const ink = useSkyInk();
   const insets = useSafeAreaInsets();
-  const { width } = usePlateFrame();
+  const { width, height: screenHeight } = usePlateFrame();
   const plate = usePlatePoint();
   const reduced = useReduceMotion();
   const screenReader = useScreenReader();
@@ -122,7 +123,13 @@ export function ImmersiveSession({
   const [picked, setPicked] = useState<string | null>(null);
   const [opened, setOpened] = useState(!book);
   const volume = volumeById(picked ?? remembered ?? undefined);
-  const bookFrame = useBookFrame(insets.top + (onboarding ? HEADER_HEIGHT - 5 : 0));
+  const clearOfKeyboard = useBookFrame(insets.top + (onboarding ? HEADER_HEIGHT - 5 : 0));
+  // The daily book rests in the middle of the screen. First Echo keeps its place under the header.
+  const bookDrop = onboarding
+    ? 0
+    : restingDrop(screenHeight, clearOfKeyboard.top, clearOfKeyboard.height);
+  const bookFrame = { ...clearOfKeyboard, top: clearOfKeyboard.top + bookDrop };
+  const bookBottom = bookFrame.top + bookFrame.height;
   const shelfOffset = useShelfOffset();
   // A draft that is being continued is not a reason to choose a book again.
   const resumed = ready && draft.resumed && draft.hasContent;
@@ -163,6 +170,13 @@ export function ImmersiveSession({
   const span = useAnimatedStyle(() => {
     const height = Math.max(keyboard.height.get(), qaKeyboard);
     return { height: (height > 0 ? height + CONTROLS.aboveKeyboard : resting) + GROUND_FADE };
+  });
+
+  // The book rises with the keyboard, just far enough for the words being typed to stay in view.
+  const bookRise = useAnimatedStyle(() => {
+    const height = Math.max(keyboard.height.get(), qaKeyboard);
+    const rise = keyboardRise(height, screenHeight, bookBottom, bookDrop);
+    return { transform: [{ translateY: -rise }] };
   });
 
   // Recording is a point of light, and Stop is always one glance away in the quiet row. A pause,
@@ -281,61 +295,63 @@ export function ImmersiveSession({
       )}
 
       {bookInView && (
-        <BookPage
-          frame={bookFrame}
-          surface={page === 'paper' ? 'paper' : 'vellum'}
-          volume={volume}
-          entrance={onboarding ? 'forward' : 'rise'}
-          start={onboarding ? true : settled}
-          riseFrom={bookFrame.top + bookFrame.height + 40}
-          ritual={ritual}
-          // A screen reader is not made to wait for the book either.
-          hurry={tapped || screenReader}
-          concealed={hidden}
-          arrival={session.arrival}
-          onOpened={() => {
-            setOpened(true);
-            countOpen();
-          }}
-          inputRef={inputRef}
-          value={
-            writing ? draft.content.body : appendTranscript(draft.content.body, session.liveText)
-          }
-          label={session.prompt}
-          placeholder={onboarding ? copy.firstEcho.placeholder : undefined}
-          lead={onboarding ? { lines: 2, text: copy.firstEcho.title } : undefined}
-          editable={ready && writing}
-          interactive={writing}
-          onChangeText={(body) => {
-            session.change(body);
-            quiet.typed();
-          }}
-          onFocus={() => {
-            setFocused(true);
-            quiet.arm();
-          }}
-          onBlur={() => {
-            setFocused(false);
-            quiet.show();
-          }}
-          onTap={touchScenery}
-        >
-          {(open) =>
-            !writing && (
-              <Beacon
-                kind="light"
-                visible={open && ready && !voiceNote && failure === null}
-                live={recording || busy || session.listening}
-                x={bookFrame.width / 2}
-                y={
-                  hidden || draft.content.body.length === 0
-                    ? bookFrame.height / 2
-                    : bookFrame.height - 30
-                }
-              />
-            )
-          }
-        </BookPage>
+        <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, bookRise]}>
+          <BookPage
+            frame={bookFrame}
+            surface={page === 'paper' ? 'paper' : 'vellum'}
+            volume={volume}
+            entrance={onboarding ? 'forward' : 'rise'}
+            start={onboarding ? true : settled}
+            riseFrom={bookFrame.top + bookFrame.height + 40}
+            ritual={ritual}
+            // A screen reader is not made to wait for the book either.
+            hurry={tapped || screenReader}
+            concealed={hidden}
+            arrival={session.arrival}
+            onOpened={() => {
+              setOpened(true);
+              countOpen();
+            }}
+            inputRef={inputRef}
+            value={
+              writing ? draft.content.body : appendTranscript(draft.content.body, session.liveText)
+            }
+            label={session.prompt}
+            placeholder={onboarding ? copy.firstEcho.placeholder : undefined}
+            lead={onboarding ? { lines: 2, text: copy.firstEcho.title } : undefined}
+            editable={ready && writing}
+            interactive={writing}
+            onChangeText={(body) => {
+              session.change(body);
+              quiet.typed();
+            }}
+            onFocus={() => {
+              setFocused(true);
+              quiet.arm();
+            }}
+            onBlur={() => {
+              setFocused(false);
+              quiet.show();
+            }}
+            onTap={touchScenery}
+          >
+            {(open) =>
+              !writing && (
+                <Beacon
+                  kind="light"
+                  visible={open && ready && !voiceNote && failure === null}
+                  live={recording || busy || session.listening}
+                  x={bookFrame.width / 2}
+                  y={
+                    hidden || draft.content.body.length === 0
+                      ? bookFrame.height / 2
+                      : bookFrame.height - 30
+                  }
+                />
+              )
+            }
+          </BookPage>
+        </Animated.View>
       )}
 
       {!book && !writing && (

@@ -4,6 +4,7 @@ import { StyleSheet, TextInput, View, useWindowDimensions } from 'react-native';
 import { useLayout } from '@/design/layout';
 
 import { BookStage, type Entrance } from './BookStage';
+import { ROW_CLEARANCE } from './bookPlace';
 import { Pages } from './Pages';
 import type { Ritual } from './ritual';
 import { PaperProvider, usePaperLook, type Surface } from './paper';
@@ -11,18 +12,16 @@ import type { Volume } from './volumes';
 
 /** A phone's keyboard takes about this much of the screen: 336 pt of 852. */
 const KEYBOARD_SHARE = 0.395;
-/** The quiet row sits this high above the keyboard, and the book keeps clear of it. */
-const ROW_CLEARANCE = 16 + 44 + 8;
 const MIN_HEIGHT = 230;
 const TOP_GAP = 10;
 
 export type BookFrame = { left: number; top: number; width: number; height: number };
 
 /**
- * Where the book sits: from under the top of the screen to just above the quiet row, with the
- * keyboard's share of the screen kept free beneath. It is the same place with the keyboard up or
- * away, so the pages never move or change length when the keyboard comes. Without a keyboard that
- * space is mountains, at their fullest.
+ * The book's place clear of the keyboard: from under the top of the screen to just above the quiet
+ * row, with the keyboard's share of the screen kept free beneath. The pages keep this size with the
+ * keyboard up or away. The daily book rests lower, in the middle of the screen, and rises to this
+ * place when the keyboard comes (D-010, bookPlace.ts).
  */
 export function useBookFrame(insetTop: number, headerHeight = 0): BookFrame {
   const { width: screen, height } = useWindowDimensions();

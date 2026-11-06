@@ -5,7 +5,13 @@ const TRANSCRIBE_TIMEOUT_MS = 80_000;
 const POLISH_TIMEOUT_MS = 25_000;
 
 export const LANGUAGES = ['en', 'hi'];
-const CONTEXT = 'A private spoken journal entry. The speaker may move between English and Hindi.';
+/**
+ * Asks for the words as said (D-008). Without this the model sometimes drops a filler, most often a
+ * first "um": measured on the same audio, it kept it 6 of 6 times with this and 1 of 2 without. It
+ * adds no words to silence or room noise.
+ */
+const CONTEXT =
+  'A private spoken journal entry. Transcribe exactly what is said, word for word. Keep every filler (um, uh, you know), repetition, false start and self-correction. The speaker may move between English and Hindi.';
 
 /**
  * What a journal keeps (D-008): 'exact' returns the words as the model heard them, every filler and
