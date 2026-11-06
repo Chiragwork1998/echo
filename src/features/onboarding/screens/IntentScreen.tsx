@@ -62,8 +62,8 @@ function River({ selected, onChoose }: { selected?: Intent; onChoose: (value: In
 }
 
 export function IntentScreen() {
-  const { accessibleLayout, gutter, width: column } = useLayout();
-  const { width, height, fontScale } = useWindowDimensions();
+  const { accessibleLayout, gutter, width: column, sceneryFits } = useLayout();
+  const { fontScale } = useWindowDimensions();
   const intent = useOnboarding((state) => state.intent);
   const update = useOnboarding((state) => state.update);
 
@@ -79,7 +79,8 @@ export function IntentScreen() {
   const back = backPath('intent');
   const next = nextPath('intent');
   // The river layout needs the full portrait photograph, and room for labels at normal text size.
-  const list = accessibleLayout || width > height;
+  // On a tablet the plate still fills the screen, but the points would land off the river.
+  const list = !sceneryFits;
 
   const size = accessibleLayout
     ? TITLE_BASE_SIZE

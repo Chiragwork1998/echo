@@ -214,4 +214,17 @@ describe('IntentScreen at large text sizes and in landscape', () => {
     expect(screen.queryByTestId('river-trail', { includeHiddenElements: true })).toBeNull();
     expect(screen.getAllByRole('radio')).toHaveLength(4);
   });
+
+  it('uses the list on a tablet, where the points would land off the river', async () => {
+    setWindow(768, 1024);
+    await render(<IntentScreen />);
+    expect(screen.queryByTestId('river-trail', { includeHiddenElements: true })).toBeNull();
+    expect(screen.getAllByRole('radio')).toHaveLength(4);
+  });
+
+  it('keeps the river on the largest phones, which are 440 pt wide', async () => {
+    setWindow(440, 956);
+    await render(<IntentScreen />);
+    expect(screen.getByTestId('river-trail', { includeHiddenElements: true })).toBeTruthy();
+  });
 });

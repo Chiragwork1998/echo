@@ -1,7 +1,7 @@
 import { router, useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useCallback } from 'react';
-import { BackHandler, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { BackHandler, StyleSheet, View } from 'react-native';
 
 import { PrimaryCTA } from '@/components/PrimaryCTA';
 import { ScreenShell } from '@/components/ScreenShell';
@@ -59,8 +59,7 @@ function Stream({ mood, onChoose }: { mood?: Mood; onChoose: (value: Mood) => vo
 }
 
 export function ArrivalScreen() {
-  const { accessibleLayout } = useLayout();
-  const { width, height } = useWindowDimensions();
+  const { accessibleLayout, sceneryFits } = useLayout();
   const mood = useOnboarding((state) => state.mood);
   const update = useOnboarding((state) => state.update);
 
@@ -93,8 +92,9 @@ export function ArrivalScreen() {
     }, [back]),
   );
 
-  // The stream needs the full portrait photograph, and room for the words at normal text size.
-  const list = accessibleLayout || width > height;
+  // The stream needs the full portrait photograph, and room for the words at normal text size. On a
+  // tablet the plate still fills the screen, but the stones would land off the water.
+  const list = !sceneryFits;
   const heading = <ArrivalHeading title={copy.arrival.title} subtitle={copy.arrival.subtitle} />;
 
   return (

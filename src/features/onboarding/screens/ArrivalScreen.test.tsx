@@ -272,4 +272,14 @@ describe('ArrivalScreen at large text sizes and in landscape', () => {
     expect(screen.queryByTestId('stone-ripple', { includeHiddenElements: true })).toBeNull();
     expect(screen.getAllByRole('radio')).toHaveLength(5);
   });
+
+  it('uses the list on a tablet, where the stones would land off the water', async () => {
+    setWindow(768, 1024);
+    await render(<ArrivalScreen />);
+    expect(screen.queryByTestId('stone-ripple', { includeHiddenElements: true })).toBeNull();
+    expect(screen.getAllByRole('radio')).toHaveLength(5);
+    expect(cta()).toBeDisabled();
+    await fireEvent.press(radio(HEAVY!));
+    expect(radio(HEAVY!)).toBeChecked();
+  });
 });

@@ -59,8 +59,8 @@ export function ThreeChoiceScreen<V extends string>({
   value,
   onChange,
 }: Props<V>) {
-  const { accessibleLayout, gutter, width: column } = useLayout();
-  const { width, height, fontScale } = useWindowDimensions();
+  const { gutter, width: column, sceneryFits } = useLayout();
+  const { fontScale } = useWindowDimensions();
 
   const choose = useCallback(
     (next: V) => {
@@ -83,8 +83,9 @@ export function ThreeChoiceScreen<V extends string>({
   };
   const back = backPath(screen);
   const next = nextPath(screen);
-  // The scene needs the full portrait photograph, and room for the text at normal size.
-  const list = accessibleLayout || width > height;
+  // The scene needs the full portrait photograph, and room for the text at normal size. On a tablet
+  // the plate still fills the screen, but the choices would land off the ridge and the path.
+  const list = !sceneryFits;
 
   return (
     <ScreenShell

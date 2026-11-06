@@ -222,6 +222,19 @@ describe.each(cases)('$name', ({ Screen, text, field, values, step, back, next, 
       expect(screen.getAllByRole('radio')).toHaveLength(3);
     });
 
+    it('uses the list on a tablet, where the choices would land off the scenery', async () => {
+      setWindow(768, 1024);
+      await render(<Screen />);
+      expect(screen.queryByTestId('choice-scene')).toBeNull();
+      expect(screen.getAllByRole('radio')).toHaveLength(3);
+    });
+
+    it('keeps the scene on the largest phones, which are 440 pt wide', async () => {
+      setWindow(440, 956);
+      await render(<Screen />);
+      expect(screen.getByTestId('choice-scene')).toBeTruthy();
+    });
+
     it('keeps the scene at 120% text, below the list threshold', async () => {
       setWindow(393, 852, 1.2);
       await render(<Screen />);
