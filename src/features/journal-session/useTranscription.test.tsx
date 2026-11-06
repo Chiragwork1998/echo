@@ -478,6 +478,34 @@ describe('when the session closes mid-request', () => {
     expect((await stored()).body).toBe('Kept.');
   });
 
+  it('lets go of the decrypted copies kept for earlier takes if the words fail after the session is gone', async () => {
+    const released = jest.fn();
+    openAudio.mockResolvedValue({
+      ok: true,
+      value: { uri: 'file:///kept/one.m4a', release: released },
+    });
+    send.mockResolvedValueOnce(failed('offline'));
+    const view = await mount();
+    await act(async () => view.result.current.words.enqueue(audio('a1')));
+    await settle();
+    await act(async () => view.result.current.words.holdCurrent());
+
+    const request = pending();
+    send.mockReturnValueOnce(request.promise);
+    await act(async () => view.result.current.words.enqueue(audio('a2')));
+    await view.unmount();
+    expect(released).not.toHaveBeenCalled(); // The request is still running, and may yet succeed.
+
+    await act(async () => request.settle(failed('offline')));
+    await settle();
+    // Nothing can retry it now, and a decrypted recording is not left in the cache for the next launch.
+    expect(released).toHaveBeenCalledTimes(1);
+    // The sealed recording is never what is let go of.
+    const saved = await stored();
+    expect(saved.audio?.id).toBe('a1');
+    expect(saved.body).toBe('Before.');
+  });
+
   it('leaves the recording retryable if the words never arrive', async () => {
     send.mockResolvedValue(failed('offline'));
     const view = await mount();

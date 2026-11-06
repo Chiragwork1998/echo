@@ -325,6 +325,10 @@ export function useTranscription(draft: DraftController) {
       if (queue.current.length > 0) void again.current();
       return;
     }
+    // The session is gone, so nothing will try these again: a decrypted copy kept for a replaced
+    // recording would otherwise sit in the cache until the next launch. Only decrypted copies and live
+    // connections are let go of here. A sealed recording belongs to the journal, and is never touched.
+    if (!alive.current) dropAll();
     if (outcome.kind === 'idle') {
       dropAll();
       if (lost.current) {
