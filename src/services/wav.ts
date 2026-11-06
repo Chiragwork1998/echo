@@ -16,9 +16,12 @@ const ascii = (bytes: Uint8Array, at: number, length: number) =>
   String.fromCharCode(...bytes.subarray(at, at + length));
 
 /**
- * Reads a WAV's format from the start of the file. The size a header declares can be stale after a
- * crash, or not final while a file is still being written, so the data is taken to end where the
- * file does if the header's claim does not fit.
+ * Reads a WAV's format from the start of the file. The size a header declares is not to be trusted
+ * in either direction. The stream writes its samples and then its header, so after a crash the header
+ * can be zero, or lag the file by the last buffer, and a header larger than the file says the file
+ * was cut short. The data is therefore taken to end where the file does. A trailing chunk after the
+ * samples would be read as a few milliseconds of noise, which this writer never makes, and which
+ * costs nothing next to losing the end of what a person said.
  */
 export function parseWav(head: Uint8Array, fileSize: number): WavInfo | null {
   if (head.length < 12 || ascii(head, 0, 4) !== 'RIFF' || ascii(head, 8, 4) !== 'WAVE') return null;
@@ -41,8 +44,7 @@ export function parseWav(head: Uint8Array, fileSize: number): WavInfo | null {
       if (!format || format.channels < 1 || format.bitsPerSample !== 16) return null;
       const dataOffset = at + 8;
       const room = Math.max(0, fileSize - dataOffset);
-      const declared = size === 0 || size === 0xffffffff || size > room ? room : size;
-      return { ...format, dataOffset, dataBytes: declared - (declared % (2 * format.channels)) };
+      return { ...format, dataOffset, dataBytes: room - (room % (2 * format.channels)) };
     }
     at += 8 + size + (size % 2);
   }
