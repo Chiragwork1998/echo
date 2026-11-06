@@ -2,10 +2,16 @@ import { Stack } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 
 import { EchoBackground } from '@/components/EchoBackground';
+import { plateColour } from '@/design/plateColour';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
+import { useReduceMotion } from '@/design/useReduceMotion';
 import { HomeDissolveProvider } from '@/features/home/dissolve';
 import { HomeTabBar } from '@/features/home/tabs/HomeTabBar';
+
+// The one screen that wears another plate. Every other route here wears Home's, and the session
+// sits transparently over the photograph drawn below.
+const OTHER_PLATE: Record<string, string> = { complete: 'completion' };
 
 /**
  * Today, Echoes, Patterns and You share one tab bar, drawn above the stack. It shows on those four
@@ -16,18 +22,25 @@ import { HomeTabBar } from '@/features/home/tabs/HomeTabBar';
  * mountains are always there, and cannot flash or shift (D-003). Every other screen covers it.
  */
 export default function HomeLayout() {
-  const { colors } = useTheme();
+  const { target, colors } = useTheme();
+  const reduced = useReduceMotion();
   return (
     <HomeDissolveProvider>
       <View style={styles.root}>
         <EchoBackground screen="home" />
         <Stack
-          screenOptions={{
+          screenOptions={({ route }) => ({
             headerShown: false,
             animation: 'fade',
-            animationDuration: tokens.motion.standard,
-            contentStyle: { backgroundColor: colors.textInk },
-          }}
+            animationDuration: reduced ? tokens.motion.fast : tokens.motion.standard,
+            contentStyle: {
+              backgroundColor: plateColour(
+                target,
+                OTHER_PLATE[route.name] ?? 'home',
+                colors.textInk,
+              ),
+            },
+          })}
         >
           {/* Reached by dissolve, so it swaps in with no animation and no screen colour of its own. */}
           <Stack.Screen

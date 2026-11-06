@@ -23,14 +23,15 @@ const entry = (theme) =>
         `    '${s.id}': require('../../../assets/backgrounds/${theme}/${s.background.replace('.png', '.webp')}'),`,
     )
     .join('\n');
-// Dominant colour of each plate, shown while it decodes so a screen is never blank.
+// Average colour of each plate, shown while it decodes so a screen is never blank.
 const colours = {};
 for (const theme of ['day', 'night']) {
   colours[theme] = {};
   for (const s of manifest.screens) {
     const file = `assets/backgrounds/${theme}/${s.background.replace('.png', '.webp')}`;
-    const { dominant: d } = await sharp(file).resize(64).stats();
-    colours[theme][s.id] = `rgb(${d.r},${d.g},${d.b})`;
+    const { channels } = await sharp(file).resize(64).stats();
+    const [r, g, b] = channels.map(({ mean }) => Math.round(mean));
+    colours[theme][s.id] = `rgb(${r},${g},${b})`;
   }
 }
 

@@ -12,8 +12,11 @@ import { EchoWordmark } from '@/components/EchoWordmark';
 import { PrimaryCTA } from '@/components/PrimaryCTA';
 import { ToastHost } from '@/components/Toast';
 import { fontMap } from '@/design/fonts';
+import { plateColour } from '@/design/plateColour';
+import { setPlateFlowStep } from '@/design/plateMotion';
 import { ThemeProvider, useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
+import { useReduceMotion } from '@/design/useReduceMotion';
 import { deleteAllLocal } from '@/services/deleteAllLocal';
 import { loadScreenCapture } from '@/services/nativeModules';
 import {
@@ -55,11 +58,18 @@ function SafeArea({ children }: PropsWithChildren) {
   );
 }
 
+// The plate each top-level route opens on, for the colour behind it. Onboarding opens on Intent.
+const ROOT_PLATE: Record<string, string> = { index: 'landing', onboarding: 'intent', home: 'home' };
+
 function Navigator({ resume, onSettled }: { resume: string; onSettled: () => void }) {
-  const { colors } = useTheme();
+  const { target, colors } = useTheme();
+  const reduced = useReduceMotion();
   const pathname = usePathname();
   const completed = useOnboarding((state) => state.completedAt !== undefined);
   const initial = useRef(true);
+
+  // Plates scale as the journey moves (see plateMotion), so they need to know where it is.
+  useEffect(() => setPlateFlowStep(stepForPath(pathname)), [pathname]);
 
   // Runs on every route change, so that it holds for deep links and the system back button as well
   // as for launch. Screens that follow the flow are never redirected.
@@ -87,12 +97,15 @@ function Navigator({ resume, onSettled }: { resume: string; onSettled: () => voi
     <>
       <StatusBar style="light" />
       <Stack
-        screenOptions={{
+        screenOptions={({ route }) => ({
           headerShown: false,
           animation: 'fade',
-          animationDuration: tokens.motion.screen,
-          contentStyle: { backgroundColor: colors.textInk },
-        }}
+          animationDuration: reduced ? tokens.motion.fast : tokens.motion.screen,
+          // Behind each screen sits its own plate's dominant colour: never white, never blank.
+          contentStyle: {
+            backgroundColor: plateColour(target, ROOT_PLATE[route.name] ?? '', colors.textInk),
+          },
+        })}
       />
     </>
   );
