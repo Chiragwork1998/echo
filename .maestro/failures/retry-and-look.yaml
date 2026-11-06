@@ -1,0 +1,11 @@
+appId: host.exp.exponent
+name: Try again, then show the words
+# e2e: reduce-motion
+# env: SECONDS (how long to wait, default 40), SHOT (screenshot name)
+---
+- tapOn: 'Try again'
+- runFlow:
+    file: ../subflows/pause.yaml
+    env:
+      SECONDS: ${SECONDS || 40}
+- takeScreenshot: ${SHOT || 'retried'}

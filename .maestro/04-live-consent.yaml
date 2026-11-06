@@ -1,0 +1,67 @@
+appId: host.exp.exponent
+name: Live words, the note first, hide mid-take, words after Stop
+# e2e: reduce-motion
+# Start: ECHO on Home, Speak the last mode used, voice allowed, Show words never turned on, no unsent
+# recording (flow 05 leaves it so). The server log must show no /api/live-session until the second
+# Show words below: check it with the vercel logs command in all.sh. Needs the voice server and
+# OpenAI's live transcription.
+---
+- runFlow: subflows/begin-daily.yaml
+- extendedWaitUntil:
+    visible: 'Show words'
+    timeout: 60000
+# First Show words: the note. Keep words hidden keeps them hidden and sends nothing live.
+- tapOn: 'Show words'
+- extendedWaitUntil:
+    visible: 'Show your words as you speak\?'
+    timeout: 30000
+- takeScreenshot: 04-live-note
+- tapOn: 'Keep words hidden'
+- extendedWaitUntil:
+    visible: 'Show words'
+    timeout: 30000
+- assertNotVisible: 'Hide words'
+# Asked again, because nothing was agreed. Show words streams from here on.
+- tapOn: 'Show words'
+- extendedWaitUntil:
+    visible: 'Show your words as you speak\?'
+    timeout: 30000
+- tapOn:
+    text: 'Show words'
+    above: 'Keep words hidden'
+- extendedWaitUntil:
+    visible: 'Hide words'
+    timeout: 30000
+# A live take: the words come while the person is still speaking.
+- tapOn: 'Start recording'
+- extendedWaitUntil:
+    visible: 'Stop recording'
+    timeout: 60000
+- extendedWaitUntil:
+    visible: '.*sat by the window.*'
+    timeout: 120000
+- assertVisible: 'Stop recording'
+- takeScreenshot: 04-live-words
+# Hiding mid-take stops the words on the page, and the recording goes on.
+- tapOn: 'Hide words'
+- assertNotVisible: '.*sat by the window.*'
+- assertVisible: 'Stop recording'
+- tapOn: 'Stop recording'
+- runFlow:
+    file: subflows/pause.yaml
+    env:
+      SECONDS: 30
+# The words still arrive after Stop, from the recording.
+- tapOn: 'Show words'
+- extendedWaitUntil:
+    visible: '.*Um, today I sat by the window.*'
+    timeout: 60000
+- takeScreenshot: 04-words-after-stop
+# Back to the default for what follows, and leave no draft behind.
+- tapOn: 'Hide words'
+- assertNotVisible: '.*sat by the window.*'
+- tapOn: 'Back'
+- tapOn: 'Discard'
+- extendedWaitUntil:
+    visible: 'Where are you, really\?'
+    timeout: 120000

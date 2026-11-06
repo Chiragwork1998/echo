@@ -1,0 +1,30 @@
+appId: host.exp.exponent
+name: A second take in one session appends and never replaces
+# e2e: reduce-motion
+# Start: ECHO on Home, voice already allowed. Expects the synthetic English speech, twice.
+---
+- runFlow: subflows/begin-daily.yaml
+- runFlow: subflows/speak-take.yaml
+- runFlow: subflows/allow-voice.yaml
+- runFlow:
+    file: subflows/pause.yaml
+    env:
+      SECONDS: 25
+# The first take has become words. Write shows them once.
+- tapOn: 'Write'
+- extendedWaitUntil:
+    visible: '.*Um, today I sat by the window.*tonight\.'
+    timeout: 30000
+- assertNotVisible: '.*tonight\..*tonight\..*'
+- takeScreenshot: 03-one-take
+# A second take, in the same session, while the first is already words.
+- runFlow: subflows/speak-take.yaml
+- runFlow:
+    file: subflows/pause.yaml
+    env:
+      SECONDS: 25
+- tapOn: 'Write'
+- extendedWaitUntil:
+    visible: '.*Um, today I sat by the window.*tonight\..*Um, today I sat by the window.*tonight\..*'
+    timeout: 60000
+- takeScreenshot: 03-two-takes

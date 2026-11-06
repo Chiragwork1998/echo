@@ -1,0 +1,10 @@
+appId: host.exp.exponent
+# Home to the daily session, with Begin. Needs Reduce Motion (see run.sh).
+---
+- extendedWaitUntil:
+    visible: 'Where are you, really\?'
+    timeout: 120000
+- tapOn: 'Begin. Your seven minutes'
+- extendedWaitUntil:
+    visible: 'A PRIVATE JOURNAL'
+    timeout: 120000

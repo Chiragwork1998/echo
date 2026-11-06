@@ -149,7 +149,10 @@ describe('Home, Night', () => {
   it('begins a session from the stone, and a written one from Write instead', async () => {
     await render(<HomeScreen />);
     await fireEvent.press(button(`${goldenCopy.nightBegin}. ${goldenCopy.nightBeginArc}`));
-    expect(router.push).toHaveBeenCalledWith('/home/session');
+    expect(router.push).toHaveBeenCalledWith({
+      pathname: '/home/session',
+      params: { mode: 'voice' },
+    });
     await fireEvent.press(button(goldenCopy.nightWriteInstead));
     expect(router.push).toHaveBeenCalledWith({
       pathname: '/home/session',
@@ -276,7 +279,10 @@ describe('Home, Day', () => {
   it('begins today’s echo from the cream CTA', async () => {
     await render(<HomeScreen />);
     await fireEvent.press(button(copy.home.begin));
-    expect(router.push).toHaveBeenCalledWith('/home/session');
+    expect(router.push).toHaveBeenCalledWith({
+      pathname: '/home/session',
+      params: { mode: 'voice' },
+    });
   });
 
   it('offers Write instead under the CTA, and opens the session in Write', async () => {

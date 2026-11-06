@@ -97,6 +97,45 @@ describe('launch sweep', () => {
     expect(unwrap(await journal.getEntry('draft-1'))?.audio?.durationSeconds).toBe(5);
   });
 
+  // A second take is cut off after the first has become words. The draft keeps one recording, as it
+  // does when a second take finishes in the session, and the words stay where they are. A separate
+  // draft would put the person's words behind a new empty one, and only the newest draft is offered.
+  it('adds recovered audio to a draft whose earlier recording is already words in its body', async () => {
+    const context = await setup();
+    const { journal } = context;
+    const first = unwrap(await journal.beginRecording('draft-1'));
+    const uri = leaveRecording(context, `${first.recordingId}.m4a`);
+    const attached = unwrap(
+      await journal.attachRecording({
+        recordingId: first.recordingId,
+        uri,
+        draftId: 'draft-1',
+        durationSeconds: 5,
+        content: emptyContent({ mode: 'voice' }),
+      }),
+    );
+    unwrap(
+      await journal.saveDraft(
+        'draft-1',
+        emptyContent({
+          mode: 'voice',
+          body: 'what the first take said',
+          transcribedAudioId: attached.id,
+        }),
+      ),
+    );
+    const second = unwrap(await journal.beginRecording('draft-1'));
+    leaveRecording(context, `${second.recordingId}.m4a`);
+
+    await journal.recoverLeftovers();
+
+    expect(unwrap(await journal.listDrafts())).toHaveLength(1);
+    const draft = unwrap(await journal.getEntry('draft-1'));
+    expect(draft?.body).toBe('what the first take said');
+    expect(draft?.audio?.recovered).toBe(true);
+    expect(draft?.audio?.id).not.toBe(attached.id);
+  });
+
   it('gives the audio its own draft if the original was committed', async () => {
     const context = await setup();
     const { journal } = context;

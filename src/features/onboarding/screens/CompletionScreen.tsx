@@ -12,8 +12,11 @@ export function CompletionScreen() {
   return <CompletionView mode="onboarding" onEnter={completeOnboarding} />;
 }
 
+// The daily session is still in the stack under this screen, and Home's dissolve is only undone when it
+// unmounts. Popping to the Home beneath closes both: `replace` left the session mounted behind a Home
+// that stayed the bare photograph.
 const goHome = () => {
-  router.replace(HOME_PATH as never);
+  router.dismissTo(HOME_PATH as never);
   return true;
 };
 

@@ -1,0 +1,45 @@
+appId: host.exp.exponent
+# One spoken take in the daily session, from "the book is open" to "Stop pressed".
+# Begin opens in Speak, where the open sky is the button ("Start recording"). Write instead opens in
+# Write, which shows no control until the page is touched: touching it raises the keyboard, and then
+# the quiet row offers Speak. The first take on an install shows ECHO's own explanation and then
+# Android's microphone prompt.
+# env: LISTEN (seconds to let the take run, default 6), STOP ('no' leaves the take running)
+---
+- runFlow:
+    when:
+      visible: 'Start recording'
+    commands:
+      - tapOn: 'Start recording'
+# Not in Speak, and not already recording: in Write, so go through the quiet row.
+- runFlow:
+    when:
+      notVisible: 'Start recording'
+    commands:
+      - runFlow:
+          when:
+            notVisible: 'Stop recording'
+          commands:
+            - tapOn: 'What is asking for your attention\?'
+            - extendedWaitUntil:
+                visible: 'Speak'
+                timeout: 60000
+            - tapOn: 'Speak'
+- runFlow:
+    when:
+      visible: 'Allow microphone'
+    commands:
+      - tapOn: 'Allow microphone'
+      - tapOn: 'While using the app'
+- extendedWaitUntil:
+    visible: 'Stop recording'
+    timeout: 60000
+- runFlow:
+    when:
+      true: ${STOP != 'no'}
+    commands:
+      - runFlow:
+          file: pause.yaml
+          env:
+            SECONDS: ${LISTEN || 6}
+      - tapOn: 'Stop recording'

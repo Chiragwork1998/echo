@@ -1,13 +1,17 @@
 import * as Haptics from 'expo-haptics';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, BackHandler, Keyboard } from 'react-native';
+import { Alert, AppState, BackHandler, Keyboard } from 'react-native';
 
 import { copy } from '@/content/copy';
 import { holdTheme } from '@/design/themeHold';
 import { useDraft, useVoiceRecorder, type JournalErrorCode } from '@/features/journal';
 import { backPath, nextPath, onboardingSteps } from '@/features/onboarding/flow';
-import { requestMicrophonePermission, openAppSettings } from '@/services/permissions';
+import {
+  getMicrophonePermission,
+  openAppSettings,
+  requestMicrophonePermission,
+} from '@/services/permissions';
 import { UNAVAILABLE_CODES } from '@/services/transcription';
 import { useOnboarding } from '@/state/onboarding';
 import { liveAllowed, usePreferences, useVoiceStatus } from '@/state/preferences';
@@ -16,6 +20,7 @@ import type { SessionMode } from './SegmentedMode';
 import type { ConsentKind } from './VoiceConsentSheet';
 import { sessionCopy } from './sessionCopy';
 import type { SpeakView } from './SpeakPanel';
+import { useKeepAwakeWhile } from './useKeepAwake';
 import { useLiveWords } from './useLiveWords';
 import { useSessionTimer } from './useSessionTimer';
 import {
@@ -37,6 +42,18 @@ const TARGETS = {
   daily: { back: '/home', next: '/home/complete', step: undefined },
 } as const;
 const go = (path: string | undefined) => path && router.navigate(path as never);
+/**
+ * Leaves for the screen this one opened from. The daily session is pushed over Home in the same
+ * stack, and `navigate` pushes a second Home over it instead of closing it. The session then stays
+ * mounted behind a Home that is still dissolved, and the person sees only the photograph.
+ * `dismissTo` pops to the Home that is already there, which closes the session and brings Home back.
+ */
+const goBack = (variant: SessionVariant) => {
+  const path = TARGETS[variant].back;
+  if (!path) return;
+  if (variant === 'daily') router.dismissTo(path as never);
+  else go(path);
+};
 
 /** Where a touch on the open sky starts another take: not mid-question, and not before the microphone is allowed. */
 const CAN_START: readonly SpeakView[] = [
@@ -111,6 +128,25 @@ export function useSessionController({ variant, initialMode, draftId }: SessionO
   const [problem, setProblem] = useState<string | null>(null);
   const reflecting = useRef(false);
 
+  // A person told the microphone is off goes to Settings, allows it, and comes back. The note must
+  // not still say it is off over a page that does nothing when touched, so coming back to the
+  // foreground asks again, and the note goes if it was allowed. It only reads the state: nothing is
+  // asked of the person, and nothing starts the microphone.
+  useEffect(() => {
+    if (permission === 'none') return;
+    let live = true;
+    const subscription = AppState.addEventListener('change', (next) => {
+      if (next !== 'active') return;
+      void getMicrophonePermission().then((now) => {
+        if (live && now.status === 'granted') setPermission('none');
+      });
+    });
+    return () => {
+      live = false;
+      subscription.remove();
+    };
+  }, [permission]);
+
   const draft = useDraft({
     draftId,
     seed: {
@@ -143,6 +179,9 @@ export function useSessionController({ variant, initialMode, draftId }: SessionO
   const recordingBusy =
     voice.state === 'starting' || voice.state === 'recording' || voice.state === 'saving';
   const hasWork = draft.hasContent || recordingBusy || transcription.active;
+  // The screen stays on for the whole of a take: recording, sealing, and sending the words. A person
+  // who speaks does not touch it, and a phone that slept would end the take (useKeepAwake.ts).
+  useKeepAwakeWhile(recordingBusy || transcription.active);
   const canReflect = ready && draft.canReflect && !recordingBusy;
 
   // First Echo shows only one thing at a time, so the words are brought to the page as they land. The
@@ -168,9 +207,9 @@ export function useSessionController({ variant, initialMode, draftId }: SessionO
   // Opening a draft that no longer needs this screen.
   const failedCode = draft.status === 'error' ? draft.error?.code : undefined;
   useEffect(() => {
-    if (failedCode === 'not_found') go(target.back);
+    if (failedCode === 'not_found') goBack(variant);
     if (failedCode === 'not_draft') go(target.next);
-  }, [failedCode, target]);
+  }, [failedCode, target, variant]);
 
   const change = (body: string) => {
     if (body.length > 0) startTimer();
@@ -325,7 +364,7 @@ export function useSessionController({ variant, initialMode, draftId }: SessionO
       const result = await draft.commit({ durationSeconds: elapsed });
       // Only once the entry is durable. A failure leaves the draft whole, and Reflect ready to retry.
       if (result.ok || result.error.code === 'not_draft') go(target.next);
-      else if (result.error.code === 'not_found') go(target.back);
+      else if (result.error.code === 'not_found') goBack(variant);
     } finally {
       reflecting.current = false;
     }
@@ -388,7 +427,7 @@ export function useSessionController({ variant, initialMode, draftId }: SessionO
     if (voice.state === 'recording') await voice.stop();
     draft.update({ durationSeconds: elapsed });
     const saved = await draft.flush();
-    if (saved.ok) go(target.back);
+    if (saved.ok) goBack(variant);
     else setProblem(sessionCopy.errors.save);
   };
   const discardDraft = async () => {
@@ -396,13 +435,13 @@ export function useSessionController({ variant, initialMode, draftId }: SessionO
     if (voice.state === 'recording') await voice.cancel();
     transcription.abandon();
     const removed = await draft.discard();
-    if (removed.ok) go(target.back);
+    if (removed.ok) goBack(variant);
     else setProblem(sessionCopy.errors.save);
   };
   const back = () => {
     if (!hasWork) {
       void draft.discard();
-      go(target.back);
+      goBack(variant);
       return;
     }
     const { title, message, keep, discard, stay } = sessionCopy.leave;

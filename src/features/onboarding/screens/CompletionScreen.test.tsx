@@ -19,7 +19,7 @@ jest.mock('expo-haptics', () => ({
   ImpactFeedbackStyle: { Light: 'light', Medium: 'medium' },
 }));
 jest.mock('expo-router', () => ({
-  router: { navigate: jest.fn(), replace: jest.fn() },
+  router: { navigate: jest.fn(), replace: jest.fn(), dismissTo: jest.fn() },
   Stack: { Screen: jest.fn(() => null) },
   // Runs the effect once on mount, as a focused screen would.
   useFocusEffect: (effect: () => void | (() => void)) => {
@@ -281,10 +281,15 @@ describe('Completion after a daily session', () => {
     expect(screen.queryByText('8/8')).toBeNull();
   });
 
-  it('returns to Home, and does not touch onboarding', async () => {
+  // The daily session is still in the stack under this screen. `replace('/home')` left it there, so Home
+  // came back as the bare photograph: its dissolve is only undone when the session unmounts. Popping to
+  // the Home that is already in the stack closes both, and Home returns. Seen on the emulator at the end
+  // of every daily echo: Reflect, Completion, Enter your space, a photograph with nothing on it.
+  it('returns to Home by popping to it, and does not touch onboarding', async () => {
     await render(<DailyCompletionScreen />);
     await fireEvent.press(cta());
-    expect(router.replace).toHaveBeenCalledWith('/home');
+    expect(router.dismissTo).toHaveBeenCalledWith('/home');
+    expect(router.replace).not.toHaveBeenCalled();
     expect(completeOnboarding).not.toHaveBeenCalled();
   });
 
@@ -300,7 +305,7 @@ describe('Completion after a daily session', () => {
       handled = handlers[0]!();
     });
     expect(handled).toBe(true);
-    expect(router.replace).toHaveBeenCalledWith('/home');
+    expect(router.dismissTo).toHaveBeenCalledWith('/home');
   });
 
   it('turns off the swipe-back gesture', async () => {

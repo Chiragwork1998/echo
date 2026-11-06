@@ -307,8 +307,24 @@ export function createSqlJournal(rt: Runtime, clock: Clock = deviceClock): SqlJo
       const row = await findRow(draftId);
       // No row: the recording began before the draft's first save, so the id is still free.
       if (!row || (row.status === 'draft' && !row.deleted_at && !row.audio_id)) return draftId;
+      // A draft whose recording is already words in its body takes the newer one, as it does when a
+      // second take finishes in the session: it keeps one recording, and the words stay where they
+      // are. A draft of its own would put those words behind a new empty one, and only the newest
+      // draft is offered. A recording that has not become words is kept, and the new one gets its own.
+      if (row.status === 'draft' && !row.deleted_at && (await wordsAreInBody(row))) return draftId;
     }
     return newId();
+  }
+
+  /** The draft's recording has been turned into words, and they are in its body. */
+  async function wordsAreInBody(row: EntryRow): Promise<boolean> {
+    try {
+      const entry = await decode(row);
+      return entry.audio !== undefined && entry.transcribedAudioId === entry.audio.id;
+    } catch {
+      // Cannot be read: the safe answer keeps both recordings.
+      return false;
+    }
   }
 
   async function rescue(file: FileInfo, ledger: RecordingRow | undefined): Promise<boolean> {

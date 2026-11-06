@@ -1,0 +1,28 @@
+appId: host.exp.exponent
+name: A take that was cut off is offered back as words, and becomes them
+# e2e: reduce-motion
+# Start: the app was force-stopped mid-take and launched again (failures/kill-mid-take.sh does both).
+# env: SHOT (screenshot name)
+---
+- runFlow: ../subflows/begin-daily.yaml
+- extendedWaitUntil:
+    visible: 'Turn my voice into words'
+    timeout: 60000
+- takeScreenshot: ${SHOT || 'recovered'}-offered
+- tapOn: 'Turn my voice into words'
+- runFlow: ../subflows/allow-voice.yaml
+- runFlow:
+    file: ../subflows/pause.yaml
+    env:
+      SECONDS: 30
+- tapOn: 'Show words'
+- runFlow:
+    when:
+      visible: 'Show your words as you speak\?'
+    commands:
+      - tapOn: 'Keep words hidden'
+      - tapOn: 'Write'
+- extendedWaitUntil:
+    visible: '.*sat by the window.*'
+    timeout: 60000
+- takeScreenshot: ${SHOT || 'recovered'}-words

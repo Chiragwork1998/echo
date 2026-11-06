@@ -1,0 +1,4 @@
+appId: host.exp.exponent
+# Waits SECONDS. Maestro has no sleep, so this spins in the script engine.
+---
+- evalScript: ${ (function () { var until = Date.now() + Number(SECONDS) * 1000; while (Date.now() < until) {} })() }

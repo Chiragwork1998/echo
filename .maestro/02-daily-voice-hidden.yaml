@@ -1,0 +1,42 @@
+appId: host.exp.exponent
+name: Daily, voice, hidden (the default)
+# e2e: reduce-motion
+# Start: onboarding done, ECHO on Home (E2E_LAUNCH=kill). Expects the synthetic English speech.
+---
+- runFlow: subflows/begin-daily.yaml
+- runFlow: subflows/speak-take.yaml
+- runFlow: subflows/allow-voice.yaml
+# Hidden: nothing of what was said is on the page while the words are on their way, or after.
+- assertNotVisible: '.*sat by the window.*'
+- runFlow:
+    file: subflows/pause.yaml
+    env:
+      SECONDS: 25
+- assertNotVisible: '.*sat by the window.*'
+- takeScreenshot: 02-hidden-page-empty
+# Write brings the words up, exactly as spoken, fillers and all.
+- tapOn: 'Write'
+- extendedWaitUntil:
+    visible: '.*Um, today I sat by the window.*Actually, no, how much I needed him.*'
+    timeout: 30000
+- takeScreenshot: 02-words-on-page
+- tapOn: 'Reflect'
+- extendedWaitUntil:
+    visible: 'You made space for yourself.'
+    timeout: 120000
+- tapOn: 'Enter your space'
+- tapOn: 'Echoes'
+- extendedWaitUntil:
+    visible: 'Um, today I sat by the window.*'
+    timeout: 60000
+- takeScreenshot: 02-echoes
+- tapOn: 'Um, today I sat by the window.*'
+- extendedWaitUntil:
+    visible: '.*Actually, no, how much I needed him.*'
+    timeout: 60000
+- assertVisible: 'Play recording.*'
+- tapOn: 'Play recording'
+- extendedWaitUntil:
+    visible: 'Pause recording.*'
+    timeout: 30000
+- takeScreenshot: 02-playing
