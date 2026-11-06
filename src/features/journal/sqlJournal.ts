@@ -74,17 +74,10 @@ function extensionOf(name: string): string {
 const stemOf = (name: string) => name.slice(0, name.length - extensionOf(name).length);
 
 export function createSqlJournal(rt: Runtime, clock: Clock = deviceClock): SqlJournal {
-  const { db, files, paths, vault, newId, now } = rt;
-
   // Autosave, commit, discard, and audio are read-modify-write. Running them one at a time means a
-  // late autosave can never land on top of a commit, and SQLite never sees interleaved transactions
-  // on the one connection.
-  let queue: Promise<unknown> = Promise.resolve();
-  function serial<T>(task: () => Promise<T>): Promise<T> {
-    const run = queue.then(task, task);
-    queue = run.catch(() => undefined);
-    return run;
-  }
+  // late autosave can never land on top of a commit. The queue is the runtime's, so onboarding and
+  // theme writes wait their turn too: see createRuntime.
+  const { db, files, paths, vault, newId, now, serial } = rt;
 
   async function attempt<T>(
     code: JournalErrorCode,

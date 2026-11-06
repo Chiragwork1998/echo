@@ -91,7 +91,7 @@ function relock(): void {
 
 async function resolve(runtime: Runtime): Promise<void> {
   try {
-    await hydratePreferences(runtime.db);
+    await hydratePreferences(runtime.db, runtime.serial);
   } catch {
     // Night is an acceptable theme. A missing preference is no reason to keep someone out.
   }

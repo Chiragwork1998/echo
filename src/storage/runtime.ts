@@ -1,5 +1,5 @@
 import { migrate } from './migrations';
-import type { AesPort, FilePort, SecretStore, SqlDb, StoragePaths } from './ports';
+import type { AesPort, FilePort, SecretStore, SqlDb, StoragePaths, WriteQueue } from './ports';
 import { createVault, type Vault } from './vault';
 
 export type StoragePorts = {
@@ -12,11 +12,32 @@ export type StoragePorts = {
   now: () => number;
 };
 
-export type Runtime = StoragePorts & { vault: Vault };
+export type Runtime = StoragePorts & { vault: Vault; serial: WriteQueue };
+
+/**
+ * The one way to write to the database. Everything shares a single connection, and a transaction on
+ * it is only BEGIN, the task, then COMMIT: a statement from anywhere else that arrives in between
+ * joins the transaction. If that rolls back, the write disappears after reporting that it saved,
+ * which for onboarding can be the lock being turned on.
+ *
+ * Why not withExclusiveTransactionAsync: it opens a second connection with none of the PRAGMAs in
+ * nativePorts.ts. secure_delete is off there, so ciphertext deleted in a transaction would stay in
+ * echo.db. synchronous cannot be set once its BEGIN has run. And writers on this connection would
+ * fail with "database is locked" instead of waiting.
+ */
+function createWriteQueue(): WriteQueue {
+  let queue: Promise<unknown> = Promise.resolve();
+  return (task) => {
+    const run = queue.then(task, task);
+    queue = run.catch(() => undefined);
+    return run;
+  };
+}
 
 export async function createRuntime(ports: StoragePorts): Promise<Runtime> {
   await migrate(ports.db);
-  return { ...ports, vault: createVault(ports) };
+  const serial = createWriteQueue();
+  return { ...ports, serial, vault: createVault({ ...ports, serial }) };
 }
 
 let active: Promise<Runtime> | null = null;

@@ -7,7 +7,7 @@ import type { Journal } from './types';
 let override: Journal | null = null;
 let cached: { runtime: Runtime; journal: SqlJournal } | null = null;
 
-/** One journal per runtime, so its write queue really is the only writer. */
+/** One journal per runtime. */
 export function sqlJournalFor(runtime: Runtime): SqlJournal {
   if (cached?.runtime !== runtime) {
     cached = { runtime, journal: createSqlJournal(runtime, deviceClock) };

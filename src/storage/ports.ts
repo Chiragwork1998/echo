@@ -12,6 +12,9 @@ export interface SqlDb {
   transaction(task: () => Promise<void>): Promise<void>;
 }
 
+/** Runs one task at a time, in the order they arrived. A failed task does not stop the next. */
+export type WriteQueue = <T>(task: () => Promise<T>) => Promise<T>;
+
 /** An imported key. Opaque so that key bytes cannot wander through the code. */
 export type AesKey = { readonly __aesKey: unique symbol };
 

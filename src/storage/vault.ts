@@ -1,5 +1,13 @@
 import { decodeJson, encodeJson, open, seal, type ObjectKind } from './envelope';
-import type { AesKey, AesPort, FilePort, SecretStore, SqlDb, StoragePaths } from './ports';
+import type {
+  AesKey,
+  AesPort,
+  FilePort,
+  SecretStore,
+  SqlDb,
+  StoragePaths,
+  WriteQueue,
+} from './ports';
 
 const KEY_NAME = 'echo.content-key.v1';
 /** Removed only by destroyKey, once everything it vouches for is gone. */
@@ -52,9 +60,10 @@ type Deps = {
   files: FilePort;
   paths: StoragePaths;
   now: () => number;
+  serial: WriteQueue;
 };
 
-export function createVault({ aes, secrets, db, files, paths, now }: Deps): Vault {
+export function createVault({ aes, secrets, db, files, paths, now, serial }: Deps): Vault {
   let key: AesKey | null = null;
 
   const requireKey = (): AesKey => {
@@ -72,11 +81,13 @@ export function createVault({ aes, secrets, db, files, paths, now }: Deps): Vaul
 
   async function writeCanary(candidate: AesKey): Promise<void> {
     const sealed = await seal(aes, candidate, 'canary', CANARY_ID, encodeJson(CANARY_VALUE));
-    await db.run('INSERT OR REPLACE INTO sealed_kv (key, sealed, updated_at) VALUES (?, ?, ?)', [
-      CANARY_ROW,
-      sealed,
-      now(),
-    ]);
+    await serial(() =>
+      db.run('INSERT OR REPLACE INTO sealed_kv (key, sealed, updated_at) VALUES (?, ?, ?)', [
+        CANARY_ROW,
+        sealed,
+        now(),
+      ]),
+    );
   }
 
   async function opens(
@@ -198,7 +209,7 @@ export function createVault({ aes, secrets, db, files, paths, now }: Deps): Vaul
     async destroyKey() {
       // Canary, then key. A crash between them leaves a key over nothing, which the next launch
       // adopts. The other order leaves a canary with no key, which reads as a lost journal.
-      await db.run('DELETE FROM sealed_kv WHERE key = ?', [CANARY_ROW]);
+      await serial(() => db.run('DELETE FROM sealed_kv WHERE key = ?', [CANARY_ROW]));
       try {
         await secrets.remove(KEY_NAME);
       } catch (error) {

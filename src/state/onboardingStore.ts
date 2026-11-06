@@ -27,10 +27,12 @@ export function createOnboardingPersistence(rt: Runtime): OnboardingPersistence 
     },
     async save(state) {
       const sealed = await rt.vault.sealJson('onboarding', OBJECT_ID, state);
-      await rt.db.run(
-        `INSERT INTO sealed_kv (key, sealed, updated_at) VALUES (?, ?, ?)
-         ON CONFLICT (key) DO UPDATE SET sealed = excluded.sealed, updated_at = excluded.updated_at`,
-        [ROW, sealed, rt.now()],
+      await rt.serial(() =>
+        rt.db.run(
+          `INSERT INTO sealed_kv (key, sealed, updated_at) VALUES (?, ?, ?)
+           ON CONFLICT (key) DO UPDATE SET sealed = excluded.sealed, updated_at = excluded.updated_at`,
+          [ROW, sealed, rt.now()],
+        ),
       );
     },
   };
