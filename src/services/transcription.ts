@@ -454,7 +454,7 @@ async function romaniseAgain(
 
 /**
  * The pieces of one take, a few at a time and joined in the order they were spoken. A piece with
- * nothing said in it is not a failure. A piece that fails is the whole take failing: the first
+ * nothing said in it is not a failure, once it has been asked for twice. A piece that fails is the whole take failing: the first
  * failure stops the others, none of the words are returned, and trying again sends the take afresh.
  * Part of a take is never handed back as if it were the whole. What is decided for the take is
  * decided once, before the first piece: the style of the words.
@@ -497,14 +497,23 @@ async function sendPieces(
         bytes.length,
         Math.min(PIECE_CONCURRENCY, plan.count),
       );
-      const result = await post(
-        endpoint,
-        token,
-        { ...deps, timeoutMs },
-        stop.signal,
-        () => ({ value: bytesPart(bytes, plan.name, plan.type), name: plan.name }),
-        style,
-      );
+      const ask = () =>
+        post(
+          endpoint,
+          token,
+          { ...deps, timeoutMs },
+          stop.signal,
+          () => ({ value: bytesPart(bytes, plan.name, plan.type), name: plan.name }),
+          style,
+        );
+      let result = await ask();
+      // A long take may honestly hold a quiet stretch, so an empty piece is not a failure. But an
+      // empty answer is also what a piece looks like when the recogniser missed it, and its words
+      // would be gone without a trace. It is asked for once more, and only a second empty answer
+      // means silence.
+      if (!result.ok && result.error.code === 'no_speech' && !stop.signal.aborted) {
+        result = await ask();
+      }
       if (result.ok) {
         arrived[index] = await romaniseAgain(result.value, style, deps, stop.signal);
       } else if (result.error.code === 'no_speech') {
