@@ -7,6 +7,7 @@ import {
   useState,
   type ComponentRef,
   type PropsWithChildren,
+  type ReactNode,
   type RefObject,
 } from 'react';
 import {
@@ -24,14 +25,18 @@ import { tokens } from '@/design/tokens';
 type BlurTarget = RefObject<ComponentRef<typeof View> | null>;
 const BlurTargetContext = createContext<BlurTarget | null>(null);
 
-/** Android blurs a target view, so the plate has to be wrapped. iOS and web blur what is behind. */
-export function BlurSource({ children }: PropsWithChildren) {
+/**
+ * Android blurs a target view rather than whatever is behind it, so the plate goes in `backdrop` and
+ * glass inside `children` shares the target. The target must not contain the BlurView itself.
+ */
+export function BlurSurface({ backdrop, children }: PropsWithChildren<{ backdrop: ReactNode }>) {
   const target = useRef<ComponentRef<typeof View>>(null);
   return (
     <BlurTargetContext.Provider value={target}>
       <BlurTargetView ref={target} style={StyleSheet.absoluteFill}>
-        {children}
+        {backdrop}
       </BlurTargetView>
+      {children}
     </BlurTargetContext.Provider>
   );
 }

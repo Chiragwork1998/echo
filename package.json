@@ -69,7 +69,8 @@
     "testPathIgnorePatterns": [
       "/node_modules/",
       "/.artifacts/",
-      "/dist/"
+      "/dist/",
+      "/.claude/"
     ]
   }
 }

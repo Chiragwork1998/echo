@@ -6,7 +6,7 @@ import { useLayout } from '@/design/layout';
 import type { ScreenId } from '@/features/onboarding/flow';
 
 import { EchoBackground } from './EchoBackground';
-import { BlurSource } from './GlassCard';
+import { BlurSurface } from './GlassCard';
 
 // The goldens place the header just inside the status-bar inset and the CTA 52 pt above the screen
 // bottom. See docs/SPEC_CONFLICTS.md, C-03.
@@ -37,29 +37,28 @@ export function ScreenShell({ screen, header, footer, children }: Props) {
 
   return (
     <View style={styles.root}>
-      <BlurSource>
-        <EchoBackground screen={screen} />
-      </BlurSource>
-      <View
-        style={[
-          styles.layer,
-          {
-            paddingTop: Math.max(insets.top + HEADER_OFFSET_FROM_SAFE_TOP, 8),
-            paddingBottom: insets.bottom + FOOTER_ABOVE_SAFE_BOTTOM,
-          },
-        ]}
-      >
-        {accessibleLayout ? (
-          <ScrollView style={styles.fill} contentContainerStyle={styles.scroll}>
-            {body}
-          </ScrollView>
-        ) : (
-          body
-        )}
-        {footer && (
-          <View style={[styles.footer, { width, paddingHorizontal: gutter }]}>{footer}</View>
-        )}
-      </View>
+      <BlurSurface backdrop={<EchoBackground screen={screen} />}>
+        <View
+          style={[
+            styles.layer,
+            {
+              paddingTop: Math.max(insets.top + HEADER_OFFSET_FROM_SAFE_TOP, 8),
+              paddingBottom: insets.bottom + FOOTER_ABOVE_SAFE_BOTTOM,
+            },
+          ]}
+        >
+          {accessibleLayout ? (
+            <ScrollView style={styles.fill} contentContainerStyle={styles.scroll}>
+              {body}
+            </ScrollView>
+          ) : (
+            body
+          )}
+          {footer && (
+            <View style={[styles.footer, { width, paddingHorizontal: gutter }]}>{footer}</View>
+          )}
+        </View>
+      </BlurSurface>
     </View>
   );
 }

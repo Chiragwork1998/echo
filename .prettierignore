@@ -5,3 +5,4 @@ dist
 src/design/generated
 package-lock.json
 *.md
+.claude

@@ -51,3 +51,6 @@ GoogleService-Info.plist
 # local verification output
 /.artifacts
 /coverage
+
+# agent worktrees
+.claude/worktrees/
