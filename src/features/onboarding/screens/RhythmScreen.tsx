@@ -10,6 +10,7 @@ import { ScreenShell } from '@/components/ScreenShell';
 import { copy } from '@/content/copy';
 import { useLayout } from '@/design/layout';
 import { backPath, nextPath } from '@/features/onboarding/flow';
+import { commitReminder } from '@/features/onboarding/rhythm/commitReminder';
 import { PRESETS, PresetCards } from '@/features/onboarding/rhythm/PresetCards';
 import { ReminderRow } from '@/features/onboarding/rhythm/ReminderRow';
 import { RhythmHeading } from '@/features/onboarding/rhythm/RhythmHeading';
@@ -61,9 +62,10 @@ export function RhythmScreen() {
   }, []);
   const picker = useTimePicker({ minutes, is24Hour, onChange: setCustom });
 
-  // Records the choice and moves on. Permission and scheduling are added here, once, by the lead.
-  const finish = () => {
-    update({ reminder: { time: formatTime(minutes), enabled, preset } });
+  const finish = async () => {
+    const time = formatTime(minutes);
+    update({ reminder: { time, enabled, preset } });
+    await commitReminder(time, enabled);
     const next = nextPath('rhythm');
     if (next) router.navigate(next as never);
   };

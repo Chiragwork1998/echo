@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo } from 'react';
-import { StyleSheet, useWindowDimensions } from 'react-native';
+import { StyleSheet } from 'react-native';
 import Animated, {
   ReduceMotion,
   useAnimatedProps,
@@ -9,6 +9,7 @@ import Animated, {
 import Svg, { Defs, LinearGradient, Path, Stop } from 'react-native-svg';
 
 import { useTheme } from '@/design/theme';
+import { usePlateFrame } from '@/design/usePlatePoint';
 import { tokens, type ThemeName } from '@/design/tokens';
 import { pathLength, smoothPath } from '@/features/onboarding/intent/geometry';
 
@@ -45,7 +46,7 @@ type Props = { line: readonly Point[]; selected: boolean };
  */
 export function PathGlow({ line, selected }: Props) {
   const { name } = useTheme();
-  const { width, height } = useWindowDimensions();
+  const { width, height } = usePlateFrame();
   const id = `glow${useId().replaceAll(':', '')}`;
   const progress = useSharedValue(selected ? 1 : 0);
   const { d, length, top, bottom } = useMemo(

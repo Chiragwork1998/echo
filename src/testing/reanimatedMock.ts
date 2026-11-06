@@ -1,19 +1,21 @@
 // Reanimated's bundled mock runs native initialisers and throws under jest-expo. This covers the
 // API the app uses and resolves every animation to its final value immediately. If a test needs
 // another function, add it here.
+import { useState } from 'react';
 import { Image, ScrollView, Text, View } from 'react-native';
 
 const identity = <T>(value: T) => value;
 
-const useSharedValue = <T>(initial: T) => ({
-  value: initial,
-  get() {
-    return this.value;
-  },
-  set(next: T) {
-    this.value = next;
-  },
-});
+const useSharedValue = <T>(initial: T) =>
+  useState(() => ({
+    value: initial,
+    get() {
+      return this.value;
+    },
+    set(next: T) {
+      this.value = next;
+    },
+  }))[0];
 
 export const reanimatedMock = {
   __esModule: true,

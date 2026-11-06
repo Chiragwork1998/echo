@@ -1,4 +1,4 @@
-import { act, fireEvent, screen } from '@testing-library/react-native';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { Dimensions, Platform } from 'react-native';
@@ -8,6 +8,8 @@ import { dialSize } from '@/features/onboarding/rhythm/TimeDial';
 import { initialOnboarding, useOnboarding } from '@/state/onboarding';
 import { render } from '@/testing/render';
 
+import { commitReminder } from '@/features/onboarding/rhythm/commitReminder';
+
 import { RhythmScreen } from './RhythmScreen';
 
 jest.mock('expo-haptics', () => ({
@@ -15,6 +17,9 @@ jest.mock('expo-haptics', () => ({
   ImpactFeedbackStyle: { Light: 'light' },
 }));
 jest.mock('expo-router', () => ({ router: { navigate: jest.fn() } }));
+jest.mock('@/features/onboarding/rhythm/commitReminder', () => ({
+  commitReminder: jest.fn().mockResolvedValue(undefined),
+}));
 jest.mock(
   'react-native-safe-area-context',
   () => jest.requireActual('react-native-safe-area-context/jest/mock').default,
@@ -315,7 +320,8 @@ describe('Set my rhythm', () => {
       enabled: true,
       preset: 'morning',
     });
-    expect(router.navigate).toHaveBeenCalledWith('/onboarding/privacy');
+    await waitFor(() => expect(router.navigate).toHaveBeenCalledWith('/onboarding/privacy'));
+    expect(commitReminder).toHaveBeenCalledWith('08:00', true);
   });
 
   it('stores a dragged time with no preset', async () => {

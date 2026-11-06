@@ -7,9 +7,8 @@ import { SoftScrim } from '@/components/SoftScrim';
 import { ToggleRow } from '@/components/ToggleRow';
 import { copy } from '@/content/copy';
 import { useTheme } from '@/design/theme';
+import { verifyLockAvailable } from '@/services/biometric';
 import { useOnboarding, type OnboardingState } from '@/state/onboarding';
-
-import { canUseBiometrics } from './biometrics';
 
 // Measured from the goldens, at the 393 x 852 reference.
 const ROW_GAP = 6.5;
@@ -80,11 +79,13 @@ export function PrivacyControls() {
         return;
       }
       checking.current = true;
-      const available = await canUseBiometrics();
+      // Proves the person can pass the lock, so turning it on can never lock them out.
+      const result = await verifyLockAvailable();
       checking.current = false;
-      if (!available) {
+      if (!result.ok) {
         // Never block the journey: the lock stays off, the row says why, and the user moves on.
-        setUnavailable(true);
+        // Dismissing the prompt is a choice, not a limitation, so it changes nothing else.
+        if (result.reason !== 'cancelled') setUnavailable(true);
         setPrivacy({ biometricLock: false });
         return;
       }

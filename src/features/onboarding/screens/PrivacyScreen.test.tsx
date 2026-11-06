@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react-native';
 import * as Haptics from 'expo-haptics';
-import * as LocalAuthentication from 'expo-local-authentication';
+import { verifyLockAvailable } from '@/services/biometric';
 import { router } from 'expo-router';
 import { Dimensions, Platform } from 'react-native';
 
@@ -15,18 +15,14 @@ jest.mock('expo-haptics', () => ({
   impactAsync: jest.fn(),
   ImpactFeedbackStyle: { Light: 'light' },
 }));
-jest.mock('expo-local-authentication', () => ({
-  hasHardwareAsync: jest.fn(),
-  isEnrolledAsync: jest.fn(),
-}));
+jest.mock('@/services/biometric', () => ({ verifyLockAvailable: jest.fn() }));
 jest.mock('expo-router', () => ({ router: { navigate: jest.fn() } }));
 jest.mock(
   'react-native-safe-area-context',
   () => jest.requireActual('react-native-safe-area-context/jest/mock').default,
 );
 
-const hasHardware = jest.mocked(LocalAuthentication.hasHardwareAsync);
-const isEnrolled = jest.mocked(LocalAuthentication.isEnrolledAsync);
+const verifyLock = jest.mocked(verifyLockAvailable);
 
 function setWindow(width: number, height: number, fontScale = 1) {
   const metrics = { width, height, scale: 2, fontScale };
@@ -38,8 +34,7 @@ const originalOS = Platform.OS;
 beforeEach(() => {
   jest.clearAllMocks();
   useOnboarding.setState({ ...initialOnboarding });
-  hasHardware.mockResolvedValue(true);
-  isEnrolled.mockResolvedValue(true);
+  verifyLock.mockResolvedValue({ ok: true });
   Platform.OS = originalOS;
   setWindow(393, 852);
 });
@@ -87,18 +82,17 @@ describe('PrivacyScreen', () => {
     expect(useOnboarding.getState().privacy).toEqual({ biometricLock: false, privateBackup: true });
     expect(backup()).toBeChecked();
     expect(Haptics.impactAsync).toHaveBeenCalledWith('light');
-    expect(hasHardware).not.toHaveBeenCalled();
+    expect(verifyLock).not.toHaveBeenCalled();
 
     await fireEvent.press(backup());
     expect(useOnboarding.getState().privacy.privateBackup).toBe(false);
   });
 
-  it('turns the lock on after checking the phone has biometrics set up', async () => {
+  it('turns the lock on only after the person has passed it', async () => {
     await render(<PrivacyScreen />);
     await fireEvent.press(lock());
     await waitFor(() => expect(lock()).toBeChecked());
-    expect(hasHardware).toHaveBeenCalledTimes(1);
-    expect(isEnrolled).toHaveBeenCalledTimes(1);
+    expect(verifyLock).toHaveBeenCalledTimes(1);
     expect(useOnboarding.getState().privacy).toEqual({ biometricLock: true, privateBackup: false });
     expect(Haptics.impactAsync).toHaveBeenCalledWith('light');
   });
@@ -118,15 +112,25 @@ describe('PrivacyScreen', () => {
     await render(<PrivacyScreen />);
     await fireEvent.press(lock());
     expect(lock()).not.toBeChecked();
-    expect(hasHardware).not.toHaveBeenCalled();
+    expect(verifyLock).not.toHaveBeenCalled();
+  });
+
+  it('leaves the lock off, and available, when the person dismisses the prompt', async () => {
+    verifyLock.mockResolvedValue({ ok: false, reason: 'cancelled' });
+    await render(<PrivacyScreen />);
+    await fireEvent.press(lock());
+    await waitFor(() => expect(verifyLock).toHaveBeenCalled());
+    expect(lock()).not.toBeChecked();
+    expect(lock()).toBeEnabled();
+    expect(useOnboarding.getState().privacy.biometricLock).toBe(false);
   });
 
   it.each([
-    ['has no biometric hardware', () => hasHardware.mockResolvedValue(false)],
-    ['has no face or fingerprint enrolled', () => isEnrolled.mockResolvedValue(false)],
-    ['fails to answer', () => hasHardware.mockRejectedValue(new Error('unavailable'))],
-  ])('shows the lock as unavailable, with a hint, when the phone %s', async (_name, arrange) => {
-    arrange();
+    ['has no credentials', 'no_credentials' as const],
+    ['cannot run the prompt', 'system' as const],
+    ['fails the check', 'failed' as const],
+  ])('shows the lock as unavailable, with a hint, when the phone %s', async (_name, reason) => {
+    verifyLock.mockResolvedValue({ ok: false, reason });
     await render(<PrivacyScreen />);
     await fireEvent.press(lock());
     await waitFor(() => expect(lock()).toBeDisabled());
@@ -137,7 +141,7 @@ describe('PrivacyScreen', () => {
   });
 
   it('never blocks the journey when biometrics are unavailable', async () => {
-    hasHardware.mockResolvedValue(false);
+    verifyLock.mockResolvedValue({ ok: false, reason: 'no_credentials' });
     await render(<PrivacyScreen />);
     await fireEvent.press(lock());
     await waitFor(() => expect(lock()).toBeDisabled());

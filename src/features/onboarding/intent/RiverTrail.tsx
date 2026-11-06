@@ -1,9 +1,9 @@
 import { useMemo } from 'react';
-import { StyleSheet, useWindowDimensions } from 'react-native';
+import { StyleSheet } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
 import { useTheme } from '@/design/theme';
-import { usePlatePoint } from '@/design/usePlatePoint';
+import { usePlateFrame, usePlatePoint } from '@/design/usePlatePoint';
 
 import { DASH, TRAIL_LEGS, dashArrayFor, pathLength, smoothPath } from './geometry';
 
@@ -18,7 +18,7 @@ const SHADOW_EXTRA = 1.6;
 export function RiverTrail() {
   const { colors } = useTheme();
   const toScreen = usePlatePoint();
-  const { width, height } = useWindowDimensions();
+  const { width, height } = usePlateFrame();
 
   const legs = useMemo(
     () =>
