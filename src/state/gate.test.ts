@@ -347,6 +347,120 @@ describe('biometric lock', () => {
   });
 });
 
+describe('when onboarding cannot be read', () => {
+  const sealedRecord = async () =>
+    (
+      await rt.db.first<{ sealed: Uint8Array }>(
+        "SELECT sealed FROM sealed_kv WHERE key = 'onboarding'",
+      )
+    )?.sealed;
+
+  async function finishedDevice(privacy: { biometricLock: boolean; privateBackup: boolean }) {
+    await usedDevice(async () => {
+      useOnboarding.getState().update({ privacy, intent: 'direction' });
+      await completeOnboarding();
+      await sqlJournalFor(rt).commitEntry('a', emptyContent({ body: 'kept' }));
+    });
+  }
+
+  const corrupt = () => rt.db.exec(`UPDATE sealed_kv SET sealed = x'01' WHERE key = 'onboarding'`);
+
+  async function restart() {
+    resetGateForTests();
+    resetOnboarding();
+    resetPreferences();
+    await bootApp();
+  }
+
+  /** Fails only the onboarding read of the next boot: the canary comes first and opens. */
+  function failOnboardingRead() {
+    const decrypt = nodeAes.decrypt;
+    let calls = 0;
+    return jest.spyOn(nodeAes, 'decrypt').mockImplementation(async (key, sealed, aad) => {
+      calls += 1;
+      if (calls === 2) throw new Error('native: out of memory');
+      return decrypt(key, sealed, aad);
+    });
+  }
+
+  it('locks, because the record it cannot read may have said to', async () => {
+    await finishedDevice({ biometricLock: true, privateBackup: false });
+    await corrupt();
+    await bootApp();
+    expect(status()).toEqual({ kind: 'ready', resume: '/home' });
+    expect(lock()).toMatchObject({ kind: 'locked', method: 'biometric', canDisable: false });
+  });
+
+  it('locks after a passing AES error too, which looks the same from here', async () => {
+    await finishedDevice({ biometricLock: true, privateBackup: false });
+    const spy = failOnboardingRead();
+    await bootApp();
+    spy.mockRestore();
+    expect(lock().kind).toBe('locked');
+  });
+
+  it('stays locked on return from the background as well', async () => {
+    await finishedDevice({ biometricLock: true, privateBackup: false });
+    await corrupt();
+    await bootApp();
+    await unlock();
+    expect(lock().kind).toBe('unlocked');
+    handleAppState('background', 1_000_000);
+    handleAppState('active', 1_000_000 + RELOCK_AFTER_MS);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(lock().kind).toBe('locked');
+  });
+
+  it('never replaces the record, whatever happens in this session', async () => {
+    await finishedDevice({ biometricLock: true, privateBackup: false });
+    await corrupt();
+    const before = await sealedRecord();
+    await bootApp();
+    useOnboarding.getState().update({ intent: 'quiet', mood: 'heavy' });
+    await completeOnboarding();
+    await flushOnboarding();
+    expect(await sealedRecord()).toEqual(before);
+  });
+
+  it('gets everything back on the next launch after a passing AES error', async () => {
+    await finishedDevice({ biometricLock: false, privateBackup: true });
+    const healthy = await sealedRecord();
+    const spy = failOnboardingRead();
+    await bootApp();
+    await flushOnboarding();
+    spy.mockRestore();
+    expect(await sealedRecord()).toEqual(healthy);
+
+    await restart();
+    expect(useOnboarding.getState()).toMatchObject({
+      intent: 'direction',
+      privacy: { biometricLock: false, privateBackup: true },
+    });
+    expect(lock().kind).toBe('unlocked');
+  });
+
+  it('still lets someone with no credential in, and does not record that it did', async () => {
+    enrolled.mockResolvedValue(LocalAuthentication.SecurityLevel.NONE);
+    await finishedDevice({ biometricLock: true, privateBackup: false });
+    await corrupt();
+    const before = await sealedRecord();
+    await bootApp();
+    expect(lock()).toMatchObject({ method: 'none', canDisable: true });
+
+    expect(await disableLock()).toBe(true);
+    await flushOnboarding();
+    expect(await sealedRecord()).toEqual(before);
+
+    await restart();
+    expect(lock().kind).toBe('locked');
+  });
+
+  it('never unlocks a first launch that merely has no record', async () => {
+    await bootApp();
+    expect(lock().kind).toBe('unlocked');
+  });
+});
+
 describe('relocking', () => {
   const start = 1_000_000;
 

@@ -44,6 +44,8 @@ export async function open(
   try {
     return await aes.decrypt(key, envelope.slice(1), additionalData(kind, id));
   } catch {
+    // A bad tag and a passing native fault arrive the same way, so this error means "did not open",
+    // never "is corrupt". Nothing may destroy or replace data because of it alone.
     throw new DecryptionError();
   }
 }

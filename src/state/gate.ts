@@ -93,7 +93,8 @@ async function resolve(runtime: Runtime): Promise<void> {
   const committed = await journal.hasCommittedEntries();
   const hasCommitted = committed.ok && committed.value;
   // Onboarding's own record was unreadable but entries exist, so this person finished long ago. They
-  // should reach their journal, not be sent back through setup.
+  // should reach their journal, not be sent back through setup. This stays in memory, and the lock
+  // below is on, because that record may have said so.
   if (hydration === 'reset' && hasCommitted) await completeOnboarding(runtime.now());
 
   const state = useOnboarding.getState();

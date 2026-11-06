@@ -38,7 +38,10 @@ export type OnboardingPersistence = {
 };
 
 type Meta = {
-  /** The last save failed. Choices are still held in memory and the next change retries. */
+  /**
+   * Choices are held in memory only. Either the last save failed and the next change retries, or the
+   * stored record would not open, and nothing is saved this launch.
+   */
   saveFailed: boolean;
 };
 
@@ -99,31 +102,40 @@ export type HydrationResult =
   | 'restored'
   /** Nothing stored: first launch. */
   | 'fresh'
-  /** The stored record failed to decrypt or parse, so onboarding starts again. */
+  /**
+   * The stored record would not open. That is corruption or a passing AES fault, and the two look
+   * the same from here. Onboarding starts again in memory only, with the lock assumed on.
+   */
   | 'reset';
 
 /**
  * Loads saved choices, then turns persistence on. In that order: if saving were live first, the
  * initial state could overwrite a real record.
+ *
+ * Persistence stays off after 'reset'. The lock setting lives in that record, so replacing it could
+ * turn someone's lock off for good, and a healthy record would be lost to one bad read. Left alone,
+ * the next launch can read it. Delete-all is the only thing that ever removes it.
  */
 export async function hydrateOnboarding(port: OnboardingPersistence): Promise<HydrationResult> {
   persistence = null;
   dirty = false;
   let stored: OnboardingState | null;
-  let result: HydrationResult;
   try {
     stored = await port.load();
-    result = stored ? 'restored' : 'fresh';
   } catch (error) {
-    // Only a record that really cannot be read may be replaced. Any other failure could pass, and
-    // carrying on with defaults would let the next change overwrite good data.
+    // Only a record that really cannot be read reaches here. Any other failure could pass, and
+    // carrying on with defaults would hide the user's choices for no reason.
     if (!(error instanceof DecryptionError)) throw error;
-    stored = null;
-    result = 'reset';
+    useOnboarding.setState({
+      ...initialOnboarding,
+      privacy: { ...initialOnboarding.privacy, biometricLock: true },
+      saveFailed: true,
+    });
+    return 'reset';
   }
   useOnboarding.setState({ ...initialOnboarding, ...stored, saveFailed: false });
   persistence = port;
-  return result;
+  return stored ? 'restored' : 'fresh';
 }
 
 /** Records the step the user is on. The root layout calls this as the route changes. */

@@ -122,7 +122,7 @@ describe('hydration', () => {
     expect(state()).toMatchObject({ intent: 'quiet', step: 0, reminder: { time: '21:30' } });
   });
 
-  it('starts over if the record is corrupt, leaving it until a new one replaces it', async () => {
+  it('starts over in memory if the record will not open, and never replaces it', async () => {
     await hydrateOnboarding(persistence);
     update({ intent: 'quiet' });
     await flushOnboarding();
@@ -132,11 +132,26 @@ describe('hydration', () => {
     expect(await hydrateOnboarding(persistence)).toBe('reset');
     expect(state().intent).toBeUndefined();
 
+    const save = jest.spyOn(persistence, 'save');
     update({ intent: 'direction' });
-    await flushOnboarding();
+    expect(await flushOnboarding()).toBe(true);
+    expect(await completeOnboarding()).toBe(true);
+    expect(save).not.toHaveBeenCalled();
+
     resetOnboarding();
-    expect(await hydrateOnboarding(persistence)).toBe('restored');
-    expect(state().intent).toBe('direction');
+    expect(await hydrateOnboarding(persistence)).toBe('reset');
+  });
+
+  it('assumes the lock is on when the record will not open, and says nothing is saving', async () => {
+    await hydrateOnboarding(persistence);
+    update({ intent: 'quiet' });
+    await flushOnboarding();
+    await rt.db.exec(`UPDATE sealed_kv SET sealed = x'01' WHERE key = 'onboarding'`);
+    resetOnboarding();
+
+    await hydrateOnboarding(persistence);
+    expect(state().privacy.biometricLock).toBe(true);
+    expect(state().saveFailed).toBe(true);
   });
 
   it('does not treat a passing read failure as corruption', async () => {
