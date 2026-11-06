@@ -100,9 +100,9 @@ export function ThemeProvider({ children, crossfade = true }: ProviderProps) {
 
   // Never in the middle of a writing session: the theme waits for it to close.
   const held = useThemeHeld();
-  const settled = useRef(wanted);
-  if (!held) settled.current = wanted;
-  const target = held ? settled.current : wanted;
+  const [frozen, setFrozen] = useState(wanted);
+  if (!held && frozen !== wanted) setFrozen(wanted);
+  const target = held ? frozen : wanted;
 
   const { name, colors } = useShownTheme(target, crossfade);
   const value = useMemo(

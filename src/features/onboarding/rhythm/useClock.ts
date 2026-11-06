@@ -23,7 +23,7 @@ export function readClockFormat(): ClockFormat & { is24Hour: boolean } {
 
 /** The device's language and 12 or 24 hour setting, read once. */
 export function useClockFormat(): ClockFormat & { is24Hour: boolean } {
-  return useMemo(readClockFormat, []);
+  return useMemo(() => readClockFormat(), []);
 }
 
 export function useClockText(minutes: number): ClockText {
