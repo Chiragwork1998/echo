@@ -143,7 +143,7 @@ The request carries `style`: `exact` (the default: every filler and self-correct
 | `timeout`           | No reply within 100 s                                        | Recording is safe, Try again                 |
 | `too_long`          | 413, an `.m4a` past about 4.4 MB, or an `.aac` whose frames cannot be followed. A WAV and an ADTS `.aac` are split instead | Recording is safe, Write instead |
 | `no_speech`         | 422: nothing was heard                                       | Recording is safe, Try again                 |
-| `unsupported`       | 415, or 422 `unsupported_audio` (which the server also gives an `.aac` outside about 5.5 to 380 seconds; the app cuts to stay inside) | Recording is safe, Try again                 |
+| `unsupported`       | 415, or 422 `unsupported_audio` | Recording is safe, Try again                 |
 | `rate_limited`, `server`, `invalid_response` | 429, 5xx, or a reply that is not the contract | Recording is safe, Try again       |
 | `audio_unavailable` | The sealed recording would not open                          | Recording is safe, Try again                 |
 

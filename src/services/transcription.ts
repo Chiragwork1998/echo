@@ -87,14 +87,12 @@ export const MAX_UPLOAD_BYTES = 4_400_000;
 /** A longer recording is sent in pieces of at most this many bytes: a WAV, which is what a live take is, or an ADTS .aac. */
 export const PIECE_BYTES = 4_000_000;
 /**
- * And of at most this much sound. The voice server refuses an .aac of more than about 380 seconds
- * (378 are taken, 381 come back as 422 unsupported_audio, whatever the size of the file) although the
- * same audio sent as an .m4a is taken at ten minutes, so the limit is in the server's .aac path. A
- * piece is five minutes, which is 1.5 MB at the recorder's 40 kbps.
+ * And of at most this much sound. The server makes an .aac into FLAC, about 46 KB a second, and OpenAI
+ * takes 25 MB, so a piece is well within that. Five minutes also keeps each piece quick.
  */
 export const PIECE_SECONDS = 300;
 /** An .aac cannot be listened to for a quiet moment, so each piece begins this long before the last one ended. */
-export const PIECE_OVERLAP_SECONDS = 3;
+export const PIECE_OVERLAP_SECONDS = 5;
 /**
  * The same .aac path refuses a clip of under about five and a half seconds, and the end of a take cut in
  * pieces can be little more than the overlap. An end shorter than this is sent with the piece before it.
@@ -384,9 +382,9 @@ async function uploadWavInPieces(
 }
 
 /**
- * An ADTS .aac, which is what Android records. The server takes about 380 seconds of it at a time,
- * so a longer take is cut between frames into pieces of five minutes, which overlap by a few seconds
- * because the quiet moments cannot be found without decoding it. The words of the overlap are said twice and
+ * An ADTS .aac, which is what Android records. A long take is cut between frames into pieces of five
+ * minutes, which keeps each one quick and within OpenAI's size limit once the server has made it FLAC.
+ * They overlap by a few seconds because the quiet moments cannot be found without decoding it. The words of the overlap are said twice and
  * joined once (joinWords.ts). A take that fits is sent whole. A file that cannot be followed frame by
  * frame is sent whole if the server could take it, and is otherwise too long.
  */

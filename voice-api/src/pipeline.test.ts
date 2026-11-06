@@ -165,3 +165,25 @@ test('finish: exact text with no Devanagari is returned as it is, tidy always po
   assert.equal(chat().length, 0);
   assert.deepEqual(await finish('hello um there', 'tidy', c), { text: 'Hello there.', polished: true, romanised: false });
 });
+
+test('a short clip in the pool Node Buffers share is sent alone, with nothing from the pool', async () => {
+  // Something else handled earlier by this process, in the same pool as the clip.
+  const earlier = Buffer.concat([Buffer.from('another person said this')]);
+  const clip = Buffer.concat([Buffer.from([1, 2, 3, 4])]);
+  assert.equal(clip.buffer, earlier.buffer, 'the two must share a pool for this test to mean anything');
+
+  let sent: Blob | null = null;
+  const config = {
+    apiKey: 'test',
+    transcribeModel: 'test',
+    polishModel: 'test',
+    fetch: (async (_url: string, init: RequestInit) => {
+      sent = (init.body as FormData).get('file') as Blob;
+      return new Response(JSON.stringify({ text: 'words' }), { status: 200 });
+    }) as unknown as typeof fetch,
+  };
+  await transcribe({ bytes: clip, filename: 'a.flac', type: 'audio/flac' }, config);
+
+  const bytes = new Uint8Array(await (sent as unknown as Blob).arrayBuffer());
+  assert.deepEqual([...bytes], [1, 2, 3, 4]);
+});

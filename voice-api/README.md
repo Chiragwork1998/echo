@@ -35,18 +35,16 @@ Production: https://echo-voice-roan.vercel.app, in the `chiragtalwar-finzarccoms
 Environment: `OPENAI_API_KEY`, `ECHO_VOICE_TOKEN`. Optional: `ECHO_TRANSCRIBE_MODEL`,
 `ECHO_POLISH_MODEL`.
 
-A request is limited twice over. Vercel rejects bodies over 4.5 MB. And, measured against this server, the
-`.aac` path refuses a clip of more than about 380 seconds (378 are taken, 381 come back as 422
-`unsupported_audio` within a few seconds, whatever the size of the file) and one of under about 5.5
-seconds, although the same audio rewrapped to MP4 elsewhere and sent as an `.m4a` is taken (a ten minute one
-in 15 seconds; a 381 second and a 5 second one too). So the fault is in the `.aac` path, which rewraps ADTS
-to MP4 in `src/audio.ts` before OpenAI sees it, and it is worth finding: fixing it would lift the five minute
-pieces to the 4.4 MB the body allows, and let a hidden take of a few seconds on Android through, which it
-does not today. A piece of five minutes takes 9 to 12 seconds end to end, so `maxDuration` is not the limit.
+A request is limited twice over: Vercel rejects bodies over 4.5 MB, and OpenAI rejects files over 25 MB.
+An Android `.aac` becomes FLAC in `src/audio.ts` before OpenAI sees it, about 46 KB a second, because
+OpenAI refused fragmented MP4 unpredictably: 1 second, 5.5 seconds and anything past about 6.3 minutes. FLAC
+is lossless, goes through pipes, and was taken at every length tried from 1 to 429 seconds. A clip under two
+seconds gets quiet added at its end, because OpenAI refuses sound of under about a second. A piece of five
+minutes takes 9 to 12 seconds end to end, so `maxDuration` is not the limit.
 The app cuts a long take into pieces and sends them up to three at a time: a live take is a 24 kHz WAV, cut
 at its quietest moments into pieces of about 4 MB (83 seconds), and a hidden take on Android is an ADTS
-`.aac`, cut between frames into pieces of 20 to 320 seconds that overlap by three seconds, whose words the
-app joins. Each piece is an ordinary request to `/api/transcribe`, and counts as one against the limit of 60
+`.aac`, cut between frames into pieces of 20 to 320 seconds that overlap by five seconds, whose words the
+app joins. Each piece is an ordinary request to `/api/transcribe`, and counts as one against the limit of 120
 per ten minutes per address: an hour of `.aac` is 13, an hour of WAV is 44.
 
 `ECHO_VOICE_TOKEN` ships inside the app, so it stops casual abuse only. Before public launch this

@@ -7,15 +7,18 @@ const require = createRequire(import.meta.url);
 
 /**
  * OpenAI rejects raw ADTS, but Android records it because a cut-off ADTS file stays playable. This
- * rewraps the same AAC frames as MP4 through pipes: no re-encoding, and nothing touches the disk.
+ * turns it into FLAC through pipes, and nothing touches the disk. FLAC is lossless, so the sound is
+ * exactly what was recorded. MP4 cannot be written to a pipe except in fragments, and OpenAI refused
+ * fragmented MP4 at lengths with no pattern: 1 s, 5.5 s and past 6.3 minutes. The phone sends about
+ * five minutes at a time (src/services/transcription.ts), which keeps this well under OpenAI's 25 MB.
  */
 export async function normalise(audio: Audio): Promise<Audio> {
   if (!audio.filename.toLowerCase().endsWith('.aac')) return audio;
-  const bytes = await rewrap(audio.bytes);
-  return { bytes, filename: audio.filename.replace(/\.aac$/i, '.m4a'), type: 'audio/mp4' };
+  const bytes = await toFlac(audio.bytes);
+  return { bytes, filename: audio.filename.replace(/\.aac$/i, '.flac'), type: 'audio/flac' };
 }
 
-function rewrap(input: Uint8Array): Promise<Uint8Array> {
+function toFlac(input: Uint8Array): Promise<Uint8Array> {
   const binary: string = process.env.ECHO_FFMPEG ?? require('ffmpeg-static');
   return new Promise((resolve, reject) => {
     const ffmpeg = spawn(binary, [
@@ -26,14 +29,15 @@ function rewrap(input: Uint8Array): Promise<Uint8Array> {
       'aac',
       '-i',
       'pipe:0',
-      '-c',
-      'copy',
-      '-bsf:a',
-      'aac_adtstoasc',
+      '-vn',
+      // OpenAI refuses sound shorter than about a second, and a tap and a quick second tap make one.
+      // Quiet added at the end turns that into an honest answer: no words were heard.
+      '-af',
+      'apad=whole_dur=2',
+      '-c:a',
+      'flac',
       '-f',
-      'mp4',
-      '-movflags',
-      'frag_keyframe+empty_moov+default_base_moof',
+      'flac',
       'pipe:1',
     ]);
     const chunks: Buffer[] = [];
@@ -43,7 +47,7 @@ function rewrap(input: Uint8Array): Promise<Uint8Array> {
     ffmpeg.on('error', reject);
     ffmpeg.on('close', (code) => {
       if (code === 0) resolve(Buffer.concat(chunks));
-      else reject(new Error('rewrap_failed'));
+      else reject(new Error('convert_failed'));
     });
     ffmpeg.stdin.end(input);
   });

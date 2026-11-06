@@ -5,6 +5,7 @@ import {
   MAX_UPLOAD_BYTES,
   PIECE_BYTES,
   PIECE_CONCURRENCY,
+  PIECE_OVERLAP_SECONDS,
   PIECE_SECONDS,
   pieceTimeoutMs,
   refineWords,
@@ -557,7 +558,8 @@ describe('a long WAV is sent in pieces', () => {
 // A hidden take on Android is an ADTS .aac at 40 kbps: about 14 minutes to 4.4 MB.
 describe('a long ADTS .aac is sent in overlapping pieces', () => {
   const FRAME = 232;
-  const OVERLAP = (65 * 1024) / 22050;
+  const OVERLAP_FRAMES = Math.ceil((PIECE_OVERLAP_SECONDS * 22050) / 1024);
+  const OVERLAP = (OVERLAP_FRAMES * 1024) / 22050;
 
   /** A stream of frames of one size, each with a header, and its own number in the first bytes of its audio. */
   function adts(bytes: number) {
@@ -654,7 +656,7 @@ describe('a long ADTS .aac is sent in overlapping pieces', () => {
       const start = frameOf(bytes) * FRAME;
       expect(Buffer.compare(bytes, nine.subarray(start, start + bytes.length))).toBe(0);
       if (index === 0) expect(start).toBe(0);
-      else expect(end - start).toBe(65 * FRAME);
+      else expect(end - start).toBe(OVERLAP_FRAMES * FRAME);
       end = start + bytes.length;
     });
     expect(end).toBe(nine.length);
@@ -948,11 +950,11 @@ describe('a long ADTS .aac is sent in overlapping pieces', () => {
       call += 1;
       return piece(`piece${call} unique${call} words${call}`);
     });
-    // 9 MB is thirty minutes at the recorder's 40 kbps. Six pieces of five minutes leave 20 seconds,
-    // which is too little to be sent alone, so the last piece takes it.
+    // 9 MB is thirty minutes at the recorder's 40 kbps: six pieces of five minutes, each beginning five
+    // seconds before the last one ended, and a seventh for the 25 seconds they leave.
     const result = await take(nine, { pieceSeconds: PIECE_SECONDS });
     expect(result.ok).toBe(true);
-    expect(send).toHaveBeenCalledTimes(6);
+    expect(send).toHaveBeenCalledTimes(7);
     for (const call of send.mock.calls) {
       const bytes = (await sentBytes(call[1] as RequestInit)).length;
       expect(bytes).toBeLessThanOrEqual(1_700_000);

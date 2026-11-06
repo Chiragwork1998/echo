@@ -6,7 +6,7 @@ const MAX_BYTES = 4_400_000;
 const ALLOWED = /\.(m4a|mp4|aac|mp3|wav|webm)$/i;
 const WINDOW_MS = 10 * 60 * 1000;
 // A long live take that has to be sent after it ends arrives in pieces, one request each.
-const WINDOW_LIMIT = 60;
+const WINDOW_LIMIT = 120;
 const limited = createLimiter(WINDOW_MS, WINDOW_LIMIT);
 
 /**

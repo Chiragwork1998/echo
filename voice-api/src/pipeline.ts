@@ -74,14 +74,19 @@ export class VoiceError extends Error {
   }
 }
 
-const copyBytes = (bytes: Uint8Array) => bytes.slice().buffer as ArrayBuffer;
+/**
+ * These exact bytes, in memory of their own. `slice` will not do: on a Node Buffer it is a view, and
+ * `.buffer` of a small Buffer is the whole pool it shares with the rest of the process, so a short
+ * clip would carry scraps of whatever was handled before it, another person's audio included.
+ */
+export const ownBytes = (bytes: Uint8Array) => new Uint8Array(bytes).buffer;
 
 export async function transcribe(audio: Audio, config: Config) {
   const form = new FormData();
   form.set('model', config.transcribeModel);
   form.set('prompt', CONTEXT);
   for (const language of LANGUAGES) form.append('languages[]', language);
-  form.set('file', new Blob([copyBytes(audio.bytes)], { type: audio.type }), audio.filename);
+  form.set('file', new Blob([ownBytes(audio.bytes)], { type: audio.type }), audio.filename);
 
   const response = await config.fetch(`${OPENAI}/audio/transcriptions`, {
     method: 'POST',
