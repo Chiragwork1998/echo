@@ -2,7 +2,7 @@ import { act, renderHook } from '@testing-library/react-native';
 
 import { createMemoryJournal, setJournal, useDraft, type Journal } from '@/features/journal';
 import { openEntryAudio } from '@/features/journal/api';
-import type { Entry, EntryAudio } from '@/features/journal/types';
+import { failure, type Entry, type EntryAudio } from '@/features/journal/types';
 import {
   transcribeEntryAudio,
   type TranscriptionErrorCode,
@@ -326,6 +326,38 @@ describe('speaking several times', () => {
       expect.not.objectContaining({ open: expect.anything() }),
     );
     expect(result.current.draft.content.body).toBe('Before.\n\nOne.\n\nTwo.');
+    expect(released).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a take and its kept copy when its words could not be saved, and saves them once on Try again', async () => {
+    const released = jest.fn();
+    openAudio.mockResolvedValue({
+      ok: true,
+      value: { uri: 'file:///kept/one.m4a', release: released },
+    });
+    send.mockResolvedValueOnce(failed('offline'));
+    const { result } = await mount();
+    await act(async () => result.current.words.enqueue(audio('a1')));
+    await settle();
+    await act(async () => result.current.words.holdCurrent());
+
+    // The words come back, and the phone cannot write them down.
+    jest.spyOn(journal, 'saveDraft').mockResolvedValueOnce(failure('write_failed'));
+    send.mockResolvedValueOnce(said('One.')).mockResolvedValueOnce(said('Two.'));
+    await act(async () => result.current.words.enqueue(audio('a2')));
+    await settle();
+    expect(result.current.words.phase).toEqual({ kind: 'failed', code: 'server' });
+    // The copy kept for this take is the only copy of that recording: it is not let go of.
+    expect(released).not.toHaveBeenCalled();
+    expect((await stored()).body).toBe('Before.');
+
+    await act(async () => result.current.words.retry());
+    await settle();
+    // The words in hand are saved. They are not asked for again, and not added twice.
+    expect(send).toHaveBeenCalledTimes(3);
+    expect(result.current.words.phase).toEqual({ kind: 'idle' });
+    expect(result.current.draft.content.body).toBe('Before.\n\nOne.\n\nTwo.');
+    expect((await stored()).body).toBe('Before.\n\nOne.\n\nTwo.');
     expect(released).toHaveBeenCalledTimes(1);
   });
 

@@ -57,6 +57,13 @@ type Take = {
    * retry sends just these, not the recording.
    */
   words?: string;
+  /**
+   * The final words, once they are in hand. What is left is to put them in the draft and save them,
+   * so a save that failed is tried again without asking for the words a second time.
+   */
+  ready?: string;
+  /** The words are already in the draft on screen, so a retry saves them and does not add them again. */
+  placed?: boolean;
   /** The recording this take is. The draft keeps only the newest one. */
   audioId: string;
   /**
@@ -175,17 +182,27 @@ export function useTranscription(draft: DraftController) {
     [],
   );
 
+  /**
+   * Puts a take's words in the draft and saves them. True only when they are saved: a caller that
+   * lets go of what it holds on a true must never do so for words that are not on disk, because
+   * the copy it holds may be the only one left of the recording.
+   */
   const deliver = useCallback(async (id: string, take: Take, spoken: string) => {
     if (!alive.current) return storeTranscript(id, take.audioId, spoken);
     const current = live.current;
     if (current.status !== 'ready') return false;
-    const next = appendTranscript(text.current, spoken);
-    text.current = next;
-    current.update({ body: next, transcribedAudioId: take.audioId });
-    setArrival((count) => count + 1);
+    const words = spoken.trim();
+    // A try after a failed save: the words are already on the page, and are not added a second time.
+    if (!(take.placed && text.current.includes(words))) {
+      const next = appendTranscript(text.current, spoken);
+      text.current = next;
+      current.update({ body: next, transcribedAudioId: take.audioId });
+      take.placed = true;
+      setArrival((count) => count + 1);
+    }
     // Saved now, not at the next autosave: the words are the point of the recording.
-    await current.flush();
-    return true;
+    const saved = await current.flush();
+    return saved.ok;
   }, []);
 
   const pump = useCallback(async () => {
@@ -212,6 +229,19 @@ export function useTranscription(draft: DraftController) {
           break;
         }
 
+        // The words came back and could not be saved. Nothing more is asked for: they are saved again.
+        if (take.ready !== undefined) {
+          setPhase({ kind: 'listening' });
+          if (!(await deliver(id, take, take.ready))) {
+            outcome = { kind: 'failed', code: 'server' };
+            break;
+          }
+          if (cancelled()) break;
+          letGo(take);
+          queue.current.shift();
+          continue;
+        }
+
         // Heard live: the words are waited for first. If they do not come, or the connection dropped,
         // the recording is sent as if it had never been live.
         if (take.live) {
@@ -235,7 +265,8 @@ export function useTranscription(draft: DraftController) {
             outcome = { kind: 'failed', code: refined.error.code };
             break;
           }
-          if (!(await deliver(id, take, refined.value.text))) {
+          take.ready = refined.value.text;
+          if (!(await deliver(id, take, take.ready))) {
             outcome = { kind: 'failed', code: 'server' };
             break;
           }
@@ -274,7 +305,8 @@ export function useTranscription(draft: DraftController) {
           outcome = { kind: 'failed', code: result.error.code };
           break;
         }
-        if (!(await deliver(id, take, result.value.text))) {
+        take.ready = result.value.text;
+        if (!(await deliver(id, take, take.ready))) {
           outcome = { kind: 'failed', code: 'server' };
           break;
         }
