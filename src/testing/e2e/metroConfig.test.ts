@@ -92,4 +92,19 @@ describe('the test microphone in the Metro config', () => {
       config.resolver.resolveRequest!(context({ dev: false }), 'expo-audio', 'android'),
     ).toThrow(/ECHO_E2E/);
   });
+
+  // Metro resolves its empty-module placeholder with dev: false on every dev server, whatever the
+  // bundle asked for. Only expo-audio is swapped, so only that request can be refused.
+  it("does not mistake Metro's own dev: false resolutions for a release bundle", () => {
+    const config = loadConfig({ ECHO_E2E: '1', NODE_ENV: 'development' });
+    const placeholder = context({ dev: false });
+    expect(() =>
+      config.resolver.resolveRequest!(
+        placeholder,
+        '/project/node_modules/metro-runtime/empty.js',
+        'android',
+      ),
+    ).not.toThrow();
+    expect(placeholder.resolveRequest).toHaveBeenCalledTimes(1);
+  });
 });

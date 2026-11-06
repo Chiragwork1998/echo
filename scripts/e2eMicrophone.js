@@ -30,10 +30,13 @@ function useTestMicrophone(config, standIn, env = process.env) {
   if (isReleaseBuild(env)) throw new Error(RELEASE_MESSAGE);
 
   config.resolver.resolveRequest = (context, name, platform) => {
+    // Only the swap is refused. Metro resolves its own empty-module placeholder with dev: false on
+    // every dev server, so checking every resolution made a normal development run fail.
+    if (name !== 'expo-audio' || context.originModulePath === standIn) {
+      return context.resolveRequest(context, name, platform);
+    }
     if (context.dev === false) throw new Error(RELEASE_MESSAGE);
-    return name === 'expo-audio' && context.originModulePath !== standIn
-      ? { type: 'sourceFile', filePath: standIn }
-      : context.resolveRequest(context, name, platform);
+    return { type: 'sourceFile', filePath: standIn };
   };
   return config;
 }
