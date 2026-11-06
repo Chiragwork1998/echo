@@ -8,7 +8,13 @@ import { SoftScrim } from './SoftScrim';
 
 // Measured from the goldens, and shared by the onboarding steps.
 const TITLE_TOP = 34;
-const SUBTITLE = { fontFamily: 'Inter_300Light', fontSize: 14.1, lineHeight: 20, marginTop: 5 };
+const SUBTITLE = {
+  fontFamily: 'Inter_300Light',
+  fontSize: 14.1,
+  lineHeight: 20,
+  marginTop: 5,
+  opacity: 0.86,
+};
 // On compact phones the cover crop lifts the scenery, so the heading rises with it.
 const COMPACT_LIFT = 14;
 // The Day plates put cloud and glare behind headings, unlike the goldens' skies. A feathered patch

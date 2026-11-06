@@ -57,8 +57,8 @@ export function PrimaryCTA({
       ) : (
         <>
           <EchoText
-            variant="button"
-            style={[styles.label, { color: labelColor }]}
+            variant="label"
+            style={{ color: labelColor }}
             numberOfLines={1}
             adjustsFontSizeToFit
             minimumFontScale={0.8}
@@ -106,8 +106,6 @@ export function PrimaryCTA({
 }
 
 const styles = StyleSheet.create({
-  // Goldens set CTA labels near 13 pt, not the 16 pt token. See docs/SPEC_CONFLICTS.md, C-07.
-  label: { fontSize: 13, lineHeight: 18 },
   cream: { borderRadius: tokens.radius.button },
   content: {
     height: tokens.size.primaryButtonHeight,
