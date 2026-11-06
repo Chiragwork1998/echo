@@ -88,17 +88,27 @@ const defaults = (): LiveDeps => ({
 
 export const LIVE_SESSION_PATH = '/api/live-session';
 
+/** The one place a live voice is streamed to. The server names it, but the phone does not take its word. */
+export const LIVE_HOST = 'api.openai.com';
+export const LIVE_PATH = '/v1/realtime';
+
+const OPENAI_REALTIME = new RegExp(
+  `^wss://${LIVE_HOST.replace(/\./g, '\\.')}${LIVE_PATH}(?:[/?][^\\s#\\\\]*)?$`,
+);
+
 /**
- * The address the server gave, if it is safe to stream a voice to: wss, or this Mac's own loopback
- * in a development build. Anything else is refused, so a wrong reply can never send a voice
- * somewhere in the clear.
+ * The address the server gave, if it is safe to stream a voice to: OpenAI's realtime API over wss,
+ * exactly (host `api.openai.com`, a path that starts `/v1/realtime`, no user, no port), or this
+ * Mac's own loopback in a development build. Anything else is refused, so a wrong reply, or someone
+ * standing in for the server, can never send a voice to a host of their choosing, or in the clear.
+ * Parsed by hand: the URL class is not complete on every React Native runtime.
  */
 export function liveAddress(
   url: unknown,
   development: boolean = typeof __DEV__ !== 'undefined' && __DEV__,
 ): string | null {
   if (typeof url !== 'string') return null;
-  if (/^wss:\/\/[^/?#@\s]+(\/[^\s#]*)?(\?[^\s#]*)?$/i.test(url)) return url;
+  if (OPENAI_REALTIME.test(url) && !url.includes('..')) return url;
   if (
     development &&
     /^ws:\/\/(127\.0\.0\.1|localhost)(:\d{1,5})?(\/[^\s#]*)?(\?[^\s#]*)?$/i.test(url)
