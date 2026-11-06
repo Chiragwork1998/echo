@@ -2,7 +2,7 @@ import { bytesEqual } from '@/storage/bytes';
 import { DecryptionError, encodeJson } from '@/storage/envelope';
 import { childUri, type FileInfo } from '@/storage/ports';
 import type { Runtime } from '@/storage/runtime';
-import { VaultNotReadyError } from '@/storage/vault';
+import { CANARY_ROW, VaultNotReadyError } from '@/storage/vault';
 
 import { emptyContent, hasContent, searchIn, toSummary, unreadableSummary } from './content';
 import { deviceClock, type Clock } from './localDay';
@@ -45,7 +45,7 @@ const SELECT_ENTRY = `
          e.deleted_at, a.id AS audio_id, a.sealed_meta AS audio_meta
   FROM entries e LEFT JOIN audio a ON a.entry_id = e.id`;
 
-const TABLES = ['recordings', 'reflections', 'audio', 'entries', 'sealed_kv', 'preferences'];
+const TABLES = ['recordings', 'reflections', 'audio', 'entries', 'preferences'];
 
 export type RecoverySummary = {
   /** Plaintext recordings now encrypted into drafts. */
@@ -62,7 +62,7 @@ export type SqlJournal = Journal & {
   /** Every entry and draft, for export. Rows that fail to decrypt are counted, not dropped. */
   readAll(): Promise<{ entries: Entry[]; unreadable: number }>;
   readAudio(entry: Entry): Promise<Uint8Array | null>;
-  /** Removes all journal data. The key is destroyed separately, last. */
+  /** Removes all journal data. The canary and the key are destroyed separately, last. */
   wipe(): Promise<void>;
 };
 
@@ -98,6 +98,15 @@ export function createSqlJournal(rt: Runtime, clock: Clock = deviceClock): SqlJo
       if (error instanceof VaultNotReadyError) return failure('not_ready');
       return failure(code);
     }
+  }
+
+  /**
+   * Moves the write-ahead log into the database and empties it. secure_delete covers only the
+   * database file, so deleted ciphertext stays in the log, where the key still opens it.
+   */
+  async function truncateLog(): Promise<void> {
+    const result = await db.first<{ busy: number }>('PRAGMA wal_checkpoint(TRUNCATE)');
+    if (result?.busy) throw new JournalFailure('write_failed');
   }
 
   const audioUri = (id: string) => childUri(paths.audioDir, `${id}.enc`);
@@ -557,11 +566,13 @@ export function createSqlJournal(rt: Runtime, clock: Clock = deviceClock): SqlJo
 
     wipe: () =>
       serial(async () => {
+        // The canary stays. If anything below fails the app carries on under this key, and what it
+        // writes next has to be provable on the next launch.
         await db.transaction(async () => {
           for (const table of TABLES) await db.run(`DELETE FROM ${table}`);
+          await db.run('DELETE FROM sealed_kv WHERE key <> ?', [CANARY_ROW]);
         });
-        // Empty the write-ahead log too, or deleted ciphertext lingers in it.
-        await db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+        await truncateLog();
         files.removeDirectory(paths.audioDir);
         files.removeDirectory(paths.tempDir);
         for (const directory of paths.recordingDirs) files.removeDirectory(directory);

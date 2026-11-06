@@ -53,6 +53,12 @@ export type MemorySecrets = SecretStore & {
   items: Map<string, string>;
   /** Makes the next reads reject, as the Keychain does while the device is locked. */
   failReads: boolean;
+  /**
+   * Android's Keystore key is gone or no longer matches, after a reinstall or a restore. The next
+   * read does not fail: it deletes the stored item and answers null as if there had never been one
+   * (SecureStoreModule.kt:142,167 in expo-secure-store). Writing makes a new Keystore key.
+   */
+  keystoreLost: boolean;
   writes: number;
 };
 
@@ -61,13 +67,16 @@ export function memorySecrets(): MemorySecrets {
   const store: MemorySecrets = {
     items,
     failReads: false,
+    keystoreLost: false,
     writes: 0,
     async get(name) {
       if (store.failReads) throw new Error('interaction not allowed');
+      if (store.keystoreLost) items.delete(name);
       return items.get(name) ?? null;
     },
     async set(name, value) {
       store.writes += 1;
+      store.keystoreLost = false;
       items.set(name, value);
     },
     async remove(name) {

@@ -174,6 +174,24 @@ describe('when the key is lost', () => {
     expect(status()).toEqual({ kind: 'key_lost', reason: 'mismatch' });
   });
 
+  it('does not mistake one passing AES failure for a lost key', async () => {
+    await sqlJournalFor(rt).commitEntry('a', emptyContent({ body: 'kept' }));
+    const decrypt = jest.spyOn(nodeAes, 'decrypt');
+    decrypt.mockRejectedValueOnce(new Error('native: transient'));
+    await bootApp();
+    decrypt.mockRestore();
+    expect(status().kind).toBe('ready');
+  });
+
+  it('never offers Start over while AES itself is failing', async () => {
+    await sqlJournalFor(rt).commitEntry('a', emptyContent({ body: 'kept' }));
+    const decrypt = jest.spyOn(nodeAes, 'decrypt');
+    decrypt.mockRejectedValue(new Error('native: out of memory'));
+    await bootApp();
+    decrypt.mockRestore();
+    expect(status()).toEqual({ kind: 'storage_error', reason: 'database' });
+  });
+
   it('runs no sweep without a key, so plaintext is left to be rescued later', async () => {
     const directory = rt.paths.recordingDirs[0] ?? '';
     mkdirSync(directory, { recursive: true });

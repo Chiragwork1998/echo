@@ -13,9 +13,9 @@ export type DeleteAllResult = { ok: true } | { ok: false; code: 'delete_incomple
  * Removes everything ECHO keeps on this device: entries, tombstones, audio, drafts, plaintext
  * leftovers, onboarding, preferences, reminder, and the encryption key. Irreversible, so ask first.
  *
- * Data goes before the key. If this dies part way, the key still opens whatever remains, the app
- * starts normally, and the user can run it again. The other order would strand the remainder behind
- * the key-loss screen.
+ * Data goes first, then the canary, then the key. If this dies part way, the key still opens
+ * whatever remains, the app starts normally, and the user can run it again. Any other order would
+ * strand the remainder behind the key-loss screen.
  *
  * Resolves after the app has returned to a first-launch state, which re-routes to Landing.
  */

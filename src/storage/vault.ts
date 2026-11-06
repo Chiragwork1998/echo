@@ -2,9 +2,21 @@ import { decodeJson, encodeJson, open, seal, type ObjectKind } from './envelope'
 import type { AesKey, AesPort, FilePort, SecretStore, SqlDb, StoragePaths } from './ports';
 
 const KEY_NAME = 'echo.content-key.v1';
-const CANARY_ROW = 'canary';
+/** Removed only by destroyKey, once everything it vouches for is gone. */
+export const CANARY_ROW = 'canary';
 const CANARY_ID = 'v1';
 const CANARY_VALUE = 'echo';
+
+// One of each sealed kind is enough to prove a key: a wrong key opens none of them. The id is what
+// each kind is bound to, and 'v1' is the onboarding record's. Several rows, so that damage to one
+// cannot look like the wrong key.
+const STORED_SAMPLES = `
+  SELECT kind, id, sealed FROM (
+    SELECT 'entry' AS kind, id, sealed FROM entries WHERE sealed IS NOT NULL
+    UNION ALL SELECT 'audio_meta', id, sealed_meta FROM audio
+    UNION ALL SELECT 'reflection', entry_id, sealed FROM reflections WHERE sealed IS NOT NULL
+    UNION ALL SELECT 'onboarding', 'v1', sealed FROM sealed_kv WHERE key = 'onboarding'
+  ) LIMIT 16`;
 
 export type VaultStatus =
   | { state: 'ready' }
@@ -29,7 +41,7 @@ export type Vault = {
   openBytes(kind: ObjectKind, id: string, envelope: Uint8Array): Promise<Uint8Array>;
   sealJson(kind: ObjectKind, id: string, value: unknown): Promise<Uint8Array>;
   openJson<T>(kind: ObjectKind, id: string, envelope: Uint8Array): Promise<T>;
-  /** Removes the key from the device. Only delete-all may call this. */
+  /** Removes the key and its canary. Only delete-all may call this, after the data has gone. */
   destroyKey(): Promise<void>;
 };
 
@@ -60,11 +72,44 @@ export function createVault({ aes, secrets, db, files, paths, now }: Deps): Vaul
 
   async function writeCanary(candidate: AesKey): Promise<void> {
     const sealed = await seal(aes, candidate, 'canary', CANARY_ID, encodeJson(CANARY_VALUE));
-    await db.run('INSERT INTO sealed_kv (key, sealed, updated_at) VALUES (?, ?, ?)', [
+    await db.run('INSERT OR REPLACE INTO sealed_kv (key, sealed, updated_at) VALUES (?, ?, ?)', [
       CANARY_ROW,
       sealed,
       now(),
     ]);
+  }
+
+  async function opens(
+    candidate: AesKey,
+    kind: ObjectKind,
+    id: string,
+    envelope: Uint8Array,
+  ): Promise<boolean> {
+    try {
+      await open(aes, candidate, kind, id, envelope);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** One real object that opens proves the key, whatever the canary says. */
+  async function opensStoredData(candidate: AesKey): Promise<boolean> {
+    const rows = await db.all<{ kind: ObjectKind; id: string; sealed: Uint8Array }>(STORED_SAMPLES);
+    for (const row of rows) {
+      if (await opens(candidate, row.kind, row.id, row.sealed)) return true;
+    }
+    return false;
+  }
+
+  /** Whether AES is working at all right now, judged on bytes that have to open. */
+  async function aesWorks(candidate: AesKey): Promise<boolean> {
+    try {
+      const sealed = await seal(aes, candidate, 'canary', CANARY_ID, encodeJson(CANARY_VALUE));
+      return await opens(candidate, 'canary', CANARY_ID, sealed);
+    } catch {
+      return false;
+    }
   }
 
   /** First run only, and only after hasEncryptedData has said there is nothing to strand. */
@@ -96,20 +141,29 @@ export function createVault({ aes, secrets, db, files, paths, now }: Deps): Vaul
       'SELECT sealed FROM sealed_kv WHERE key = ?',
       [CANARY_ROW],
     );
-    if (!canary) {
-      if (dataExists) return { state: 'key_mismatch' };
+    if (!canary && !dataExists) {
       // A key with no data: an iOS reinstall (the Keychain outlives the app) or a crash mid-setup.
       await writeCanary(candidate);
       key = candidate;
       return { state: 'ready' };
     }
-    try {
-      await open(aes, candidate, 'canary', CANARY_ID, canary.sealed);
-    } catch {
-      return { state: 'key_mismatch' };
+    if (canary) {
+      const opensCanary = () => opens(candidate, 'canary', CANARY_ID, canary.sealed);
+      if ((await opensCanary()) || (await opensCanary())) {
+        key = candidate;
+        return { state: 'ready' };
+      }
     }
-    key = candidate;
-    return { state: 'ready' };
+
+    // key_mismatch offers to erase everything, so it needs more than a canary that did not open. A
+    // bad tag and a native fault look the same from here, and the canary itself can be damaged.
+    if (await opensStoredData(candidate)) {
+      await writeCanary(candidate);
+      key = candidate;
+      return { state: 'ready' };
+    }
+    if (!(await aesWorks(candidate))) return { state: 'unavailable', reason: 'database' };
+    return { state: 'key_mismatch' };
   }
 
   return {
@@ -142,7 +196,16 @@ export function createVault({ aes, secrets, db, files, paths, now }: Deps): Vaul
     openJson: async <T>(kind: ObjectKind, id: string, envelope: Uint8Array) =>
       decodeJson<T>(await open(aes, requireKey(), kind, id, envelope)),
     async destroyKey() {
-      await secrets.remove(KEY_NAME);
+      // Canary, then key. A crash between them leaves a key over nothing, which the next launch
+      // adopts. The other order leaves a canary with no key, which reads as a lost journal.
+      await db.run('DELETE FROM sealed_kv WHERE key = ?', [CANARY_ROW]);
+      try {
+        await secrets.remove(KEY_NAME);
+      } catch (error) {
+        // The app carries on under this key, so what it writes next has to stay provable.
+        if (key) await writeCanary(key);
+        throw error;
+      }
       key = null;
     },
   };

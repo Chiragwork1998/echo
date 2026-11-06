@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { emptyContent } from '@/features/journal/content';
@@ -13,7 +13,12 @@ import {
 import { createOnboardingPersistence } from '@/state/onboardingStore';
 import { resetPreferences, usePreferences } from '@/state/preferences';
 import { installRuntime } from '@/storage/runtime';
-import { createTestRuntime, everyStoredByte, type TestRuntime } from '@/storage/testing/nodePorts';
+import {
+  createTestRuntime,
+  everyStoredByte,
+  nodeFiles,
+  type TestRuntime,
+} from '@/storage/testing/nodePorts';
 
 import { deleteAllLocal } from './deleteAllLocal';
 import { cancelReminder } from './reminders';
@@ -70,7 +75,31 @@ beforeEach(async () => {
   await fullDevice();
 });
 
-afterEach(() => installRuntime(null));
+afterEach(() => {
+  jest.restoreAllMocks();
+  installRuntime(null);
+});
+
+/** Every sealed value now stored, and each encrypted recording: what must not survive. */
+async function allCiphertext(): Promise<Buffer[]> {
+  const rows = await rt.db.all<{ sealed: Uint8Array }>(
+    `SELECT sealed FROM entries WHERE sealed IS NOT NULL
+     UNION ALL SELECT sealed FROM reflections WHERE sealed IS NOT NULL
+     UNION ALL SELECT sealed_meta FROM audio
+     UNION ALL SELECT sealed FROM sealed_kv WHERE key <> 'canary'`,
+  );
+  const audio = readdirSync(rt.paths.audioDir).map((name) =>
+    readFileSync(join(rt.paths.audioDir, name)),
+  );
+  return [...rows.map((row) => Buffer.from(row.sealed)), ...audio];
+}
+
+async function relaunch() {
+  resetGateForTests();
+  resetOnboarding();
+  resetPreferences();
+  await bootApp();
+}
 
 describe('deleteAllLocal', () => {
   it('removes every row, file, and setting', async () => {
@@ -120,23 +149,96 @@ describe('deleteAllLocal', () => {
     expect(useGate.getState().status).toEqual({ kind: 'ready', resume: '/' });
   });
 
-  it('leaves nothing recognisable on disk', async () => {
+  it('leaves no ciphertext on disk, in the database or its write-ahead log', async () => {
+    // Text never reaches the disk as text, so searching for it proves nothing. The sealed bytes do
+    // reach it, and the old key opens them if a copy of the key ever survives anywhere.
+    const secrets = await allCiphertext();
+    expect(secrets.length).toBeGreaterThan(4);
+    const before = everyStoredByte(rt.root);
+    for (const secret of secrets) expect(before.includes(secret)).toBe(true);
+
     await deleteAllLocal();
-    await rt.db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
-    expect(everyStoredByte(rt.root).includes(SECRET)).toBe(false);
+
+    const after = everyStoredByte(rt.root);
+    for (const secret of secrets) expect(after.includes(secret)).toBe(false);
   });
 
-  it('keeps the key if the data could not be removed, so nothing is stranded', async () => {
-    const before = [...rt.secrets.items.values()][0];
-    const journal = sqlJournalFor(rt);
-    jest.spyOn(journal, 'wipe').mockRejectedValue(new Error('database is locked'));
+  describe('when it fails part way through', () => {
+    const failures: [string, () => void][] = [
+      [
+        'deleting the rows',
+        () => jest.spyOn(rt.db, 'run').mockRejectedValueOnce(new Error('database is locked')),
+      ],
+      [
+        'emptying the write-ahead log',
+        () => jest.spyOn(rt.db, 'first').mockRejectedValueOnce(new Error('database is locked')),
+      ],
+      [
+        'removing the audio',
+        () =>
+          jest.spyOn(nodeFiles, 'removeDirectory').mockImplementationOnce(() => {
+            throw new Error('EBUSY');
+          }),
+      ],
+      [
+        'removing the plaintext',
+        () =>
+          jest
+            .spyOn(nodeFiles, 'removeDirectory')
+            .mockImplementationOnce(() => undefined)
+            .mockImplementationOnce(() => {
+              throw new Error('EBUSY');
+            }),
+      ],
+      [
+        'removing the key',
+        () => {
+          rt.secrets.remove = () => Promise.reject(new Error('interaction not allowed'));
+        },
+      ],
+    ];
 
-    expect(await deleteAllLocal()).toEqual({ ok: false, code: 'delete_incomplete' });
+    it.each(failures)('reports failure at %s and keeps the key', async (_step, breakIt) => {
+      const before = [...rt.secrets.items.values()][0];
+      breakIt();
 
-    expect([...rt.secrets.items.values()][0]).toBe(before);
-    const entry = await journal.getEntry('entry');
-    expect(entry.ok && entry.value?.body).toBe(SECRET);
-    expect(useOnboarding.getState().intent).toBe('understand_self');
+      expect(await deleteAllLocal()).toEqual({ ok: false, code: 'delete_incomplete' });
+
+      expect([...rt.secrets.items.values()][0]).toBe(before);
+      expect(useOnboarding.getState().intent).toBe('understand_self');
+    });
+
+    it.each(failures)(
+      'keeps what is written next readable after failing at %s',
+      async (_step, breakIt) => {
+        breakIt();
+        await deleteAllLocal();
+        jest.restoreAllMocks();
+
+        const journal = sqlJournalFor(rt);
+        const saved = await journal.commitEntry('after', emptyContent({ body: 'written after' }));
+        expect(saved.ok).toBe(true);
+
+        await relaunch();
+
+        expect(useGate.getState().status.kind).toBe('ready');
+        const entry = await sqlJournalFor(rt).getEntry('after');
+        expect(entry.ok && entry.value?.body).toBe('written after');
+      },
+    );
+
+    it.each(failures)('can simply be run again after failing at %s', async (_step, breakIt) => {
+      const remove = rt.secrets.remove;
+      breakIt();
+      await deleteAllLocal();
+      jest.restoreAllMocks();
+      rt.secrets.remove = remove;
+
+      expect(await deleteAllLocal()).toEqual({ ok: true });
+
+      expect(await count('entries')).toBe(0);
+      expect(useGate.getState().status).toEqual({ kind: 'ready', resume: '/' });
+    });
   });
 
   it('is the way out of the key-loss state', async () => {
