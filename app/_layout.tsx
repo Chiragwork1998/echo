@@ -215,12 +215,17 @@ function useSecureWindowWhileLocked() {
   const lockEnabled = useOnboarding((state) => state.privacy.biometricLock);
   useEffect(() => {
     if (gateBypassed || Platform.OS !== 'android' || !lockEnabled) return;
-    const { preventScreenCaptureAsync, allowScreenCaptureAsync } = loadScreenCapture();
-    // PrivacyCover still stands if this fails, and a failed flag must not stop anyone writing.
-    preventScreenCaptureAsync(SECURE_WINDOW_KEY).catch(() => undefined);
-    return () => {
-      allowScreenCaptureAsync(SECURE_WINDOW_KEY).catch(() => undefined);
-    };
+    // PrivacyCover still stands if this fails, and a failed flag must not stop anyone writing. It
+    // throws outright on a build made before the native module was added.
+    try {
+      const { preventScreenCaptureAsync, allowScreenCaptureAsync } = loadScreenCapture();
+      preventScreenCaptureAsync(SECURE_WINDOW_KEY).catch(() => undefined);
+      return () => {
+        allowScreenCaptureAsync(SECURE_WINDOW_KEY).catch(() => undefined);
+      };
+    } catch {
+      return;
+    }
   }, [lockEnabled]);
 }
 

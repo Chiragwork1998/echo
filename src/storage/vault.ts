@@ -14,9 +14,9 @@ const CANARY_ROW = 'canary';
 const CANARY_ID = 'v1';
 const CANARY_VALUE = 'echo';
 
-// One of each sealed kind is enough to prove a key: a wrong key opens none of them. The id is what
+// Any one of these that opens proves a key, because a wrong key opens none of them. The id is what
 // each kind is bound to, and 'v1' is the onboarding record's. Several rows, so that damage to one
-// cannot look like the wrong key.
+// cannot look like the wrong key, and a limit, so that a real mismatch does not read the whole journal.
 const STORED_SAMPLES = `
   SELECT kind, id, sealed FROM (
     SELECT 'entry' AS kind, id, sealed FROM entries WHERE sealed IS NOT NULL

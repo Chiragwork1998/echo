@@ -296,6 +296,16 @@ describe('Android screen capture', () => {
     expect(screen.queryByTestId(NAVIGATOR)).toBeTruthy();
   });
 
+  it('does not bring the app down on a build without the native module', async () => {
+    preventCapture.mockImplementationOnce(() => {
+      throw new Error("Cannot find native module 'ExpoScreenCapture'");
+    });
+    useOnboarding.setState(lockOn);
+    await render(<RootLayout />);
+    await setGate({ status: { kind: 'ready', resume: '/' } });
+    expect(screen.queryByTestId(NAVIGATOR)).toBeTruthy();
+  });
+
   it('is never touched on iOS, whatever the lock says', async () => {
     jest.replaceProperty(Platform, 'OS', 'ios');
     useOnboarding.setState(lockOn);
