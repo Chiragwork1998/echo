@@ -1,10 +1,13 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react-native';
+import { router } from 'expo-router';
 import { Dimensions, Linking } from 'react-native';
 
 import { createMemoryJournal, setJournal, type Entry } from '@/features/journal';
 import { deviceClock } from '@/features/journal/localDay';
 import { readPatternCards, type PatternCard } from '@/services/patterns';
+import { usePlusStore } from '@/services/plus/store';
 import { usePreferences } from '@/state/preferences';
+import { withBillingForTests, withoutBillingForTests } from '@/testing/plus';
 import { render } from '@/testing/render';
 
 import { patternsCopy } from './patternsCopy';
@@ -14,7 +17,7 @@ import { supportCopy } from './supportResources';
 import { CONSENT_VERSION } from './usePatternCards';
 
 jest.mock('expo-router', () => ({
-  router: { navigate: jest.fn() },
+  router: { navigate: jest.fn(), push: jest.fn() },
   usePathname: () => '/home/patterns',
 }));
 jest.mock(
@@ -199,5 +202,77 @@ describe('pattern cards', () => {
       await screen.findByText(`${patternsCopy.cards.none} ${patternsCopy.cards.keptEarlier}`),
     ).toBeTruthy();
     expect(screen.getByText('Quiet scoring')).toBeTruthy();
+  });
+});
+
+describe('pattern cards and ECHO Plus', () => {
+  const cards = {
+    status: 'cards' as const,
+    entriesRead: 5,
+    cards: [card('Guilty about resting')],
+  };
+  const paywall = { pathname: '/plus', params: { feature: 'patterns' } };
+
+  beforeEach(() => {
+    withBillingForTests({ status: 'free', source: 'live' });
+    usePreferences.setState({ patternsConsent: CONSENT_VERSION });
+  });
+  afterEach(() => withoutBillingForTests());
+
+  it('gives the first reading free, without a word about Plus', async () => {
+    read.mockResolvedValue(cards);
+    await render(<PatternsScreen />);
+    expect(screen.queryByText(patternsCopy.cards.plusNote)).toBeNull();
+    await press(patternsCopy.cards.read);
+    expect(await screen.findByText('Guilty about resting')).toBeTruthy();
+    expect(router.push).not.toHaveBeenCalled();
+    expect(usePlusStore.getState().readingUsed).toBe(true);
+  });
+
+  it('after the free reading, "Read again" opens the paywall and reads nothing', async () => {
+    jest.mocked(loadReading).mockResolvedValue({ ok: true, value: earlier });
+    await render(<PatternsScreen />);
+    expect(await screen.findByText(patternsCopy.cards.plusNote)).toBeTruthy();
+    await press(patternsCopy.cards.readAgain);
+    expect(router.push).toHaveBeenCalledWith(paywall);
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it('still counts the free reading as used once its cards are deleted', async () => {
+    usePlusStore.setState({ readingUsed: true });
+    await render(<PatternsScreen />);
+    await press(patternsCopy.cards.read);
+    expect(router.push).toHaveBeenCalledWith(paywall);
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it('asks for Plus before asking for agreement, so nobody agrees to a reading they cannot have', async () => {
+    usePreferences.setState({ patternsConsent: null });
+    jest.mocked(loadReading).mockResolvedValue({ ok: true, value: earlier });
+    await render(<PatternsScreen />);
+    await press(patternsCopy.cards.readAgain);
+    expect(router.push).toHaveBeenCalledWith(paywall);
+    expect(screen.queryByText(patternsCopy.consent.title)).toBeNull();
+  });
+
+  it('reads every time for someone with Plus', async () => {
+    usePlusStore.setState({ status: 'plus' });
+    jest.mocked(loadReading).mockResolvedValue({ ok: true, value: earlier });
+    read.mockResolvedValue(cards);
+    await render(<PatternsScreen />);
+    expect(screen.queryByText(patternsCopy.cards.plusNote)).toBeNull();
+    await press(patternsCopy.cards.readAgain);
+    expect(await screen.findByText('Guilty about resting')).toBeTruthy();
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
+  it('keeps a reading that did not finish free: trying again is not a second reading', async () => {
+    read.mockResolvedValueOnce({ status: 'error', code: 'offline', retryable: true });
+    read.mockResolvedValueOnce(cards);
+    await render(<PatternsScreen />);
+    await press(patternsCopy.cards.read);
+    await press(patternsCopy.cards.read);
+    expect(await screen.findByText('Guilty about resting')).toBeTruthy();
+    expect(router.push).not.toHaveBeenCalled();
   });
 });

@@ -105,6 +105,13 @@ export function PatternCardsSection({ entries }: { entries: readonly EntrySummar
         <>
           {!saved && <Quiet>{words.intro}</Quiet>}
           <QuietAction label={saved ? words.readAgain : words.read} onPress={cards.read} />
+          {cards.needsPlus && (
+            <OnPlate>
+              <EchoText variant="caption" color="textSecondary" align="center" style={onPlate}>
+                {words.plusNote}
+              </EchoText>
+            </OnPlate>
+          )}
         </>
       )}
 

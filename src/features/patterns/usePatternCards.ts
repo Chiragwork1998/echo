@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { EntrySummary } from '@/features/journal';
 import { readPatternCards, type ReadFailure } from '@/services/patterns';
+import { usePlus, useRequirePlus } from '@/services/plus';
+import { markReadingUsed, usePlusStore } from '@/services/plus/store';
 import { usePreferences } from '@/state/preferences';
 
 import { gatherEntries } from './gatherEntries';
@@ -26,6 +28,11 @@ export type PatternCards = {
   reading: boolean;
   notice: CardsNotice | null;
   agreed: boolean;
+  /**
+   * The first reading is free. Once one has been made, every reading is ECHO Plus, and without it
+   * `read` opens the paywall instead.
+   */
+  needsPlus: boolean;
   /** The one quiet action. Asks first if the person has not yet agreed. */
   read: () => void;
   agree: () => void;
@@ -49,6 +56,10 @@ export function usePatternCards(entries: readonly EntrySummary[]): PatternCards 
   const [notice, setNotice] = useState<CardsNotice | null>(null);
   const alive = useRef(true);
   const busy = useRef(false);
+  const requirePlus = useRequirePlus();
+  const { isPlus } = usePlus();
+  // A reading kept on the phone, or one made and since deleted: either way the free one is used.
+  const readingUsed = usePlusStore((state) => state.readingUsed) || saved !== null;
 
   useEffect(() => {
     alive.current = true;
@@ -85,6 +96,7 @@ export function usePatternCards(entries: readonly EntrySummary[]): PatternCards 
           cards: result.cards,
         };
         setSaved(fresh);
+        markReadingUsed();
         const kept = await saveReading(fresh);
         if (alive.current && !kept.ok) setNotice({ kind: 'not_kept' });
       } else if (result.status === 'error') {
@@ -101,12 +113,13 @@ export function usePatternCards(entries: readonly EntrySummary[]): PatternCards 
 
   const read = useCallback(() => {
     if (busy.current) return;
+    if (readingUsed && !requirePlus('patterns')) return;
     if (agreed) void run();
     else {
       setNotice(null);
       setAsking(true);
     }
-  }, [agreed, run]);
+  }, [agreed, readingUsed, requirePlus, run]);
 
   const agree = useCallback(() => {
     usePreferences.getState().setPatternsConsent(CONSENT_VERSION);
@@ -136,6 +149,7 @@ export function usePatternCards(entries: readonly EntrySummary[]): PatternCards 
     reading,
     notice,
     agreed,
+    needsPlus: readingUsed && !isPlus,
     read,
     agree,
     decline,

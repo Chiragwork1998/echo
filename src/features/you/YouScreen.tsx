@@ -7,6 +7,7 @@ import { ToggleRow } from '@/components/ToggleRow';
 import { copy } from '@/content/copy';
 import { useTheme, type ThemePreference } from '@/design/theme';
 import { tokens } from '@/design/tokens';
+import { PlusSection } from '@/features/plus/PlusSection';
 import { Heading, Notice, OnPlate, Row, Section } from '@/features/tab-pages/parts';
 import { TabPage } from '@/features/tab-pages/TabPage';
 import { onPlate } from '@/features/tab-pages/textStyles';
@@ -196,6 +197,7 @@ function About() {
 export function YouScreen() {
   return (
     <TabPage title={youCopy.title}>
+      <PlusSection />
       <Appearance />
       <Reminder />
       <Privacy />

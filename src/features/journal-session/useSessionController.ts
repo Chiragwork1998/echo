@@ -12,6 +12,7 @@ import {
   openAppSettings,
   requestMicrophonePermission,
 } from '@/services/permissions';
+import { useRequirePlus } from '@/services/plus';
 import { UNAVAILABLE_CODES } from '@/services/transcription';
 import { useOnboarding } from '@/state/onboarding';
 import { liveAllowed, usePreferences, useVoiceStatus } from '@/state/preferences';
@@ -161,6 +162,7 @@ export function useSessionController({ variant, initialMode, draftId }: SessionO
   const transcription = useTranscription(draft);
   const voiceChoice = useVoiceStatus();
   const wordsShown = usePreferences((state) => state.wordsShown);
+  const requirePlus = useRequirePlus();
   const liveWords = useLiveWords();
   // The take being recorded that is also being heard live, and the question that Show words asks.
   const liveTake = useRef<LiveHandle | null>(null);
@@ -321,6 +323,8 @@ export function useSessionController({ variant, initialMode, draftId }: SessionO
       dropLive();
       return;
     }
+    // Live words are ECHO Plus (docs/PRODUCT_V1.md). Without it the paywall opens instead.
+    if (!requirePlus('live-words')) return;
     if (daily && voice.liveAvailable && !liveAllowed(prefs.voiceConsent)) setLiveAsk('toggle');
     else prefs.setWordsShown(true);
   };
