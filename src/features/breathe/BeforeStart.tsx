@@ -11,6 +11,7 @@ import Animated, {
 import { EchoText } from '@/components/EchoText';
 import { GlassCard } from '@/components/GlassCard';
 import { OneLineLabel } from '@/components/OneLineLabel';
+import { SoftScrim } from '@/components/SoftScrim';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 
@@ -24,6 +25,7 @@ const TRACK = { width: 44, height: 25 };
 const KNOB = 24;
 const TRAVEL = TRACK.width - KNOB - 1;
 const CHIP_HEIGHT = 34;
+const DAY_SCRIM_ALPHA = 0.42;
 const CREAM_STOPS = ['#FBF8F2', '#EDE6DC'] as const; // tokens.gradient.creamButton
 const SHADOW = {
   textShadowColor: 'rgba(3,11,22,0.32)',
@@ -149,7 +151,7 @@ type Props = {
  */
 export function BeforeStart(props: Props) {
   const { practice, minutes, pace, sound, voice, markPlus } = props;
-  const { colors } = useTheme();
+  const { colors, name } = useTheme();
   const [why, setWhy] = useState(false);
   const heart = practice.steps.some(
     (step) => step.kind === 'breath' && step.pattern.kind === 'heart',
@@ -158,6 +160,13 @@ export function BeforeStart(props: Props) {
 
   return (
     <View>
+      {/* Day's sky is bright cloud behind the heading: a feathered patch keeps it legible, as the
+          onboarding headings do. Night's sky needs none. */}
+      {name === 'day' && (
+        <View pointerEvents="none" style={styles.scrim}>
+          <SoftScrim alpha={DAY_SCRIM_ALPHA} />
+        </View>
+      )}
       <EchoText
         variant="caption"
         color="textSecondary"
@@ -281,6 +290,7 @@ export function BeforeStart(props: Props) {
 }
 
 const styles = StyleSheet.create({
+  scrim: { position: 'absolute', left: -28, right: -28, top: 4, height: 260 },
   feeling: { marginTop: 22, fontSize: 12, letterSpacing: 1.2, opacity: 0.9 },
   name: { marginTop: 4 },
   line: {
