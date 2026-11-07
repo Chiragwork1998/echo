@@ -15,6 +15,9 @@ import { useLayout } from '@/design/layout';
 import { iconXml } from '@/design/generated/vectors';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
+import { becomeCopy } from '@/features/become/becomeCopy';
+import { useMorning } from '@/features/become/morning';
+import { breatheCopy } from '@/features/breathe/breatheCopy';
 import type { HomeSummary } from '@/features/journal';
 
 import { useSessionEntry } from '../dissolve';
@@ -102,6 +105,32 @@ function WriteInstead() {
   );
 }
 
+/** Breathe, before the session or instead of it: the same quiet pill as Write instead, beside it. */
+function BreatheFirst() {
+  const { breathe } = useSessionEntry();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={breatheCopy.breatheFirst}
+      onPress={() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        breathe();
+      }}
+      hitSlop={{ top: 6, bottom: 6, left: 8, right: 8 }}
+      style={({ pressed }) => [styles.pillTouch, pressed && styles.pillPressed]}
+      testID="home-breathe-first"
+    >
+      <GlassCard radius={PILL_HEIGHT / 2}>
+        <View style={styles.pill}>
+          <OneLineLabel variant="bodyM" serif style={styles.pillText} maxFontSizeMultiplier={1.3}>
+            {breatheCopy.breatheFirst}
+          </OneLineLabel>
+        </View>
+      </GlassCard>
+    </Pressable>
+  );
+}
+
 type CardProps = { summary: HomeSummary; strong: boolean };
 
 /** Continue an echo, or the latest entry when nothing is in progress, so the slot is never empty. */
@@ -171,6 +200,7 @@ export function NightFloor() {
 export function NightHome({ summary }: { summary: HomeSummary }) {
   const { accessibleLayout } = useLayout();
   const { begin } = useSessionEntry();
+  const morning = useMorning();
   const { status, rhythm, recent } = summary;
   const loading = status === 'loading';
   const hasCard = summary.continueDraft !== null || recent !== null;
@@ -180,7 +210,7 @@ export function NightHome({ summary }: { summary: HomeSummary }) {
     <>
       <Header inset={inset} />
       <OnboardingHeading
-        title={copy.home.nightHeadline}
+        title={morning ? becomeCopy.question : copy.home.nightHeadline}
         subtitle={copy.home.nightSubtitle}
         top={HEADING_TOP}
         titleStyle={styles.headline}
@@ -193,6 +223,7 @@ export function NightHome({ summary }: { summary: HomeSummary }) {
         onPress={begin}
       />
       <View style={styles.pillSlot}>
+        <BreatheFirst />
         <WriteInstead />
       </View>
       <View style={styles.spaceBelow} />
@@ -238,7 +269,13 @@ const styles = StyleSheet.create({
   headline: { fontSize: 36.4 },
   spaceAbove: { flexGrow: 71, flexBasis: 0, minHeight: 14 },
   spaceBelow: { flexGrow: 83, flexBasis: 0, minHeight: 18 },
-  pillSlot: { marginTop: 15, alignItems: 'center' },
+  pillSlot: {
+    marginTop: 15,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 10,
+  },
   pillTouch: { height: PILL_HEIGHT },
   pillPressed: { opacity: 0.8, transform: [{ scale: 0.98 }] },
   pill: {

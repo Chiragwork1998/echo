@@ -10,6 +10,11 @@ jest.mock('expo-router', () => ({
   router: { push: jest.fn(), navigate: jest.fn() },
   usePathname: () => '/home',
 }));
+// Evening, whatever the hour the tests run: the morning question is tested in become.test.tsx.
+jest.mock('@/features/become/morning', () => ({
+  ...jest.requireActual('@/features/become/morning'),
+  useMorning: () => false,
+}));
 
 function Probe() {
   const control = useHomeDissolve();

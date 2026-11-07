@@ -5,6 +5,8 @@ import { Alert, AppState, BackHandler, Keyboard } from 'react-native';
 
 import { copy } from '@/content/copy';
 import { holdTheme } from '@/design/themeHold';
+import { BECOME_PROMPT_ID, becomeCopy } from '@/features/become/becomeCopy';
+import { routeAfterReflect } from '@/features/become/rehearsal';
 import { useDraft, useVoiceRecorder, type JournalErrorCode } from '@/features/journal';
 import { backPath, nextPath, onboardingSteps } from '@/features/onboarding/flow';
 import {
@@ -116,6 +118,11 @@ export type SessionOptions = {
   initialMode?: SessionMode;
   /** Continues this draft. Without it, the newest draft resumes, or a new one begins. */
   draftId?: string;
+  /**
+   * A morning session (Become): a new entry is asked "Who will you be today?" and saved under
+   * `promptId: 'become'`, and its Reflect rehearses before Completion. Daily only.
+   */
+  become?: boolean;
 };
 
 /**
@@ -123,14 +130,15 @@ export type SessionOptions = {
  * timer, and the ways out. First Echo's page and the daily echo's open sky both draw from this, so
  * what is safe in one is safe in the other.
  */
-export function useSessionController({ variant, initialMode, draftId }: SessionOptions) {
+export function useSessionController({ variant, initialMode, draftId, become }: SessionOptions) {
   // The theme never changes in the middle of a writing session, whoever asks for it. It waits here
   // while the session is on screen, and is made when the person leaves.
   useFocusEffect(useCallback(() => holdTheme(), []));
 
   const daily = variant === 'daily';
+  const morning = daily && become === true;
   const target = TARGETS[variant];
-  const prompt = daily ? copy.home.prompt : copy.firstEcho.title;
+  const prompt = morning ? becomeCopy.question : daily ? copy.home.prompt : copy.firstEcho.title;
   const [permission, setPermission] = useState<'none' | 'explain' | 'denied'>('none');
   const [problem, setProblem] = useState<string | null>(null);
   const reflecting = useRef(false);
@@ -158,7 +166,7 @@ export function useSessionController({ variant, initialMode, draftId }: SessionO
     draftId,
     seed: {
       mode: 'text',
-      promptId: daily ? 'daily' : 'first-echo',
+      promptId: morning ? BECOME_PROMPT_ID : daily ? 'daily' : 'first-echo',
       promptText: prompt,
       // The mood from Arrival belongs to the first echo, not to every day after it.
       moodBefore: daily ? undefined : useOnboarding.getState().mood,
@@ -373,7 +381,9 @@ export function useSessionController({ variant, initialMode, draftId }: SessionO
     try {
       const result = await draft.commit({ durationSeconds: elapsed });
       // Only once the entry is durable. A failure leaves the draft whole, and Reflect ready to retry.
-      if (result.ok || result.error.code === 'not_draft') go(target.next);
+      // A morning entry rehearses on the way to Completion.
+      if (result.ok) go(daily ? routeAfterReflect(result.value) : target.next);
+      else if (result.error.code === 'not_draft') go(target.next);
       else if (result.error.code === 'not_found') goBack(variant);
     } finally {
       reflecting.current = false;

@@ -13,6 +13,7 @@ const TIDY_KEY = 'tidyWords';
 const SHOWN_KEY = 'wordsShown';
 const VOLUME_KEY = 'volume';
 const OPENS_KEY = 'bookOpens';
+const PRACTICE_KEY = 'practice';
 
 /**
  * The version of the words people agree to before their voice leaves the phone (D-005). Change what
@@ -32,6 +33,33 @@ export type VoiceChoice = 'allowed' | 'voice_only';
 export type VoiceConsent = { choice: VoiceChoice; version: number; live?: boolean };
 /** What may happen to the next recording. 'unset' means ask first, and nothing is sent. */
 export type VoiceStatus = 'unset' | VoiceChoice;
+
+/** Breathe's settings, and Become's Arrive. Choices only: nothing a person felt or said. */
+export type PracticePrefs = {
+  /** The length last chosen for each practice, by its id, in minutes. */
+  minutes: Record<string, number>;
+  /** Heart's pace, in breaths a minute. */
+  pace: number;
+  /** The breath sound and the bells. Off, haptics carry the rhythm. */
+  sound: boolean;
+  /** The spoken lines. Off, they show as text. */
+  voice: boolean;
+  /** Practices begun, so that only the first carries the safety line. */
+  begun: number;
+  /** Mornings in a row Arrive was skipped, and the last of them. At three it is no longer offered. */
+  arriveSkips: number;
+  arriveSkipDay: string | null;
+};
+
+export const DEFAULT_PRACTICE: PracticePrefs = {
+  minutes: {},
+  pace: 5.5,
+  sound: true,
+  voice: true,
+  begun: 0,
+  arriveSkips: 0,
+  arriveSkipDay: null,
+};
 
 /** Voice is the default (D-006). The last mode the person chose is remembered. */
 export type RememberedMode = 'speak' | 'write';
@@ -69,6 +97,8 @@ type Preferences = {
    */
   bookOpens: number;
   countBookOpen: () => void;
+  practice: PracticePrefs;
+  updatePractice: (patch: Partial<PracticePrefs>) => void;
 };
 
 let persist: ((key: string, value: string | null) => Promise<unknown>) | null = null;
@@ -138,6 +168,12 @@ export const usePreferences = create<Preferences>((set, get) => ({
       save(OPENS_KEY, String(bookOpens));
       return { bookOpens };
     }),
+  practice: DEFAULT_PRACTICE,
+  updatePractice: (patch) => {
+    const practice = { ...get().practice, ...patch };
+    set({ practice });
+    save(PRACTICE_KEY, JSON.stringify(practice));
+  },
 }));
 
 /**
@@ -180,12 +216,44 @@ function parseConsent(value: string | undefined): VoiceConsent | null {
   }
 }
 
+const count = (value: unknown) =>
+  typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+
+/** Anything unreadable falls back to the default, one setting at a time. */
+export function parsePractice(value: string | undefined): PracticePrefs {
+  if (!value) return DEFAULT_PRACTICE;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (typeof parsed !== 'object' || parsed === null) return DEFAULT_PRACTICE;
+    const raw = parsed as Record<string, unknown>;
+    const minutes: Record<string, number> = {};
+    if (typeof raw.minutes === 'object' && raw.minutes !== null) {
+      for (const [id, length] of Object.entries(raw.minutes as Record<string, unknown>)) {
+        if (typeof length === 'number' && Number.isFinite(length) && length > 0)
+          minutes[id] = length;
+      }
+    }
+    const pace = typeof raw.pace === 'number' && raw.pace >= 4 && raw.pace <= 7 ? raw.pace : null;
+    return {
+      minutes,
+      pace: pace ?? DEFAULT_PRACTICE.pace,
+      sound: typeof raw.sound === 'boolean' ? raw.sound : DEFAULT_PRACTICE.sound,
+      voice: typeof raw.voice === 'boolean' ? raw.voice : DEFAULT_PRACTICE.voice,
+      begun: count(raw.begun),
+      arriveSkips: count(raw.arriveSkips),
+      arriveSkipDay: typeof raw.arriveSkipDay === 'string' ? raw.arriveSkipDay : null,
+    };
+  } catch {
+    return DEFAULT_PRACTICE;
+  }
+}
+
 export async function hydratePreferences(
   db: SqlDb,
   serial: WriteQueue = (task) => task(),
 ): Promise<void> {
   const rows = await db.all<{ key: string; value: string }>(
-    'SELECT key, value FROM preferences WHERE key IN (?, ?, ?, ?, ?, ?, ?, ?)',
+    'SELECT key, value FROM preferences WHERE key IN (?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [
       THEME_KEY,
       PATTERNS_CONSENT_KEY,
@@ -195,6 +263,7 @@ export async function hydratePreferences(
       SHOWN_KEY,
       VOLUME_KEY,
       OPENS_KEY,
+      PRACTICE_KEY,
     ],
   );
   const stored = new Map(rows.map((row) => [row.key, row.value]));
@@ -209,6 +278,7 @@ export async function hydratePreferences(
     wordsShown: stored.get(SHOWN_KEY) === 'true',
     volume: stored.get(VOLUME_KEY) ?? null,
     bookOpens: Math.max(0, Math.floor(Number(stored.get(OPENS_KEY))) || 0),
+    practice: parsePractice(stored.get(PRACTICE_KEY)),
   });
   persist = (key, value) =>
     serial(() =>
@@ -233,5 +303,6 @@ export function resetPreferences(): void {
     wordsShown: false,
     volume: null,
     bookOpens: 0,
+    practice: DEFAULT_PRACTICE,
   });
 }

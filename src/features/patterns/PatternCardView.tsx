@@ -1,6 +1,7 @@
 import { LinearGradient } from 'expo-linear-gradient';
+import { router } from 'expo-router';
 import { useEffect, type PropsWithChildren } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
   ReduceMotion,
   useAnimatedStyle,
@@ -11,6 +12,7 @@ import Animated, {
 import { EchoText } from '@/components/EchoText';
 import { TrackedText } from '@/components/TrackedText';
 import { tokens } from '@/design/tokens';
+import { breatheCopy } from '@/features/breathe/breatheCopy';
 import { dateLabel } from '@/features/echoes/entryFacts';
 import type { PatternCard } from '@/services/patterns';
 
@@ -70,6 +72,9 @@ function Part({
 }
 
 type Props = { card: PatternCard; index: number; total: number };
+
+/** A card's practice is about breath, so it can lead to Breathe. */
+export const aboutBreath = (practice: string) => /\bbreath/i.test(practice);
 
 /**
  * One pattern, set as an object worth keeping: midnight glass, its own faint constellation, a serif
@@ -186,6 +191,20 @@ export function PatternCardView({ card, index, total }: Props) {
                 {card.practice}
               </EchoText>
             </Part>
+            {aboutBreath(card.practice) && (
+              <Pressable
+                accessibilityRole="link"
+                accessibilityLabel={breatheCopy.cardLink}
+                onPress={() => router.navigate('/home/breathe' as never)}
+                hitSlop={10}
+                style={styles.breathe}
+                testID="pattern-card-breathe"
+              >
+                <EchoText variant="caption" style={[styles.breatheText, gold]}>
+                  {breatheCopy.cardLink}
+                </EchoText>
+              </Pressable>
+            )}
 
             <Rule />
 
@@ -268,6 +287,8 @@ const styles = StyleSheet.create({
   quote: { fontSize: 21, lineHeight: 28 },
   date: { fontSize: 12.5, letterSpacing: 0.2, opacity: 0.78 },
   paragraph: { lineHeight: 24 },
+  breathe: { alignSelf: 'flex-start', minHeight: 28, justifyContent: 'center', marginTop: -6 },
+  breatheText: { fontSize: 13, letterSpacing: 0.6, textDecorationLine: 'underline' },
   source: { fontSize: 12.5, lineHeight: 17, letterSpacing: 0.1, opacity: 0.78 },
   question: { fontSize: 23, lineHeight: 31 },
   note: {

@@ -63,6 +63,20 @@ export default function HomeLayout() {
           contentStyle: { backgroundColor: 'transparent' },
         }}
       />
+      {/* Breathe is reached the same way, and breathes over the same plate. */}
+      <Stack.Screen
+        name="breathe"
+        options={{
+          animation: 'none',
+          gestureEnabled: false,
+          contentStyle: { backgroundColor: 'transparent' },
+        }}
+      />
+      {/* Rehearse fades in over the session it follows, onto the same plate. */}
+      <Stack.Screen
+        name="rehearse"
+        options={{ gestureEnabled: false, contentStyle: { backgroundColor: 'transparent' } }}
+      />
     </Stack>
   );
   return (
