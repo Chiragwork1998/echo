@@ -1,4 +1,5 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
+import { router } from 'expo-router';
 import { Alert, Dimensions, Linking } from 'react-native';
 
 import { showToast } from '@/components/Toast';
@@ -8,8 +9,10 @@ import { deleteAllLocal } from '@/services/deleteAllLocal';
 import { authenticate, verifyLockAvailable } from '@/services/biometric';
 import { exportJournal } from '@/services/exportJournal';
 import { getNotificationPermission, openAppSettings } from '@/services/permissions';
+import { plusCopy } from '@/features/plus/plusCopy';
 import { initialOnboarding, useOnboarding } from '@/state/onboarding';
 import { usePreferences, VOICE_POLICY_VERSION } from '@/state/preferences';
+import { withBillingForTests, withoutBillingForTests } from '@/testing/plus';
 import { render } from '@/testing/render';
 
 import { sessionCopy } from '@/features/journal-session/sessionCopy';
@@ -19,7 +22,7 @@ import { YouScreen } from './YouScreen';
 import { youCopy } from './youCopy';
 
 jest.mock('expo-router', () => ({
-  router: { navigate: jest.fn() },
+  router: { navigate: jest.fn(), push: jest.fn() },
   usePathname: () => '/home/you',
 }));
 jest.mock(
@@ -261,6 +264,51 @@ describe('You: Tidy my words (D-008)', () => {
     expect(youCopy.tidyWordsDetail).toMatch(/exact words/);
     expect(youCopy.tidyWordsDetail).toMatch(/30 days/);
     expect(youCopy.voiceWordsDetail).toMatch(/not stored/);
+  });
+
+  describe('with ECHO Plus for sale', () => {
+    afterEach(() => withoutBillingForTests());
+
+    it('opens the paywall instead of turning Tidy on, for someone without Plus', async () => {
+      withBillingForTests({ status: 'free', source: 'live' });
+      await render(<YouScreen />);
+      await fireEvent.press(tidySwitch());
+      expect(router.push).toHaveBeenCalledWith({ pathname: '/plus', params: { feature: 'tidy' } });
+      expect(usePreferences.getState().tidyWords).toBe(false);
+      expect(tidySwitch()).not.toBeChecked();
+    });
+
+    it('always lets Tidy be turned off', async () => {
+      withBillingForTests({ status: 'free', source: 'cache' });
+      usePreferences.setState({ tidyWords: true });
+      await render(<YouScreen />);
+      await fireEvent.press(tidySwitch());
+      expect(usePreferences.getState().tidyWords).toBe(false);
+      expect(router.push).not.toHaveBeenCalled();
+    });
+
+    it('turns Tidy on for someone with Plus', async () => {
+      withBillingForTests({ status: 'plus' });
+      await render(<YouScreen />);
+      await fireEvent.press(tidySwitch());
+      expect(usePreferences.getState().tidyWords).toBe(true);
+      expect(router.push).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('You: ECHO Plus', () => {
+  afterEach(() => withoutBillingForTests());
+
+  it('leads with the ECHO Plus row where Plus can be bought', async () => {
+    withBillingForTests({ status: 'free', source: 'live' });
+    await render(<YouScreen />);
+    expect(button(`${plusCopy.youRow}. ${plusCopy.youRowDetail}`)).toBeTruthy();
+  });
+
+  it('has no Plus row in a build without billing', async () => {
+    await render(<YouScreen />);
+    expect(screen.queryByText(plusCopy.youRowDetail)).toBeNull();
   });
 });
 

@@ -3,6 +3,8 @@ import { onboardingSteps, pathOf, type ScreenId } from '@/features/onboarding/fl
 import { ONBOARDING_LAST_STEP, type OnboardingState } from './onboarding';
 
 export const HOME_PATH = '/home';
+/** ECHO Plus's paywall. It sits over Home, so a finished user may be there. */
+export const PLUS_PATH = '/plus';
 const LANDING_PATH = '/';
 const FIRST_ECHO_STEP = onboardingSteps.indexOf('first-echo') + 1;
 
@@ -49,10 +51,21 @@ export function decideRoute(input: {
   resume: string;
   /** No navigation has happened yet this launch. */
   initial: boolean;
+  /**
+   * The ECHO Plus offer that follows onboarding has not been seen yet (services/plus/store.ts). It
+   * takes the place of Home once, as Completion finishes, and is marked seen as it appears, so a
+   * relaunch, the lock, or the back button can never bring it back.
+   */
+  offerPlus?: boolean;
 }): RouteDecision {
-  const { pathname, completed, step, resume, initial } = input;
-  if (completed)
-    return isHome(pathname) ? { action: 'stay' } : { action: 'replace', path: HOME_PATH };
+  const { pathname, completed, step, resume, initial, offerPlus = false } = input;
+  if (completed) {
+    if (isHome(pathname) || pathname === PLUS_PATH) return { action: 'stay' };
+    if (offerPlus && pathname === pathForStep(ONBOARDING_LAST_STEP)) {
+      return { action: 'replace', path: `${PLUS_PATH}?from=onboarding` };
+    }
+    return { action: 'replace', path: HOME_PATH };
+  }
   if (isHome(pathname)) {
     if (step === ONBOARDING_LAST_STEP) return { action: 'complete' };
     return { action: 'replace', path: resume };

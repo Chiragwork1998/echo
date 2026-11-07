@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 import { VoiceConsentSheet } from '@/features/journal-session/VoiceConsentSheet';
+import { useRequirePlus } from '@/services/plus';
 import { usePreferences, useVoiceStatus } from '@/state/preferences';
 
 /**
@@ -13,6 +14,7 @@ export function useVoiceSetting() {
   const tidy = usePreferences((state) => state.tidyWords);
   const [asking, setAsking] = useState(false);
   const { setVoiceConsent } = usePreferences.getState();
+  const requirePlus = useRequirePlus();
 
   const sheet = (
     <VoiceConsentSheet
@@ -33,7 +35,11 @@ export function useVoiceSetting() {
     enabled: status === 'allowed',
     /** Tidy my words: off keeps the exact words. It changes what OpenAI does, not whether to ask. */
     tidy,
-    changeTidy: (next: boolean) => usePreferences.getState().setTidyWords(next),
+    /** Turning Tidy on is ECHO Plus. Turning it off never is. */
+    changeTidy: (next: boolean) => {
+      if (next && !requirePlus('tidy')) return;
+      usePreferences.getState().setTidyWords(next);
+    },
     change: (next: boolean) => (next ? setAsking(true) : setVoiceConsent('voice_only')),
     sheet,
   };

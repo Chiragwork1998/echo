@@ -14,7 +14,8 @@ const QA_MOMENT = new Date(2026, 10, 5, 9, 41);
 const qaClock: Clock = { ...deviceClock, now: () => QA_MOMENT };
 
 function qaSeed(): MemorySeed {
-  if (qa.fixture !== 'home' && qa.fixture !== 'completion') return {};
+  const fixture = qa.fixture;
+  if (fixture !== 'home' && fixture !== 'completion' && fixture !== 'patterns') return {};
   const today = qaClock.localDay(QA_MOMENT);
   const at = QA_MOMENT.getTime();
   const entry = (id: string, offset: number, patch: Partial<Entry>): Entry => ({
@@ -40,6 +41,8 @@ function qaSeed(): MemorySeed {
   };
   return {
     entries: [
+      // Patterns opens at five echoes, so its harness view has one more, from the same example text.
+      ...(fixture === 'patterns' ? [entry('qa-0', -4, { body: example.firstEntry.prompt })] : []),
       entry('qa-1', -3, { body: example.firstEntry.prompt }),
       entry('qa-2', -2, { body: example.firstEntry.prompt }),
       // The newest commit, so that Home shows it as recent, as in the golden.

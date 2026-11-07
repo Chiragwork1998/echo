@@ -1,4 +1,5 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
+import { router } from 'expo-router';
 import { useState } from 'react';
 import { AccessibilityInfo } from 'react-native';
 
@@ -20,6 +21,7 @@ import {
 import { refineWords, transcribeEntryAudio } from '@/services/transcription';
 import { initialOnboarding, useOnboarding } from '@/state/onboarding';
 import { usePreferences, VOICE_POLICY_VERSION } from '@/state/preferences';
+import { withBillingForTests, withoutBillingForTests } from '@/testing/plus';
 import { render } from '@/testing/render';
 
 import { JournalSession } from './JournalSession';
@@ -33,7 +35,7 @@ jest.mock('expo-haptics', () => ({
 jest.mock('expo-router', () => {
   const { useEffect } = jest.requireActual('react');
   return {
-    router: { navigate: jest.fn() },
+    router: { navigate: jest.fn(), push: jest.fn() },
     Stack: { Screen: () => null },
     usePathname: () => '/home/session',
     useFocusEffect: (effect: () => void | (() => void)) => useEffect(effect, [effect]),
@@ -244,6 +246,46 @@ describe('words hidden, the default (D-008)', () => {
     await fireEvent.changeText(field(), 'typed words');
     expect(field().props.value).toBe('typed words');
     expect(screen.queryByTestId('quiet-words')).toBeNull();
+  });
+});
+
+describe('Show words and ECHO Plus', () => {
+  afterEach(() => withoutBillingForTests());
+
+  it('opens the paywall instead, for someone without Plus, and asks and streams nothing', async () => {
+    withBillingForTests({ status: 'free', source: 'live' });
+    await open();
+    await tick(QUIET_MS);
+    await fireEvent.press(wordsControl());
+    expect(router.push).toHaveBeenCalledWith({
+      pathname: '/plus',
+      params: { feature: 'live-words' },
+    });
+    expect(screen.queryByText(sessionCopy.liveConsent.title)).toBeNull();
+    expect(usePreferences.getState().wordsShown).toBe(false);
+    expect(openSocket).not.toHaveBeenCalled();
+  });
+
+  it('always lets words be hidden', async () => {
+    withBillingForTests({ status: 'free', source: 'cache' });
+    usePreferences.setState({
+      wordsShown: true,
+      voiceConsent: { choice: 'allowed', version: VOICE_POLICY_VERSION, live: true },
+    });
+    await open();
+    await tick(QUIET_MS);
+    await fireEvent.press(wordsControl());
+    expect(usePreferences.getState().wordsShown).toBe(false);
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
+  it('carries on as before for someone with Plus', async () => {
+    withBillingForTests({ status: 'plus' });
+    await open();
+    await tick(QUIET_MS);
+    await fireEvent.press(wordsControl());
+    expect(await screen.findByText(sessionCopy.liveConsent.title)).toBeTruthy();
+    expect(router.push).not.toHaveBeenCalled();
   });
 });
 

@@ -37,6 +37,8 @@ export const patternsCopy = {
       'ECHO can read your latest entries and name what keeps returning, in a few quiet cards. Only the words in your entries are used, whether you wrote or spoke them, and each quote is checked against them.',
     read: 'Read my patterns',
     readAgain: 'Read again',
+    // Shown once the free reading has been made, to someone without ECHO Plus.
+    plusNote: 'New readings are part of ECHO Plus.',
     reading: 'Reading your entries. This can take a minute.',
     readOn: (date: string) => `Read on ${date}`,
     fromEntries: (count: number) =>
