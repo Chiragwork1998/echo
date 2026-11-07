@@ -59,7 +59,8 @@ export type RestoreProblem = OpenFailure | 'picker';
 
 export const restoreCopy = {
   row: 'Restore from a backup',
-  rowDetail: 'Adds the entries from an ECHO export to this phone',
+  // The last two words are joined (U+00A0), because You's rows set their detail as it is given.
+  rowDetail: 'Adds the entries from an ECHO export to this\u00a0phone',
   rowHint: 'Opens your files to choose a backup',
   reading: 'Reading your backup',
 

@@ -332,7 +332,6 @@ describe('a file it will not restore', () => {
     'unsafe',
     'too_large',
     'too_many',
-    'newer',
     'damaged',
     'empty',
   ];
@@ -365,7 +364,7 @@ describe('a file it will not restore', () => {
     },
   );
 
-  it('refuses the real thing: a newer backup, read on this phone', async () => {
+  it('refuses the real thing kindly: a newer backup, read on this phone', async () => {
     await show();
     const chunks: Uint8Array[] = [];
     const sink: FileWriter = {
@@ -383,6 +382,10 @@ describe('a file it will not restore', () => {
       ),
     ).toBeTruthy();
     expect(existsSync(uri)).toBe(false);
+    // Another file will not help. The one way on is out.
+    expect(screen.queryByRole('button', { name: restoreCopy.chooseAnother })).toBeNull();
+    await fireEvent.press(button(restoreCopy.close));
+    expect(screen.queryByTestId('restore-sheet')).toBeNull();
   });
 
   it('says when the picker itself could not open, and tries again', async () => {

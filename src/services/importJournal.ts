@@ -24,7 +24,11 @@ import {
 // written here are. Nothing is sent anywhere, nothing already on the phone is changed, and every
 // entry lands whole or not at all, so a restore that stops can simply be run again.
 
-/** The newest backup format this build reads. exportJournal writes it. */
+/**
+ * The newest backup format this build reads, and the one exportJournal writes. Any change to what
+ * entries.json may hold, a new mood or field included, needs a new version: a build that meets a
+ * version above its own says so kindly, where one that met an unknown value would call it damaged.
+ */
 export const BACKUP_FORMAT_VERSION = 1;
 const MANIFEST = 'entries.json';
 const ARCHIVE_NAME = 'backup.zip';

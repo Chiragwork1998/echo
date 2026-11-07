@@ -23,6 +23,7 @@ import { VaultNotReadyError } from '@/storage/vault';
 
 import { exportJournal } from './exportJournal';
 import {
+  BACKUP_FORMAT_VERSION,
   openBackup,
   type BackupLimits,
   type OpenFailure,
@@ -297,6 +298,10 @@ function tempLeft(rt: TestRuntime): string[] {
 }
 
 describe('a round trip', () => {
+  it('reads the version export writes, and no newer one', () => {
+    expect(manifestOf(unpack(ZIP)).formatVersion).toBe(BACKUP_FORMAT_VERSION);
+  });
+
   it('gives back the same entries, reflections and recordings', async () => {
     const target = await createTestRuntime();
     const opened = await open(target, ZIP);

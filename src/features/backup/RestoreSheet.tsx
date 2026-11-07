@@ -10,6 +10,7 @@ import Animated, {
 
 import { EchoText } from '@/components/EchoText';
 import { PrimaryCTA } from '@/components/PrimaryCTA';
+import { useLayout } from '@/design/layout';
 import { tokens } from '@/design/tokens';
 import { useTone } from '@/features/onboarding/rhythm/tone';
 import { supporting } from '@/features/tab-pages/textStyles';
@@ -41,6 +42,8 @@ export const SHEET_STATES: readonly RestoreState['kind'][] = [
 
 /** Problems that a second try at the same thing may fix, rather than another file. */
 const RETRY: readonly RestoreProblem[] = ['picker', 'unreadable', 'not_ready'];
+/** Problems no file chosen here can get past: the answer is elsewhere, so the only action is Close. */
+const NO_WAY_ON: readonly RestoreProblem[] = ['unavailable', 'newer'];
 
 type SheetView = {
   message: string;
@@ -78,8 +81,8 @@ function viewOf(state: RestoreState, thisYear: number, props: Props): SheetView 
         secondary: close,
       };
     case 'failed':
-      if (state.problem === 'unavailable') {
-        return { message: restoreCopy.failed.unavailable, primary: close };
+      if (NO_WAY_ON.includes(state.problem)) {
+        return { message: restoreCopy.failed[state.problem], primary: close };
       }
       return {
         message: restoreCopy.failed[state.problem],
@@ -93,6 +96,16 @@ function viewOf(state: RestoreState, thisYear: number, props: Props): SheetView 
       return { message: '' };
   }
 }
+
+const MONTH =
+  /(\d{1,2}) (January|February|March|April|May|June|July|August|September|October|November|December)/g;
+
+/**
+ * Keeps a day with its month, and the last two words together, so that no line breaks a date or is
+ * left holding one word alone. Screen readers read the joins as spaces.
+ */
+export const typeset = (text: string): string =>
+  text.replace(MONTH, '$1\u00a0$2').replace(/ (\S+)$/, '\u00a0$1');
 
 const MOVE = {
   duration: tokens.motion.standard,
@@ -115,7 +128,6 @@ function Progress({ done, total }: { done: number; total: number }) {
       accessibilityRole="progressbar"
       accessibilityLabel={restoreCopy.restoringLabel}
       accessibilityValue={{ min: 0, max: total, now: done }}
-      testID="restore-progress"
       style={[styles.track, { backgroundColor: tone.track }]}
     >
       <Animated.View style={[styles.fill, { backgroundColor: tone.gold }, style]} />
@@ -131,6 +143,7 @@ function Progress({ done, total }: { done: number; total: number }) {
 export function RestoreSheet(props: Props) {
   const { state, visible, thisYear = new Date().getFullYear() } = props;
   const tone = useTone();
+  const { ctaWidth } = useLayout();
   const shown = visible && SHEET_STATES.includes(state.kind);
   const view = viewOf(state, thisYear, props);
   const settled = state.kind === 'done' || state.kind === 'stopped' || state.kind === 'failed';
@@ -164,11 +177,11 @@ export function RestoreSheet(props: Props) {
               style={{ color: tone.ink }}
               maxFontSizeMultiplier={1.5}
             >
-              {restoreCopy.title}
+              {typeset(restoreCopy.title)}
             </EchoText>
             <View accessibilityLiveRegion="polite">
               <EchoText variant="bodyM" style={{ color: tone.ink }} maxFontSizeMultiplier={1.5}>
-                {view.message}
+                {typeset(view.message)}
               </EchoText>
             </View>
             {view.progress ? <Progress {...view.progress} /> : null}
@@ -178,7 +191,7 @@ export function RestoreSheet(props: Props) {
                 style={[supporting, { color: tone.inkSoft }]}
                 maxFontSizeMultiplier={1.5}
               >
-                {view.note}
+                {typeset(view.note)}
               </EchoText>
             ) : null}
           </ScrollView>
@@ -194,7 +207,7 @@ export function RestoreSheet(props: Props) {
                   onPress={view.secondary.onPress}
                   style={({ pressed }) => [
                     styles.secondary,
-                    { borderColor: tone.edge, opacity: pressed ? 0.7 : 1 },
+                    { width: ctaWidth, borderColor: tone.edge, opacity: pressed ? 0.7 : 1 },
                   ]}
                 >
                   <EchoText variant="label" style={{ color: tone.ink }} maxFontSizeMultiplier={1.4}>
@@ -235,9 +248,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: tokens.space[24],
     paddingTop: tokens.space[16],
   },
+  // As wide as the primary action above it.
   secondary: {
     minHeight: 48,
-    alignSelf: 'stretch',
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 24,

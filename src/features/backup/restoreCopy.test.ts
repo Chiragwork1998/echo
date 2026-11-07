@@ -1,4 +1,5 @@
 import { restoreCopy, spanText } from './restoreCopy';
+import { typeset } from './RestoreSheet';
 
 const none = { entries: 0, drafts: 0, existing: 0, deleted: 0, withoutAudio: 0 };
 
@@ -85,7 +86,9 @@ describe('the result', () => {
 
 describe('every word', () => {
   const lines = [
-    ...Object.values(restoreCopy).filter((value): value is string => typeof value === 'string'),
+    ...(Object.values(restoreCopy) as unknown[]).filter(
+      (value): value is string => typeof value === 'string',
+    ),
     ...Object.values(restoreCopy.failed),
     restoreCopy.preview(
       { entries: 2, drafts: 1, firstDay: '2025-03-03', lastDay: '2026-11-08' },
@@ -108,5 +111,15 @@ describe('every word', () => {
     for (const line of lines) expect(line).toMatch(/^[A-Z0-9]/);
     expect(restoreCopy.row).toBe('Restore from a backup');
     expect([restoreCopy.restore, restoreCopy.notNow]).toEqual(['Restore', 'Not now']);
+  });
+});
+
+describe('how the sheet sets a line', () => {
+  it('keeps a day with its month, and never leaves one word alone at the end', () => {
+    expect(typeset('from 3 March to 8 November. Add them to this phone?')).toBe(
+      'from 3 March to 8 November. Add them to this phone?',
+    );
+    expect(typeset('Restore from a backup')).toBe('Restore from a backup');
+    expect(typeset('Done')).toBe('Done');
   });
 });
