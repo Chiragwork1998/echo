@@ -7,6 +7,15 @@ import type { Pattern } from './types';
  */
 const LOOPS: Record<string, number> = {
   sigh: require('../../../assets/breathe/sound/sigh.wav'),
+  'sigh-3-1-6': require('../../../assets/breathe/sound/sigh-3-1-6.wav'),
+  'sigh-3-1-8': require('../../../assets/breathe/sound/sigh-3-1-8.wav'),
+  'paced-2-0-5-0': require('../../../assets/breathe/sound/paced-2-0-5-0.wav'),
+  'paced-3-0-3-0': require('../../../assets/breathe/sound/paced-3-0-3-0.wav'),
+  'paced-3-0-5-0': require('../../../assets/breathe/sound/paced-3-0-5-0.wav'),
+  'paced-3-0-6-0': require('../../../assets/breathe/sound/paced-3-0-6-0.wav'),
+  'paced-3-0-7-0': require('../../../assets/breathe/sound/paced-3-0-7-0.wav'),
+  'paced-4-0-5-0': require('../../../assets/breathe/sound/paced-4-0-5-0.wav'),
+  'paced-4-0-6-0-hum': require('../../../assets/breathe/sound/paced-4-0-6-0-hum.wav'),
   'paced-4-0-4-0': require('../../../assets/breathe/sound/paced-4-0-4-0.wav'),
   'paced-4-0-6-0': require('../../../assets/breathe/sound/paced-4-0-6-0.wav'),
   'paced-4-0-8-0': require('../../../assets/breathe/sound/paced-4-0-8-0.wav'),

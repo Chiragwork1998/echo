@@ -1,0 +1,366 @@
+{
+  "settings": {
+    "speechModel": "gpt-4o-mini-tts-2025-12-15",
+    "voice": "shimmer",
+    "instructions": "Voice affect: warm, low and soft. A calm guide sitting with one person in a quiet room at night.\nTone: kind, plain and steady. Never bright or cheerful, never performed, never sing song, never a whisper.\nPacing: slow and unhurried, clearly slower than conversation. Let each word land before the next.\nPauses: a gentle pause at every comma, and a longer one at every full stop.\nPronunciation: clear and soft, with relaxed endings.\nEmotion: quiet reassurance for someone who may be tired or anxious.",
+    "transcribeModel": "gpt-transcribe",
+    "processing": 1,
+    "targetLufs": -20,
+    "ceilingDbfs": -3,
+    "edgeSeconds": 0.15,
+    "bitrate": 64000
+  },
+  "lines": {
+    "arrive.open": {
+      "text": "Good morning. Breathe slowly, as if through your heart.",
+      "hash": "1bc772b7460609db",
+      "file": "arrive_open.m4a",
+      "seconds": 4.61,
+      "lufs": -20,
+      "peakDbfs": -4.1,
+      "bytes": 44346
+    },
+    "arrive.say": {
+      "text": "Hear what you say, and how you say it, as this person.",
+      "hash": "24a4ce25ec31b255",
+      "file": "arrive_say.m4a",
+      "seconds": 4.44,
+      "lufs": -20.1,
+      "peakDbfs": -6.3,
+      "bytes": 41068
+    },
+    "arrive.see": {
+      "text": "Now picture one ordinary moment from the day ahead. Where are you? Who is there?",
+      "hash": "5890fe16f43add04",
+      "file": "arrive_see.m4a",
+      "seconds": 5.81,
+      "lufs": -20,
+      "peakDbfs": -6,
+      "bytes": 52319
+    },
+    "arrive.true": {
+      "text": "Notice how it feels to be this person, here, as if it is already true.",
+      "hash": "77d33b8aff89c383",
+      "file": "arrive_true.m4a",
+      "seconds": 6.4,
+      "lufs": -20.1,
+      "peakDbfs": -5.1,
+      "bytes": 57107
+    },
+    "arrive.you": {
+      "text": "See yourself there as the person you are becoming. Notice how you stand and move.",
+      "hash": "b8abaad9224eb6fe",
+      "file": "arrive_you.m4a",
+      "seconds": 5.82,
+      "lufs": -20.1,
+      "peakDbfs": -5.9,
+      "bytes": 51902
+    },
+    "cool.hum": {
+      "text": "Keep your lips closed and the hum low. Feel it in your face.",
+      "hash": "6041f2b6b5efc4aa",
+      "file": "cool_hum.m4a",
+      "seconds": 5.04,
+      "lufs": -20,
+      "peakDbfs": -5.1,
+      "bytes": 46093
+    },
+    "cool.later": {
+      "text": "You can answer later, and choose your words then.",
+      "hash": "543c9de904edb25f",
+      "file": "cool_later.m4a",
+      "seconds": 3.78,
+      "lufs": -20,
+      "peakDbfs": -5.4,
+      "bytes": 36166
+    },
+    "cool.open": {
+      "text": "You do not have to answer yet. Hum softly as you breathe out.",
+      "hash": "8727d983574d9cc7",
+      "file": "cool_open.m4a",
+      "seconds": 5.55,
+      "lufs": -20,
+      "peakDbfs": -4.3,
+      "bytes": 50051
+    },
+    "ground.feet": {
+      "text": "Feel the floor under your feet. Waves like this pass.",
+      "hash": "e4fa5c4fba8bce8e",
+      "file": "ground_feet.m4a",
+      "seconds": 5.47,
+      "lufs": -20,
+      "peakDbfs": -4.2,
+      "bytes": 46454
+    },
+    "ground.look": {
+      "text": "Look around slowly. Find three things you can see, one at a time.",
+      "hash": "8d3f350d14b5473e",
+      "file": "ground_look.m4a",
+      "seconds": 4.65,
+      "lufs": -20,
+      "peakDbfs": -4.8,
+      "bytes": 43295
+    },
+    "ground.open": {
+      "text": "Breathe out as if through a straw.",
+      "hash": "a93da9315d22110f",
+      "file": "ground_open.m4a",
+      "seconds": 2.83,
+      "lufs": -20.1,
+      "peakDbfs": -6.4,
+      "bytes": 28121
+    },
+    "heart.feel": {
+      "text": "Remember a moment you felt grateful, or loved. Feel it again now.",
+      "hash": "d927dd276a49de89",
+      "file": "heart_feel.m4a",
+      "seconds": 4.86,
+      "lufs": -20,
+      "peakDbfs": -5,
+      "bytes": 44639
+    },
+    "heart.open": {
+      "text": "Breathe slowly and easily, as if through your heart.",
+      "hash": "58da6570fc47e50a",
+      "file": "heart_open.m4a",
+      "seconds": 4.67,
+      "lufs": -20,
+      "peakDbfs": -5.1,
+      "bytes": 42479
+    },
+    "heart.stay": {
+      "text": "If the feeling fades, gently bring it back.",
+      "hash": "bb384a71ebd9f98a",
+      "file": "heart_stay.m4a",
+      "seconds": 3.63,
+      "lufs": -20,
+      "peakDbfs": -3.9,
+      "bytes": 34804
+    },
+    "lift.fuller": {
+      "text": "Let each breath in be a little fuller.",
+      "hash": "773ecf9fdbacd794",
+      "file": "lift_fuller.m4a",
+      "seconds": 2.63,
+      "lufs": -20,
+      "peakDbfs": -4.5,
+      "bytes": 26967
+    },
+    "lift.glimmer": {
+      "text": "Now find one small thing that is still okay.",
+      "hash": "3d35e3db5bddd7bb",
+      "file": "lift_glimmer.m4a",
+      "seconds": 4.37,
+      "lufs": -20,
+      "peakDbfs": -5.1,
+      "bytes": 40956
+    },
+    "lift.open": {
+      "text": "Sit up a little, if you can.",
+      "hash": "86989057e602c4c3",
+      "file": "lift_open.m4a",
+      "seconds": 2.65,
+      "lufs": -20.1,
+      "peakDbfs": -5.2,
+      "bytes": 26285
+    },
+    "one-thing.door": {
+      "text": "Everything that needs you is outside the door. It can wait a few minutes.",
+      "hash": "c483f02d26af8d33",
+      "file": "one_thing_door.m4a",
+      "seconds": 7.08,
+      "lufs": -20,
+      "peakDbfs": -4.8,
+      "bytes": 61707
+    },
+    "one-thing.open": {
+      "text": "For now there is only one thing to do: count to four.",
+      "hash": "3b623815f3c636a7",
+      "file": "one_thing_open.m4a",
+      "seconds": 4.22,
+      "lufs": -20,
+      "peakDbfs": -4.5,
+      "bytes": 39173
+    },
+    "one-thing.rest": {
+      "text": "Sit down and rest here. You can come back to this room whenever you need it.",
+      "hash": "85fd5888375a3f7e",
+      "file": "one_thing_rest.m4a",
+      "seconds": 5.56,
+      "lufs": -20,
+      "peakDbfs": -5.3,
+      "bytes": 51094
+    },
+    "one-thing.room": {
+      "text": "Let the counting go. Picture a small, quiet room inside you, with the door closed.",
+      "hash": "bb8083624fed3df9",
+      "file": "one_thing_room.m4a",
+      "seconds": 7.17,
+      "lufs": -20,
+      "peakDbfs": -6.3,
+      "bytes": 63647
+    },
+    "one-thing.simple": {
+      "text": "Keep it simple and restful. Soft light, somewhere to sit, nothing that asks anything of you.",
+      "hash": "40d966db9e52a0a9",
+      "file": "one_thing_simple.m4a",
+      "seconds": 8.77,
+      "lufs": -20.1,
+      "peakDbfs": -3.4,
+      "bytes": 75091
+    },
+    "ready.moment": {
+      "text": "Find the moment you knew it was going well. Notice how that felt.",
+      "hash": "55bf788db27f9a4a",
+      "file": "ready_moment.m4a",
+      "seconds": 5.74,
+      "lufs": -20,
+      "peakDbfs": -5.8,
+      "bytes": 51692
+    },
+    "ready.now": {
+      "text": "Let that feeling come back now, in your body. Stay with it.",
+      "hash": "1e328e6db13bde47",
+      "file": "ready_now.m4a",
+      "seconds": 5.19,
+      "lufs": -20,
+      "peakDbfs": -4.8,
+      "bytes": 47007
+    },
+    "ready.open": {
+      "text": "Four counts in, hold, out, and hold. Let it steady you.",
+      "hash": "7714499bb919d938",
+      "file": "ready_open.m4a",
+      "seconds": 6.56,
+      "lufs": -20,
+      "peakDbfs": -4.1,
+      "bytes": 57494
+    },
+    "ready.recall": {
+      "text": "Now remember a time you did something hard, and it went well. It can be small.",
+      "hash": "2d4389f3fe43c085",
+      "file": "ready_recall.m4a",
+      "seconds": 7.17,
+      "lufs": -20,
+      "peakDbfs": -6.5,
+      "bytes": 62293
+    },
+    "ready.scene": {
+      "text": "Where were you? What could you see and hear? Let it come back in detail.",
+      "hash": "9f386a0aedb1c495",
+      "file": "ready_scene.m4a",
+      "seconds": 6.47,
+      "lufs": -20,
+      "peakDbfs": -5.1,
+      "bytes": 58122
+    },
+    "ride-the-wave.notice": {
+      "text": "Notice the urge. Where in your body do you feel it?",
+      "hash": "4e99e644142a1458",
+      "file": "ride_the_wave_notice.m4a",
+      "seconds": 3.81,
+      "lufs": -20,
+      "peakDbfs": -4.6,
+      "bytes": 36625
+    },
+    "ride-the-wave.pass": {
+      "text": "Urges rise, peak and fall. Ride this one with your breath.",
+      "hash": "5445e538c679d7d4",
+      "file": "ride_the_wave_pass.m4a",
+      "seconds": 5.69,
+      "lufs": -20,
+      "peakDbfs": -3.5,
+      "bytes": 52153
+    },
+    "ride-the-wave.watch": {
+      "text": "Watch it rise like a wave. You do not have to act on it.",
+      "hash": "f2c33226d071fe83",
+      "file": "ride_the_wave_watch.m4a",
+      "seconds": 4.81,
+      "lufs": -20,
+      "peakDbfs": -5.4,
+      "bytes": 44923
+    },
+    "settle.name": {
+      "text": "Now silently name what you feel in one word. Any word is fine.",
+      "hash": "daae2b990d3ebe84",
+      "file": "settle_name.m4a",
+      "seconds": 6.67,
+      "lufs": -20,
+      "peakDbfs": -6.1,
+      "bytes": 58493
+    },
+    "settle.open": {
+      "text": "Let it out slowly through your mouth, a long, easy sigh.",
+      "hash": "e8ecd221846854e8",
+      "file": "settle_open.m4a",
+      "seconds": 5,
+      "lufs": -20,
+      "peakDbfs": -6.5,
+      "bytes": 45916
+    },
+    "settle.soften": {
+      "text": "Each time you breathe out, let your jaw and shoulders soften.",
+      "hash": "c1b7f4b6be097570",
+      "file": "settle_soften.m4a",
+      "seconds": 4.24,
+      "lufs": -20,
+      "peakDbfs": -6.4,
+      "bytes": 40113
+    },
+    "sleep.free": {
+      "text": "No more holding now. Let each breath out be long and slow.",
+      "hash": "70a529ca93e0e470",
+      "file": "sleep_free.m4a",
+      "seconds": 5.83,
+      "lufs": -20,
+      "peakDbfs": -4.1,
+      "bytes": 52043
+    },
+    "sleep.open": {
+      "text": "Breathe out through your mouth, slowly, with a soft whoosh.",
+      "hash": "d9cfdc81228510bf",
+      "file": "sleep_open.m4a",
+      "seconds": 5.68,
+      "lufs": -20,
+      "peakDbfs": -4.1,
+      "bytes": 51371
+    },
+    "sleep.rest": {
+      "text": "Let the bed hold your weight. There is nothing left to do tonight.",
+      "hash": "b300548dd785b09d",
+      "file": "sleep_rest.m4a",
+      "seconds": 4.86,
+      "lufs": -20,
+      "peakDbfs": -4,
+      "bytes": 45002
+    },
+    "soothe.hard": {
+      "text": "Tell yourself: this is hard. Others feel it too.",
+      "hash": "48a8b4296df3e8f9",
+      "file": "soothe_hard.m4a",
+      "seconds": 5.78,
+      "lufs": -20.1,
+      "peakDbfs": -3.4,
+      "bytes": 50168
+    },
+    "soothe.kind": {
+      "text": "Now say something kind to yourself, as you would to a friend.",
+      "hash": "7d9639de5501f4c6",
+      "file": "soothe_kind.m4a",
+      "seconds": 4.13,
+      "lufs": -20.1,
+      "peakDbfs": -5,
+      "bytes": 39579
+    },
+    "soothe.open": {
+      "text": "Rest a hand on your heart, if you like.",
+      "hash": "8ecb51411fd29ab0",
+      "file": "soothe_open.m4a",
+      "seconds": 2.97,
+      "lufs": -20.2,
+      "peakDbfs": -5.7,
+      "bytes": 29608
+    }
+  }
+}

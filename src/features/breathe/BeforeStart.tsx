@@ -186,6 +186,17 @@ export function BeforeStart(props: Props) {
       <EchoText variant="bodyM" color="textSecondary" align="center" style={[styles.line, SHADOW]}>
         {practice.line}
       </EchoText>
+      {practice.caution ? (
+        <EchoText
+          variant="caption"
+          color="textSecondary"
+          align="center"
+          style={[styles.caution, SHADOW]}
+          testID="breathe-caution"
+        >
+          {practice.caution}
+        </EchoText>
+      ) : null}
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={breatheCopy.whyTitle}
@@ -301,6 +312,7 @@ const styles = StyleSheet.create({
     opacity: 0.9,
     paddingHorizontal: 8,
   },
+  caution: { marginTop: 8, fontSize: 11.5, lineHeight: 16, letterSpacing: 0.2 },
   whyLink: { alignSelf: 'center', minHeight: 32, justifyContent: 'center', marginTop: 4 },
   whyLinkText: {
     fontSize: 11.5,

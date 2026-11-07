@@ -37,6 +37,24 @@ const LOOPS = [
       { action: 'exhale', ms: 6000 },
     ],
   },
+  // The library's sighs (src/features/breathe/library/practices.ts): a fuller first breath in, and
+  // Settle's last minute with a longer breath out.
+  ...[6000, 8000].map((exhale) => ({
+    name: `sigh-3-1-${exhale / 1000}`,
+    phases: [
+      { action: 'inhale', ms: 3000, to: 0.8, sound: 0.64, rise: 0.86 },
+      { action: 'inhale', ms: 1000, to: 1 },
+      { action: 'exhale', ms: exhale },
+    ],
+  })),
+  // Ground's lengthening out breath, Soothe's and Ready's settling steps, and Lift's quicker rounds.
+  { name: 'paced-2-0-5-0', phases: paced(2000, 0, 5000, 0) },
+  { name: 'paced-3-0-3-0', phases: paced(3000, 0, 3000, 0) },
+  { name: 'paced-3-0-5-0', phases: paced(3000, 0, 5000, 0) },
+  { name: 'paced-3-0-6-0', phases: paced(3000, 0, 6000, 0) },
+  { name: 'paced-3-0-7-0', phases: paced(3000, 0, 7000, 0) },
+  { name: 'paced-4-0-5-0', phases: paced(4000, 0, 5000, 0) },
+  { name: 'paced-4-0-6-0-hum', phases: paced(4000, 0, 6000, 0), hum: true },
   { name: 'paced-4-0-6-0', phases: paced(4000, 0, 6000, 0) },
   { name: 'paced-4-0-8-0-hum', phases: paced(4000, 0, 8000, 0), hum: true },
   { name: 'paced-4-4-4-4', phases: paced(4000, 4000, 4000, 4000) },

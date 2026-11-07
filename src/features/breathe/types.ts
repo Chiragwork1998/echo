@@ -28,4 +28,5 @@ export type Practice = {
   free: boolean | { minutes: number[] };
   steps: Step[];
   afterUnsettled?: 'support';
+  caution?: string; // a short safety note shown before it starts, for practices that hold the breath
 };

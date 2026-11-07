@@ -161,6 +161,19 @@ describe('Before it starts', () => {
     expect(usePreferences.getState().practice).toMatchObject({ minutes: { heart: 20 }, pace: 4.5 });
   });
 
+  it('warns before a practice that holds the breath', async () => {
+    requirePlus.mockReturnValueOnce(true);
+    await render(<BreatheScreen />);
+    await fireEvent.press(row('sleep'));
+    expect(screen.getByTestId('breathe-caution')).toBeTruthy();
+  });
+
+  it('gives no warning before a practice that does not hold the breath', async () => {
+    await render(<BreatheScreen />);
+    await fireEvent.press(row('heart'));
+    expect(screen.queryByTestId('breathe-caution')).toBeNull();
+  });
+
   it('opens why it helps on a tap, with its source', async () => {
     await openHeart();
     const heart = PRACTICES.find((practice) => practice.id === 'heart');
