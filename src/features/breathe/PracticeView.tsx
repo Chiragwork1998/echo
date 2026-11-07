@@ -15,6 +15,9 @@ import { OneLineLabel } from '@/components/OneLineLabel';
 import { useReduceMotion } from '@/design/useReduceMotion';
 import { CONTROLS, useSkyInk } from '@/features/journal-session/sky';
 import { useScreenReader } from '@/features/journal-session/useScreenReader';
+import { Wash } from '@/features/journal-session/Wash';
+import { balanceLines, lineCapacity } from '@/features/become/phrases';
+import { qa } from '@/testing/qa';
 
 import { breatheCopy } from './breatheCopy';
 import { BreathingSky, useTideFrame } from './BreathingSky';
@@ -65,8 +68,12 @@ export function PracticeView(props: Props) {
   const ink = useSkyInk();
   const frame = useTideFrame();
   const dark = useSharedValue(0);
-  const [receded, setReceded] = useState(false);
-  const [early, setEarly] = useState(true);
+  // The harness can open a practice already receded (?receded=1), as it is after thirty seconds.
+  const [qaReceded] = useState(
+    () => qa.enabled && new URLSearchParams(window.location.search).has('receded'),
+  );
+  const [receded, setReceded] = useState(qaReceded);
+  const [early, setEarly] = useState(!qaReceded);
   const [ended, setEnded] = useState(false);
   const fadeStarted = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -103,11 +110,12 @@ export function PracticeView(props: Props) {
     }, ms);
   }, []);
   useEffect(() => {
+    if (qaReceded) return;
     recedeLater(RECEDE_AFTER_MS);
     return () => {
       if (timer.current) clearTimeout(timer.current);
     };
-  }, [recedeLater]);
+  }, [qaReceded, recedeLater]);
 
   // A fade (Sleep) takes the screen to black over its own length, and keeps it there.
   const fade = timeline.cues.find((cue) => cue.kind === 'fade');
@@ -131,12 +139,18 @@ export function PracticeView(props: Props) {
     );
   }, [dark, fade, reduced, showing]);
 
+  const { stop } = run;
+  const latestView = useRef(view);
+  useEffect(() => {
+    latestView.current = view;
+  });
   const end = useCallback(() => {
-    const rounds = run.view.moment?.round ?? 0;
-    const finished = run.view.status === 'done';
-    if (!finished) run.stop();
+    const now = latestView.current;
+    const rounds = now.moment?.round ?? 0;
+    const finished = now.status === 'done';
+    if (!finished) stop();
     onEndRef.current({ finished, rounds });
-  }, [run]);
+  }, [stop]);
 
   const touch = () => {
     // A practice that has gone dark and quiet at its end opens onto what comes after.
@@ -177,6 +191,13 @@ export function PracticeView(props: Props) {
         style={StyleSheet.absoluteFill}
         testID="practice-sky"
       />
+      {/* A breath of shade low on the screen, so the word, the line and End read on Day's bright
+          ground as on Night's. It recedes with the rest. */}
+      <Wash
+        kind="ground"
+        visible={showing}
+        style={[styles.ground, { height: frame.height * 0.5 }]}
+      />
       <BreathingSky level={level} dark={dark} word={early || !receded ? view.word : null}>
         {caption !== null && (
           <View pointerEvents="none" style={[styles.caption, { top: frame.word - 120 }]}>
@@ -187,14 +208,14 @@ export function PracticeView(props: Props) {
               accessibilityLiveRegion="polite"
               style={[styles.captionText, { color: ink.text }, ink.shadow]}
             >
-              {caption}
+              {balanceLines(caption, lineCapacity(frame.width - 80, 21))}
             </EchoText>
           </View>
         )}
         {first && early && (
           <View pointerEvents="none" style={[styles.safety, { top: frame.low + 28 }]}>
             <EchoText variant="caption" align="center" style={[styles.safetyText, ink.shadow]}>
-              {breatheCopy.safety}
+              {balanceLines(breatheCopy.safety, lineCapacity(frame.width - 96, 12.5, false))}
             </EchoText>
           </View>
         )}
@@ -228,6 +249,7 @@ export function PracticeView(props: Props) {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  ground: { bottom: 0 },
   caption: { position: 'absolute', left: 40, right: 40, alignItems: 'center' },
   captionText: { fontFamily: 'CormorantGaramond_500Medium', fontSize: 21, lineHeight: 28 },
   safety: { position: 'absolute', left: 48, right: 48, alignItems: 'center' },

@@ -99,3 +99,32 @@ export function phrasesOf(body: string): string[] {
 export function phraseMs(phrase: string): number {
   return Math.min(5200, Math.max(2600, 1400 + phrase.length * 70));
 }
+
+/**
+ * Text that would wrap, broken into two lines of about the same length, so no word is left alone on
+ * the last line. A comma near the middle is the better place to break. `perLine` is roughly how many
+ * characters fit on one line at the size the text is set.
+ */
+export function balanceLines(text: string, perLine: number): string {
+  if (text.length <= perLine || text.length > perLine * 2 || text.includes('\n')) return text;
+  const middle = text.length / 2;
+  let best = -1;
+  let bestScore = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < text.length; i += 1) {
+    if (text[i] !== ' ') continue;
+    const left = i;
+    const right = text.length - i - 1;
+    if (Math.max(left, right) > perLine) continue;
+    const afterComma = text[i - 1] === ',' && Math.min(left, right) >= text.length * 0.3;
+    const score = Math.abs(i - middle) - (afterComma ? text.length : 0);
+    if (score < bestScore) {
+      bestScore = score;
+      best = i;
+    }
+  }
+  return best === -1 ? text : `${text.slice(0, best)}\n${text.slice(best + 1)}`;
+}
+
+/** Roughly how many characters of a face fit on a line this wide at this size. */
+export const lineCapacity = (width: number, fontSize: number, serif = true) =>
+  Math.floor(width / (fontSize * (serif ? 0.45 : 0.5)));

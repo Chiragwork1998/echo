@@ -78,12 +78,16 @@ function Chip(props: {
   label: string;
   spoken: string;
   selected: boolean;
+  /** Marked Plus where it can be seen. */
   plus: boolean;
+  /** Said to be Plus, where the row as a whole is marked instead. */
+  spokenPlus?: boolean;
   onPress: () => void;
   testID: string;
 }) {
   const { colors } = useTheme();
   const { label, spoken, selected, plus, onPress, testID } = props;
+  const plusSpoken = plus || props.spokenPlus === true;
   const text = (
     <View style={styles.chipText}>
       <OneLineLabel
@@ -102,7 +106,7 @@ function Chip(props: {
   return (
     <Pressable
       accessibilityRole="radio"
-      accessibilityLabel={plus ? `${spoken}, ${breatheCopy.plus}` : spoken}
+      accessibilityLabel={plusSpoken ? `${spoken}, ${breatheCopy.plus}` : spoken}
       accessibilityState={{ selected }}
       onPress={onPress}
       hitSlop={{ top: 5, bottom: 5 }}
@@ -222,6 +226,11 @@ export function BeforeStart(props: Props) {
               <View style={styles.paceHead}>
                 <EchoText variant="bodyM" style={styles.settingLabel}>
                   {breatheCopy.pace}
+                  {markPlus && (
+                    <EchoText variant="caption" color="textSecondary" style={styles.chipPlus}>
+                      {`  ${breatheCopy.plus}`}
+                    </EchoText>
+                  )}
                 </EchoText>
                 <EchoText variant="caption" color="textSecondary" style={styles.paceValue}>
                   {breatheCopy.paceValue(pace)}
@@ -234,7 +243,8 @@ export function BeforeStart(props: Props) {
                     label={String(value)}
                     spoken={breatheCopy.paceValue(value)}
                     selected={value === pace}
-                    plus={markPlus && !paceIsFree(value)}
+                    plus={false}
+                    spokenPlus={markPlus && !paceIsFree(value)}
                     onPress={() => props.onPace(value)}
                     testID={`pace-${value}`}
                   />
@@ -310,16 +320,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   knob: { width: KNOB, height: KNOB, borderRadius: KNOB / 2, backgroundColor: '#FDFCFC' },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   chip: {
     minHeight: CHIP_HEIGHT,
     borderRadius: CHIP_HEIGHT / 2,
-    paddingHorizontal: 13,
+    paddingHorizontal: 10,
     justifyContent: 'center',
   },
   open: { borderWidth: StyleSheet.hairlineWidth },
   chipText: { flexDirection: 'row', alignItems: 'baseline', gap: 5 },
-  chipLabel: { fontSize: 12.5, lineHeight: 16, letterSpacing: 0.3 },
+  chipLabel: { fontSize: 12, lineHeight: 16, letterSpacing: 0.2 },
   chipPlus: { fontSize: 9.5, lineHeight: 12, letterSpacing: 0.6, opacity: 0.8 },
   pressed: { opacity: 0.8 },
   paceHead: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },

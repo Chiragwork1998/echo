@@ -11,8 +11,8 @@ import { breatheCopy } from './breatheCopy';
 import type { Practice } from './types';
 
 // Measured by eye against the onboarding goldens' headings and the Completion card.
-const HEADING_TOP = 26;
-const ROW_HEIGHT = 50;
+const HEADING_TOP = 18;
+const ROW_HEIGHT = 56;
 const ROW_INSET = 20;
 
 type Props = {
@@ -52,15 +52,10 @@ export function FeelingsList({ practices, markPlus, onChoose }: Props) {
                 ]}
                 testID={`feeling-${practice.id}`}
               >
-                <EchoText variant="bodyL" serif numberOfLines={1} style={styles.feeling}>
+                <EchoText variant="bodyL" serif style={styles.feeling}>
                   {practice.feeling}
                 </EchoText>
-                <EchoText
-                  variant="caption"
-                  color="textSecondary"
-                  numberOfLines={1}
-                  style={styles.detail}
-                >
+                <EchoText variant="caption" color="textSecondary" style={styles.detail}>
                   {detail.join(' · ')}
                 </EchoText>
               </Pressable>
@@ -73,17 +68,16 @@ export function FeelingsList({ practices, markPlus, onChoose }: Props) {
 }
 
 const styles = StyleSheet.create({
-  list: { marginTop: 24 },
+  list: { marginTop: 20 },
   row: {
     minHeight: ROW_HEIGHT,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
+    justifyContent: 'center',
+    gap: 1,
     paddingHorizontal: ROW_INSET,
+    paddingVertical: 8,
   },
   rule: { borderTopWidth: StyleSheet.hairlineWidth },
   pressed: { backgroundColor: 'rgba(255,255,255,0.06)' },
-  feeling: { flexShrink: 1, fontSize: 20, lineHeight: 26, letterSpacing: 0 },
-  detail: { flexShrink: 0, fontSize: 11.5, lineHeight: 15, letterSpacing: 0.4, opacity: 0.86 },
+  feeling: { fontSize: 19.5, lineHeight: 24, letterSpacing: 0 },
+  detail: { fontSize: 11, lineHeight: 15, letterSpacing: 0.4, opacity: 0.86 },
 });

@@ -17,6 +17,8 @@ export type Clock = {
   elapsedMs(): number;
   /** The player behind it, if there is one. */
   readonly player: BreathPlayer | null;
+  /** The sound has been heard to play. A clock without a player is always started. */
+  started(): boolean;
   pause(): void;
   resume(): void;
   dispose(): void;
@@ -33,8 +35,10 @@ export function playerClock(player: BreathPlayer, roundMs: number, now: Now = wa
   let loops = 0;
   let last: Status = { currentTime: 0, duration: roundMs / 1000, playing: false };
   let at = now();
+  let heard = false;
   const subscription = player.addListener('playbackStatusUpdate', (status) => {
     if (!status.isLoaded) return;
+    if (status.playing) heard = true;
     if (status.currentTime + WRAP_SLACK_S < last.currentTime) loops += 1;
     last = {
       currentTime: status.currentTime,
@@ -45,12 +49,13 @@ export function playerClock(player: BreathPlayer, roundMs: number, now: Now = wa
   });
   return {
     player,
+    started: () => heard,
     elapsedMs() {
       const duration = last.duration > 0 ? last.duration : roundMs / 1000;
-      const heard = last.currentTime + (last.playing ? (now() - at) / 1000 : 0);
+      const position = last.currentTime + (last.playing ? (now() - at) / 1000 : 0);
       // Between reports the position can run past the end: that is the next time round.
-      const extra = Math.floor(heard / duration);
-      const within = heard - extra * duration;
+      const extra = Math.floor(position / duration);
+      const within = position - extra * duration;
       return (loops + extra + within / duration) * roundMs;
     },
     pause() {
@@ -86,6 +91,7 @@ export function silentClock(now: Now = wallNow): Clock {
   let since: number | null = now();
   return {
     player: null,
+    started: () => true,
     elapsedMs: () => base + (since === null ? 0 : now() - since),
     pause() {
       if (since === null) return;

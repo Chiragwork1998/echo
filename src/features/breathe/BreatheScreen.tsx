@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { BackHandler, ScrollView, StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
@@ -14,6 +14,7 @@ import { PrimaryCTA } from '@/components/PrimaryCTA';
 import { useLayout } from '@/design/layout';
 import { useMorning } from '@/features/become/morning';
 import { useHomeDissolve } from '@/features/home/dissolve';
+import { Wash } from '@/features/journal-session/Wash';
 import { deviceClock } from '@/features/journal/localDay';
 import { usePlus, useRequirePlus, type PlusState } from '@/services/plus';
 import { usePreferences } from '@/state/preferences';
@@ -191,7 +192,7 @@ export function BreatheScreen() {
   const top = Math.max(insets.top - 5, 8);
   const column = { width, paddingHorizontal: gutter, alignSelf: 'center' as const };
 
-  const content = useMemo(() => stage.kind, [stage.kind]);
+  const content = stage.kind;
   if (stage.kind === 'during') {
     return (
       <PracticeView
@@ -253,9 +254,12 @@ export function BreatheScreen() {
           </View>
         )}
         {stage.kind === 'check' && (
-          <View style={[styles.fill, column, { paddingTop: top }]}>
-            <FeelingCheck onAnswer={answer} />
-          </View>
+          <>
+            <Wash kind="sky" visible style={styles.checkShade} />
+            <View style={[styles.fill, column, { paddingTop: top }]}>
+              <FeelingCheck onAnswer={answer} />
+            </View>
+          </>
         )}
         {stage.kind === 'after' && (
           <View
@@ -291,4 +295,5 @@ const styles = StyleSheet.create({
   fill: { flex: 1 },
   scroll: { flexGrow: 1 },
   footer: { position: 'absolute' },
+  checkShade: { top: 0, height: 560 },
 });

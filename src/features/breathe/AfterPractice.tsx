@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { OneLineLabel } from '@/components/OneLineLabel';
 import { OnboardingHeading } from '@/components/OnboardingHeading';
@@ -79,7 +79,12 @@ type ActionsProps = {
 /** Then: into today's journal, one more minute, or done. */
 export function AfterActions({ support, onCloseSupport, onEcho, onMore, onDone }: ActionsProps) {
   return (
-    <View style={styles.after}>
+    // The support panel is long: with it, the ways on scroll up beneath it rather than off the top.
+    <ScrollView
+      style={styles.fill}
+      contentContainerStyle={styles.after}
+      showsVerticalScrollIndicator={false}
+    >
       {support && (
         <View style={styles.support}>
           <SupportPanel onClose={onCloseSupport} />
@@ -92,7 +97,7 @@ export function AfterActions({ support, onCloseSupport, onEcho, onMore, onDone }
           <QuietWord label={breatheCopy.actions.done} onPress={onDone} testID="after-done" />
         </View>
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -107,7 +112,8 @@ const styles = StyleSheet.create({
     lineHeight: 28,
     letterSpacing: 0.5,
   },
-  after: { flex: 1, justifyContent: 'flex-end' },
+  fill: { flex: 1 },
+  after: { flexGrow: 1, justifyContent: 'flex-end' },
   support: { marginBottom: 20 },
   actions: { gap: 10 },
   quiet: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 18 },

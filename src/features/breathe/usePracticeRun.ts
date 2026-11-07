@@ -28,6 +28,11 @@ const UNDER_VOICE = 0.35;
 const DUCK_MS = 400;
 /** How long a line stays on screen when it is shown rather than spoken. */
 const CAPTION_MS = 9000;
+/**
+ * A loop that has not been heard to play by now is let go, and the practice carries on silently on
+ * the wall clock. A practice must never hang on a sound that will not start.
+ */
+const START_GRACE_MS = 2000;
 
 export type RunStatus = 'idle' | 'running' | 'done';
 
@@ -68,6 +73,8 @@ function pause(player: BreathPlayer) {
 
 type Sounding = {
   clock: Clock;
+  /** When this clock began waiting for its sound. */
+  since: number;
   /** The loop the clock follows, by name, so a following segment on the same loop carries on. */
   loop: string;
   /** The clock's reading when the current segment began. */
@@ -152,7 +159,7 @@ export function usePracticeRun({
         }
       }
       const clock = player ? playerClock(player, segment.breath.roundMs) : silentClock();
-      sounding.current = { clock, loop: name, offset: 0, segment: index };
+      sounding.current = { clock, since: Date.now(), loop: name, offset: 0, segment: index };
     },
     [loopPlayer],
   );
@@ -254,6 +261,13 @@ export function usePracticeRun({
   const tick = useCallback(() => {
     frame.current = null;
     if (status.current !== 'running') return;
+    const waiting = sounding.current;
+    if (waiting && !waiting.clock.started() && Date.now() - waiting.since > START_GRACE_MS) {
+      const player = waiting.clock.player;
+      if (player) pause(player);
+      waiting.clock.dispose();
+      sounding.current = { ...waiting, clock: silentClock(), loop: '' };
+    }
     let elapsed = elapsedNow();
     const segments = timeline.current.segments;
     // A segment that has run its rounds hands over to the next at the quiet end of a breath out.

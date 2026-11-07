@@ -14,7 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EchoBackground } from '@/components/EchoBackground';
 import { EchoText } from '@/components/EchoText';
 import { OneLineLabel } from '@/components/OneLineLabel';
-import { usePlatePoint } from '@/design/usePlatePoint';
+import { usePlateFrame, usePlatePoint } from '@/design/usePlatePoint';
 import { useReduceMotion } from '@/design/useReduceMotion';
 import { BreathingSky } from '@/features/breathe/BreathingSky';
 import { announce } from '@/features/breathe/cues';
@@ -27,7 +27,7 @@ import { usePreferences } from '@/state/preferences';
 import { qa } from '@/testing/qa';
 
 import { becomeCopy } from './becomeCopy';
-import { phraseMs, phrasesOf } from './phrases';
+import { balanceLines, lineCapacity, phraseMs, phrasesOf } from './phrases';
 import { COMPLETE_PATH, heldRehearsal, releaseRehearsal } from './rehearsal';
 
 /** The session's book fades under this copy of the plate as the screen arrives, then it lifts. */
@@ -42,6 +42,7 @@ const GO_MS = 3800;
 /** A tap shows Skip for this long. */
 const SKIP_FOR_MS = 4000;
 const SERIF = 'CormorantGaramond_500Medium';
+const SIDE = 36;
 /** The words sit in the middle of the sky. */
 const WORDS_AT = (SKY.top + SKY.bottom) / 2 + 40;
 
@@ -70,6 +71,8 @@ function feelTimeline(): Timeline {
 /** One line on the sky, settling in and out. Reduce Motion: it only fades. */
 function Line({ text, leaving, size }: { text: string; leaving: boolean; size: number }) {
   const reduced = useReduceMotion();
+  const { width } = usePlateFrame();
+  const lines = balanceLines(text, lineCapacity(width - SIDE * 2, size));
   const ink = useSkyInk();
   const shown = useSharedValue(0);
   useEffect(() => {
@@ -86,7 +89,7 @@ function Line({ text, leaving, size }: { text: string; leaving: boolean; size: n
     transform: [{ translateY: reduced ? 0 : (1 - shown.get()) * 8 }],
   }));
   return (
-    <Animated.View style={style}>
+    <Animated.View style={style} testID="rehearse-line">
       <EchoText
         variant="displayM"
         align="center"
@@ -97,7 +100,7 @@ function Line({ text, leaving, size }: { text: string; leaving: boolean; size: n
           ink.shadow,
         ]}
       >
-        {text}
+        {lines}
       </EchoText>
     </Animated.View>
   );
@@ -283,7 +286,13 @@ export function RehearseScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   wash: { top: 0, height: 420 },
-  words: { position: 'absolute', left: 36, right: 36, minHeight: 140, justifyContent: 'center' },
+  words: {
+    position: 'absolute',
+    left: SIDE,
+    right: SIDE,
+    minHeight: 140,
+    justifyContent: 'center',
+  },
   line: { fontFamily: SERIF, letterSpacing: 0.2 },
   bottom: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
   skip: {
