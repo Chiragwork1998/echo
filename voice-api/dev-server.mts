@@ -18,6 +18,7 @@ const routes = {
   'POST /api/refine': (await import('./api/refine.js')).POST,
   'POST /api/live-session': (await import('./api/live-session.js')).POST,
   'POST /api/install': (await import('./api/install.js')).POST,
+  'POST /api/report': (await import('./api/report.js')).POST,
   'GET /api/allowance': (await import('./api/allowance.js')).GET,
 } as const;
 

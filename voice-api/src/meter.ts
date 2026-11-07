@@ -298,11 +298,19 @@ export async function meter(
   return first;
 }
 
-/** What an install has used of its voice allowance this month, for /api/allowance. */
+/**
+ * What an install has used of its voice allowance this month, for /api/allowance. The app asks before
+ * a long take, and holds the take back if it will not fit, so a cached "free" is checked again first,
+ * as it is before a refusal: someone who has just subscribed is not held back by it.
+ */
 export async function voiceUsage(context: MeterContext, caller: Caller) {
   if (caller.kind === 'legacy') return { plan: 'legacy' as const, voice: null };
   const now = context.now();
-  const { plan } = await context.entitlementOf(caller.installId);
+  let entitlement = await context.entitlementOf(caller.installId);
+  if (entitlement.plan === 'free' && entitlement.source === 'cache' && now - entitlement.checkedAt > RECHECK_MS) {
+    entitlement = await context.entitlementOf(caller.installId, true);
+  }
+  const { plan } = entitlement;
   const [counter] = installCounters('voice', plan, caller.key, 0, now)!;
   const [used = 0] = await context.store.read([counter!.key]);
   return {

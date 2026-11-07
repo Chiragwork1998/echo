@@ -24,6 +24,10 @@
     "api/allowance.ts": {
       "maxDuration": 10,
       "memory": 256
+    },
+    "api/report.ts": {
+      "maxDuration": 10,
+      "memory": 256
     }
   }
 }
