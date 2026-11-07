@@ -12,20 +12,22 @@ import { links } from '@/config/links';
 import { useLayout } from '@/design/layout';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
+import { OnPlate } from '@/features/tab-pages/parts';
+import { onPlate } from '@/features/tab-pages/textStyles';
 import { notePaywallOpen } from '@/services/plus/engine';
 import { markOffered, usePlusStore } from '@/services/plus/store';
 import { HOME_PATH } from '@/state/routing';
 
 import { PlanChoice, PlanMessage, PlanSkeleton } from './PlanChoice';
-import { plusCopy } from './plusCopy';
+import { keepTogether, plusCopy } from './plusCopy';
+import { secondary, small } from './plusText';
 import { ReadabilityScrim } from './ReadabilityScrim';
 import { usePaywall, type PaywallNotice, type PaywallView } from './usePaywall';
 
 // The heading sits where the safe area ends plus this, a little higher than onboarding's, which has
 // a header above it. The actions end just above the home indicator, as onboarding's CTA does.
-const TOP_GAP = 26;
+const TOP_GAP = 14;
 const BOTTOM_GAP = 6;
-const SMALL = { fontSize: 12.5, lineHeight: 17, letterSpacing: 0.1 } as const;
 
 const open = (url: string) => void Linking.openURL(url).catch(() => undefined);
 
@@ -39,11 +41,11 @@ function Benefits() {
             key={title}
             variant="bodyM"
             color="textSecondary"
-            style={styles.benefit}
+            style={secondary}
             maxFontSizeMultiplier={1.6}
           >
             <Text style={[styles.benefitTitle, { color: colors.textPrimary }]}>{`${title}. `}</Text>
-            {line}
+            {keepTogether(line)}
           </EchoText>
         ))}
       </View>
@@ -81,8 +83,8 @@ function Notice({ notice }: { notice: PaywallNotice }) {
   return (
     <GlassCard radius={tokens.radius.medium} strength="strong">
       <View style={styles.notice} accessibilityLiveRegion="polite" testID="paywall-notice">
-        <EchoText variant="bodyM" maxFontSizeMultiplier={1.6}>
-          {notice.message}
+        <EchoText variant="bodyM" style={secondary} maxFontSizeMultiplier={1.6}>
+          {keepTogether(notice.message)}
         </EchoText>
       </View>
     </GlassCard>
@@ -121,11 +123,26 @@ function TextButton({
           {label.toUpperCase()}
         </EchoText>
       ) : (
-        <EchoText variant="caption" color="textSecondary" style={SMALL} maxFontSizeMultiplier={1.6}>
+        <EchoText variant="caption" color="textSecondary" style={small} maxFontSizeMultiplier={1.6}>
           {label}
         </EchoText>
       )}
     </Pressable>
+  );
+}
+
+/** The goldens' separator, between the small links. Not read aloud: each link is its own stop. */
+function Dot() {
+  return (
+    <EchoText
+      variant="caption"
+      color="textSecondary"
+      style={small}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+    >
+      ·
+    </EchoText>
   );
 }
 
@@ -217,21 +234,37 @@ export function PaywallScreen() {
             <OnboardingHeading title={plusCopy.heading} subtitle={plusCopy.lead} top={0} />
             <View style={styles.body}>
               <Benefits />
-              {view.kind === 'loading' && <PlanSkeleton />}
-              {view.kind === 'offline' && <PlanMessage message={plusCopy.offline} />}
-              {view.kind === 'unavailable' && <PlanMessage message={plusCopy.unavailable} />}
-              {view.kind === 'plans' && (
-                <PlanChoice
-                  plans={view.plans}
-                  selectedId={selected?.id ?? null}
-                  onChoose={paywall.choose}
-                  disabled={busy !== null}
-                />
-              )}
-              {view.kind === 'plus' && <Status />}
+              <View style={styles.plans}>
+                {view.kind === 'loading' && <PlanSkeleton />}
+                {view.kind === 'offline' && <PlanMessage message={plusCopy.offline} />}
+                {view.kind === 'unavailable' && <PlanMessage message={plusCopy.unavailable} />}
+                {view.kind === 'plans' && (
+                  <PlanChoice
+                    plans={view.plans}
+                    selectedId={selected?.id ?? null}
+                    onChoose={paywall.choose}
+                    disabled={busy !== null}
+                  />
+                )}
+                {view.kind === 'plus' && <Status />}
+                {finePrint && (
+                  <View style={styles.finePrint}>
+                    <OnPlate>
+                      <EchoText
+                        variant="caption"
+                        color="textSecondary"
+                        style={[small, onPlate]}
+                        maxFontSizeMultiplier={1.6}
+                      >
+                        {keepTogether(finePrint)}
+                      </EchoText>
+                    </OnPlate>
+                  </View>
+                )}
+              </View>
               {notice && <Notice notice={notice} />}
             </View>
-            <View style={styles.spacer} />
+            <View style={[styles.spacer, notice && styles.spacerTight]} />
             <View style={styles.actions}>
               <PrimaryCTA
                 label={ctaLabel(view, selected)}
@@ -239,26 +272,16 @@ export function PaywallScreen() {
                 loading={view.kind === 'loading' || busy === 'buying'}
                 disabled={busy === 'restoring' || (view.kind === 'plans' && !selected)}
               />
-              <View style={styles.finePrint}>
-                {finePrint && (
-                  <EchoText
-                    variant="caption"
-                    color="textSecondary"
-                    align="center"
-                    style={SMALL}
-                    maxFontSizeMultiplier={1.6}
-                  >
-                    {finePrint}
-                  </EchoText>
-                )}
-              </View>
               <View style={styles.links}>
                 {view.kind !== 'plus' && (
-                  <TextButton
-                    label={busy === 'restoring' ? plusCopy.restoring : plusCopy.restore}
-                    onPress={() => void paywall.restore()}
-                    disabled={busy !== null}
-                  />
+                  <>
+                    <TextButton
+                      label={busy === 'restoring' ? plusCopy.restoring : plusCopy.restore}
+                      onPress={() => void paywall.restore()}
+                      disabled={busy !== null}
+                    />
+                    <Dot />
+                  </>
                 )}
                 <TextButton
                   role="link"
@@ -266,6 +289,7 @@ export function PaywallScreen() {
                   hint={plusCopy.opensInBrowser}
                   onPress={() => open(links.terms)}
                 />
+                <Dot />
                 <TextButton
                   role="link"
                   label={plusCopy.privacy}
@@ -294,26 +318,28 @@ const styles = StyleSheet.create({
   fill: { flex: 1 },
   scroll: { flexGrow: 1, alignItems: 'center' },
   column: { flex: 1 },
-  body: { marginTop: tokens.space[24], gap: tokens.space[16] },
+  body: { marginTop: 18, gap: tokens.space[16] },
   benefits: {
     paddingHorizontal: tokens.space[16],
-    paddingVertical: tokens.space[16],
-    gap: tokens.space[12],
+    paddingVertical: 14,
+    gap: 10,
   },
-  benefit: { fontSize: 14, lineHeight: 20 },
   benefitTitle: { fontFamily: 'Inter_500Medium' },
   status: { padding: tokens.space[20], gap: tokens.space[4] },
   statusTitle: { fontSize: 22, lineHeight: 28 },
   notice: { paddingHorizontal: tokens.space[16], paddingVertical: tokens.space[12] },
-  spacer: { flexGrow: 1, minHeight: tokens.space[24] },
+  spacerTight: { minHeight: tokens.space[12] },
+  plans: { gap: 10 },
+  // Set in from the card's edge, where the plans' own words start.
+  finePrint: { paddingHorizontal: tokens.space[16] },
+  spacer: { flexGrow: 1, minHeight: tokens.space[20] },
   actions: { alignItems: 'center' },
-  finePrint: { minHeight: 34, marginTop: tokens.space[12], justifyContent: 'center' },
   links: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    alignItems: 'center',
     justifyContent: 'center',
-    columnGap: tokens.space[8],
-    marginTop: tokens.space[4],
+    marginTop: tokens.space[8],
   },
   textButton: {
     minHeight: tokens.size.tapTarget,

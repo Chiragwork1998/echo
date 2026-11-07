@@ -8,12 +8,12 @@ import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 import type { Plan } from '@/services/plus/types';
 
-import { plusCopy } from './plusCopy';
+import { keepTogether, plusCopy } from './plusCopy';
+import { secondary } from './plusText';
 
 const ROW_PADDING = tokens.space[16];
 /** Two lines of text and their padding: the height a plan row has, loaded or not. */
-const ROW_HEIGHT = 66;
-const DETAIL = { fontSize: 14, lineHeight: 19 } as const;
+const ROW_HEIGHT = 62;
 
 function Rule() {
   const { colors } = useTheme();
@@ -58,7 +58,7 @@ export function PlanChoice({
                   <EchoText
                     variant="bodyM"
                     color="textSecondary"
-                    style={DETAIL}
+                    style={secondary}
                     maxFontSizeMultiplier={1.6}
                   >
                     {line}
@@ -107,8 +107,8 @@ export function PlanMessage({ message }: { message: string }) {
   return (
     <GlassCard radius={tokens.radius.medium} strength="strong">
       <View style={styles.message} accessibilityLiveRegion="polite">
-        <EchoText variant="bodyM" maxFontSizeMultiplier={1.6}>
-          {message}
+        <EchoText variant="bodyM" style={secondary} maxFontSizeMultiplier={1.6}>
+          {keepTogether(message)}
         </EchoText>
       </View>
     </GlassCard>
@@ -131,5 +131,5 @@ const styles = StyleSheet.create({
   bars: { gap: tokens.space[12] },
   bar: { height: 9, borderRadius: 6, backgroundColor: 'rgba(255,255,255,0.14)' },
   ring: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, opacity: 0.35 },
-  message: { padding: tokens.space[20] },
+  message: { paddingHorizontal: tokens.space[16], paddingVertical: tokens.space[16] },
 });

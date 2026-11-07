@@ -14,6 +14,12 @@ const store = ios ? 'the App Store' : 'Google Play';
 const Store = ios ? 'The App Store' : 'Google Play';
 const account = ios ? 'Apple ID' : 'Google account';
 
+/**
+ * Ties the last two words together, so that a line never ends with one word left alone on it.
+ * Screen readers read the space as a space.
+ */
+export const keepTogether = (text: string): string => text.replace(/ (\S+)$/, '\u00a0$1');
+
 /** "6 November 2026", in the device's language. */
 export const longDate = (at: number): string =>
   new Date(at).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
@@ -54,7 +60,7 @@ export const plusCopy = {
 
   plansLabel: 'Plans',
   planName: { year: 'Yearly', month: 'Monthly' } as Record<PlanPeriod, string>,
-  /** "7 days free, then ₹1,999.00 a year", or "₹299.00 a month". The price is the store's. */
+  /** "7 days free, then {price} a year", or "{price} a month". The price is the store's own text. */
   planLine: (period: PlanPeriod, price: string, trial: StorePeriod | null) =>
     trial ? `${trialLength(trial)} free, then ${price} ${per[period]}` : `${price} ${per[period]}`,
   loadingPlans: 'Loading the plans',

@@ -39,7 +39,7 @@ export type StorePeriod = { unit: 'day' | 'week' | 'month' | 'year'; count: numb
 export type Plan = {
   id: string;
   period: PlanPeriod;
-  /** The price each period once any trial is over, formatted by the store, such as "₹1,999.00". */
+  /** The price each period once any trial is over, exactly as the store formats it. */
   price: string;
   /** The free trial this person would get with this plan, or null. */
   trial: StorePeriod | null;

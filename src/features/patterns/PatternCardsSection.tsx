@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { EchoText } from '@/components/EchoText';
 import type { EntrySummary } from '@/features/journal';
 import { Heading, Notice, OnPlate, Quiet, Row, Section } from '@/features/tab-pages/parts';
-import { onPlate } from '@/features/tab-pages/textStyles';
+import { onPlate, supporting } from '@/features/tab-pages/textStyles';
 import { tokens } from '@/design/tokens';
 
 import { entriesToSend } from './gatherEntries';
@@ -107,7 +107,7 @@ export function PatternCardsSection({ entries }: { entries: readonly EntrySummar
           <QuietAction label={saved ? words.readAgain : words.read} onPress={cards.read} />
           {cards.needsPlus && (
             <OnPlate>
-              <EchoText variant="caption" color="textSecondary" align="center" style={onPlate}>
+              <EchoText variant="caption" align="center" style={[supporting, onPlate]}>
                 {words.plusNote}
               </EchoText>
             </OnPlate>
