@@ -51,12 +51,15 @@ describe('privacy rules', () => {
   // only places a request or a socket is made. Every other file here stays offline, and adding one
   // should be a decision, not an accident. install.ts was added on 2026-11-08 (docs/PRODUCT_V1.md,
   // Server and identity): it asks ECHO's server for this install's token with the install id, which
-  // holds no content, and nothing else.
+  // holds no content, and nothing else. reportCard.ts was added the same day (docs/PRODUCT_V1.md,
+  // See: "Report this card"): it sends a reason, a lens id, a model name and the app's version to
+  // ECHO's server, never a card's words or a person's.
   const SOCKET = ['src/services/liveTranscription.ts'];
   const NETWORK = [
     'src/services/transcription.ts',
     'src/services/patterns.ts',
     'src/services/install.ts',
+    'src/services/reportCard.ts',
     ...SOCKET,
   ];
   it.each(production.filter((path) => !NETWORK.includes(path)))(

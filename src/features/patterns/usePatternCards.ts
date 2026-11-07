@@ -94,6 +94,7 @@ export function usePatternCards(entries: readonly EntrySummary[]): PatternCards 
           readAt: Date.now(),
           entriesRead: result.entriesRead || sending.length,
           cards: result.cards,
+          ...(result.model ? { model: result.model } : {}),
         };
         setSaved(fresh);
         markReadingUsed();

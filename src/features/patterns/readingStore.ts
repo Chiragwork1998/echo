@@ -11,6 +11,8 @@ export type SavedReading = {
   /** How many entries were sent. */
   entriesRead: number;
   cards: PatternCard[];
+  /** The model that wrote the cards, when the server named it. A report of a card says it. */
+  model?: string;
 };
 
 export type StoreResult<T> = { ok: true; value: T } | { ok: false };
