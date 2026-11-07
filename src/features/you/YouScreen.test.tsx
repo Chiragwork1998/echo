@@ -3,7 +3,9 @@ import { router } from 'expo-router';
 import { Alert, Dimensions, Linking } from 'react-native';
 
 import { showToast } from '@/components/Toast';
+import { links } from '@/config/links';
 import { copy } from '@/content/copy';
+import { supportCopy } from '@/features/patterns/supportResources';
 import { commitReminder } from '@/features/onboarding/rhythm/commitReminder';
 import { deleteAllLocal } from '@/services/deleteAllLocal';
 import { authenticate, verifyLockAvailable } from '@/services/biometric';
@@ -184,11 +186,22 @@ describe('You: privacy', () => {
     await waitFor(() => expect(useOnboarding.getState().privacy.biometricLock).toBe(false));
   });
 
-  it('shows private backup and AI reflection as not available yet, with no control', async () => {
+  it('offers only what exists: four switches, and no row for a feature that is not there', async () => {
     await render(<YouScreen />);
-    expect(screen.getByLabelText(new RegExp(`${youCopy.backup}. Not available yet`))).toBeTruthy();
-    expect(screen.getByLabelText(new RegExp(`${youCopy.ai}. Not available yet`))).toBeTruthy();
     expect(screen.getAllByRole('switch')).toHaveLength(4);
+    expect(screen.queryByText(/Not available yet/)).toBeNull();
+    expect(screen.queryByText(/^AI /)).toBeNull();
+  });
+
+  it('keeps the longer explanations behind About this, and opens them on a tap', async () => {
+    await render(<YouScreen />);
+    expect(screen.queryByText(youCopy.voiceWordsDetail)).toBeNull();
+    const about = screen.getByRole('button', { name: youCopy.aboutThis });
+    expect(about).toBeCollapsed();
+    await fireEvent.press(about);
+    expect(screen.getByText(new RegExp(youCopy.voiceWordsDetail.slice(0, 40)))).toBeTruthy();
+    expect(screen.getByText(new RegExp(youCopy.tidyWordsDetail.slice(0, 40)))).toBeTruthy();
+    expect(screen.getByRole('button', { name: youCopy.aboutThis })).toBeExpanded();
   });
 });
 
@@ -405,5 +418,48 @@ describe('You: support and about', () => {
     await render(<YouScreen />);
     expect(screen.getByText(youCopy.statement)).toBeTruthy();
     expect(screen.getByRole('header', { name: youCopy.title })).toBeTruthy();
+  });
+
+  it('says plainly that the voice in Breathe is synthetic, made with OpenAI', async () => {
+    await render(<YouScreen />);
+    expect(screen.getByText(youCopy.breatheVoice)).toBeTruthy();
+    expect(youCopy.breatheVoice).toBe('The voice in Breathe is synthetic, made with OpenAI.');
+  });
+
+  it('opens the support panel at any time, with someone to call and a way to close it', async () => {
+    const open = jest.spyOn(Linking, 'openURL').mockResolvedValue();
+    await render(<YouScreen />);
+    expect(screen.queryByRole('header', { name: supportCopy.openTitle })).toBeNull();
+    await fireEvent.press(button(new RegExp(youCopy.struggling)));
+    expect(await screen.findByRole('header', { name: supportCopy.openTitle })).toBeTruthy();
+    expect(screen.getByText(supportCopy.reach)).toBeTruthy();
+    // It assumes nothing: the line about pattern cards belongs to Patterns alone.
+    expect(screen.queryByText(supportCopy.body)).toBeNull();
+    await fireEvent.press(screen.getByRole('link', { name: /Find a Helpline/ }));
+    expect(open).toHaveBeenCalledWith('https://findahelpline.com');
+    await fireEvent.press(screen.getByRole('button', { name: supportCopy.close }));
+    await waitFor(() =>
+      expect(screen.queryByRole('header', { name: supportCopy.openTitle })).toBeNull(),
+    );
+  });
+
+  it('opens the privacy policy and the terms from the one list of links', async () => {
+    const open = jest.spyOn(Linking, 'openURL').mockResolvedValue();
+    await render(<YouScreen />);
+    await fireEvent.press(screen.getByRole('link', { name: youCopy.privacyPolicy }));
+    expect(open).toHaveBeenLastCalledWith(links.privacy);
+    await fireEvent.press(screen.getByRole('link', { name: youCopy.terms }));
+    expect(open).toHaveBeenLastCalledWith(links.terms);
+  });
+
+  it('says where a page is when it cannot be opened', async () => {
+    jest.spyOn(Linking, 'openURL').mockRejectedValue(new Error('no browser'));
+    await render(<YouScreen />);
+    await fireEvent.press(screen.getByRole('link', { name: youCopy.terms }));
+    expect(await screen.findByText(youCopy.pageFailed(links.terms))).toBeTruthy();
+  });
+
+  it('reads the support address from the one list of links', () => {
+    expect(SUPPORT_EMAIL).toBe(links.supportEmail);
   });
 });

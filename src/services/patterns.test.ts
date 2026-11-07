@@ -41,6 +41,26 @@ describe('parseReading', () => {
     expect(result).toEqual({ status: 'cards', entriesRead: 7, cards: [card] });
   });
 
+  it('keeps the lens id and the model, which a report of a card names, and nothing that is words', () => {
+    const named = parseReading({
+      status: 'cards',
+      entriesRead: 7,
+      model: 'gpt-6.1-sol',
+      cards: [{ ...card, lens: { ...card.lens, id: 'dispenza_loop' } }],
+    });
+    expect(named).toMatchObject({
+      model: 'gpt-6.1-sol',
+      cards: [{ lens: { id: 'dispenza_loop' } }],
+    });
+    const words = parseReading({
+      status: 'cards',
+      entriesRead: 7,
+      model: 'a sentence, not a name',
+      cards: [{ ...card, lens: { ...card.lens, id: 'One way to see this' } }],
+    });
+    expect(words).toEqual({ status: 'cards', entriesRead: 7, cards: [card] });
+  });
+
   it('reads the other two answers, and refuses what it does not know', () => {
     expect(parseReading({ status: 'support' })).toEqual({ status: 'support' });
     expect(parseReading({ status: 'none', entriesRead: 6 })).toEqual({

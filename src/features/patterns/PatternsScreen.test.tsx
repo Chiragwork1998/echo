@@ -61,6 +61,13 @@ describe('PatternsScreen', () => {
     expect(screen.queryByText(patternsCopy.weekTitle.toUpperCase())).toBeNull();
   });
 
+  it('shows how far along the person is, one cairn built for each reflection', async () => {
+    seed(4);
+    await render(<PatternsScreen />);
+    expect(await screen.findByLabelText(patternsCopy.lockedSpoken(4, 5))).toBeTruthy();
+    expect(screen.getByText(patternsCopy.lockedSoFar(4, 5))).toBeTruthy();
+  });
+
   it('shows plain counts from five reflections: this week, total minutes and moods', async () => {
     seed(5, { moodBefore: 'light' });
     await render(<PatternsScreen />);

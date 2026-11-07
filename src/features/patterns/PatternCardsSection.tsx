@@ -1,17 +1,32 @@
+import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { EchoText } from '@/components/EchoText';
-import type { EntrySummary } from '@/features/journal';
-import { Heading, Notice, OnPlate, Quiet, Row, Section } from '@/features/tab-pages/parts';
-import { onPlate, supporting } from '@/features/tab-pages/textStyles';
+import { PrimaryCTA } from '@/components/PrimaryCTA';
 import { tokens } from '@/design/tokens';
+import type { EntrySummary } from '@/features/journal';
+import { keepTogether } from '@/features/tab-pages/keepTogether';
+import {
+  Heading,
+  Loading,
+  Notice,
+  OnPlate,
+  Row,
+  Section,
+  SkeletonLine,
+  Surface,
+  usePlateText,
+} from '@/features/tab-pages/parts';
+import { detail, prose, supporting } from '@/features/tab-pages/textStyles';
 import { useRequirePlus } from '@/services/plus';
+import { sendWaitingReports } from '@/services/reportCard';
 
-import { entriesToSend } from './gatherEntries';
 import { ConsentPanel } from './ConsentPanel';
+import { entriesToSend } from './gatherEntries';
 import { PatternCardView } from './PatternCardView';
 import { patternsCopy } from './patternsCopy';
 import { QuietAction } from './QuietAction';
+import { ReportSheet, type ReportTarget } from './ReportSheet';
 import { SupportPanel } from './SupportPanel';
 import { usePatternCards, type CardsNotice } from './usePatternCards';
 
@@ -56,16 +71,67 @@ function noticeText(notice: CardsNotice, hasCards: boolean): string | null {
   }
 }
 
+/** While the entries are read: the shape of a card, and a line saying what is happening. */
+function Reading() {
+  return (
+    <Loading label={words.reading}>
+      <Surface strength="strong" radius={tokens.radius.card}>
+        <View style={styles.reading}>
+          <SkeletonLine width="62%" height={20} />
+          <View style={styles.readingLines}>
+            {(['94%', '88%', '52%'] as const).map((width) => (
+              <SkeletonLine key={width} width={width} height={11} />
+            ))}
+          </View>
+          <EchoText variant="bodyM" color="textSecondary" style={detail}>
+            {keepTogether(words.reading)}
+          </EchoText>
+        </View>
+      </Surface>
+    </Loading>
+  );
+}
+
+/** A short centred line set on the plate, under the cards or under an action. */
+function PlateLine({ children }: { children: string }) {
+  const shadow = usePlateText();
+  return (
+    <OnPlate hug="center">
+      <EchoText
+        variant="caption"
+        align="center"
+        style={[supporting, shadow]}
+        maxFontSizeMultiplier={1.6}
+      >
+        {children}
+      </EchoText>
+    </OnPlate>
+  );
+}
+
+/** "New readings are part of ECHO Plus.", once the free reading has been made. */
+function PlusNote() {
+  return <PlateLine>{words.plusNote}</PlateLine>;
+}
+
 /**
  * Pattern cards: what keeps returning in the person's own entries. Opening Patterns shows the cards
- * kept on this phone and never calls the server. A reading is one quiet action, asked for, and it
- * waits on an agreement that cannot be skipped. The plain facts sit beneath all of this.
+ * kept on this phone and never calls the server for a reading. A reading is one action, asked for,
+ * and it waits on an agreement that cannot be skipped. Every card can be reported. The plain facts
+ * sit beneath all of this.
  */
 export function PatternCardsSection({ entries }: { entries: readonly EntrySummary[] }) {
   const cards = usePatternCards(entries);
   const requirePlus = useRequirePlus();
+  const [reporting, setReporting] = useState<{ key: string; target: ReportTarget } | null>(null);
+  const [reported, setReported] = useState<ReadonlySet<string>>(() => new Set());
   const { saved, notice } = cards;
   const hasCards = Boolean(saved);
+
+  // A report kept while ECHO could not be reached goes now, quietly. It names no words.
+  useEffect(() => {
+    void sendWaitingReports();
+  }, []);
 
   if (!cards.loaded) return null;
 
@@ -79,12 +145,15 @@ export function PatternCardsSection({ entries }: { entries: readonly EntrySummar
   const getPlus = () => {
     if (requirePlus('patterns')) cards.read();
   };
+  const idle = !cards.asking && !cards.reading;
 
   return (
     <View style={styles.section}>
       <Heading>{words.title}</Heading>
 
-      {notice?.kind === 'support' && <SupportPanel onClose={cards.dismissNotice} />}
+      {notice?.kind === 'support' && (
+        <SupportPanel context="patterns" onClose={cards.dismissNotice} />
+      )}
       {text &&
         (code === 'allowance_used' ? (
           <Notice message={text} actionLabel={words.getPlus} onAction={getPlus} />
@@ -100,37 +169,54 @@ export function PatternCardsSection({ entries }: { entries: readonly EntrySummar
         />
       )}
 
-      {cards.reading && <Quiet busy>{words.reading}</Quiet>}
+      {cards.reading && <Reading />}
 
       {saved && (
-        <>
-          {saved.cards.map((card, index) => (
-            <PatternCardView
-              key={`${saved.readAt}-${card.name}`}
-              card={card}
-              index={index + 1}
-              total={saved.cards.length}
-            />
-          ))}
-          <OnPlate>
-            <EchoText variant="caption" color="textSecondary" align="center" style={onPlate}>
-              {`${words.readOn(readDate(saved.readAt))} · ${words.fromEntries(saved.entriesRead)}`}
-            </EchoText>
-          </OnPlate>
-        </>
+        <View style={styles.cards}>
+          {saved.cards.map((card, index) => {
+            const key = `${saved.readAt}-${index}`;
+            return (
+              <PatternCardView
+                key={`${saved.readAt}-${card.name}`}
+                card={card}
+                index={index + 1}
+                total={saved.cards.length}
+                reported={reported.has(key)}
+                onReport={() =>
+                  setReporting({
+                    key,
+                    target: { lens: card.lens.id ?? null, model: saved.model ?? null },
+                  })
+                }
+              />
+            );
+          })}
+          <PlateLine>
+            {`${words.readOn(readDate(saved.readAt))} · ${words.fromEntries(saved.entriesRead)}`}
+          </PlateLine>
+        </View>
       )}
 
-      {!cards.asking && !cards.reading && (
+      {idle && saved && (
+        <View style={styles.again}>
+          <QuietAction label={words.readAgain} onPress={cards.read} />
+          {cards.needsPlus && <PlusNote />}
+        </View>
+      )}
+
+      {idle && !saved && (
         <>
-          {!saved && <Quiet>{words.intro}</Quiet>}
-          <QuietAction label={saved ? words.readAgain : words.read} onPress={cards.read} />
-          {cards.needsPlus && (
-            <OnPlate>
-              <EchoText variant="caption" align="center" style={[supporting, onPlate]}>
-                {words.plusNote}
+          <Surface radius={tokens.radius.card}>
+            <View style={styles.intro}>
+              <EchoText variant="bodyM" style={prose} maxFontSizeMultiplier={1.6}>
+                {keepTogether(words.intro)}
               </EchoText>
-            </OnPlate>
-          )}
+            </View>
+          </Surface>
+          <View style={styles.again}>
+            <PrimaryCTA label={words.read} onPress={cards.read} />
+            {cards.needsPlus && <PlusNote />}
+          </View>
         </>
       )}
 
@@ -152,10 +238,29 @@ export function PatternCardsSection({ entries }: { entries: readonly EntrySummar
           )}
         </Section>
       )}
+
+      <ReportSheet
+        target={reporting?.target ?? null}
+        onClose={() => setReporting(null)}
+        onReported={() => {
+          const key = reporting?.key;
+          if (key) setReported((before) => new Set(before).add(key));
+        }}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   section: { gap: tokens.space[16] },
+  cards: { gap: tokens.space[16] },
+  again: { alignItems: 'center', gap: tokens.space[12] },
+  intro: { paddingHorizontal: tokens.space[24], paddingVertical: tokens.space[20] },
+  reading: {
+    gap: tokens.space[20],
+    paddingHorizontal: tokens.space[24],
+    paddingTop: tokens.space[32],
+    paddingBottom: tokens.space[24],
+  },
+  readingLines: { gap: tokens.space[12] },
 });

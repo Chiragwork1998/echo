@@ -52,6 +52,8 @@ export type EntrySummary = {
   title: string;
   preview: string;
   moodBefore?: Mood;
+  /** Which question the entry answered, such as 'become' for a morning one. Never its text. */
+  promptId?: string;
   mode: EntryMode;
   durationSeconds: number;
   hasAudio: boolean;

@@ -13,11 +13,18 @@ export type PatternCard = {
   noticed: string;
   /** Exact words from the person's own entries, checked by the server. */
   evidence: { quote: string; date: string }[];
-  /** One way of seeing it, credited by name in `source`. */
-  lens: { text: string; source: string };
+  /**
+   * One way of seeing it, credited by name in `source`. `id` names the lens in the server's list
+   * (voice-api/src/lenses.ts), so that a report of the card can say which it was.
+   */
+  lens: { id?: string; text: string; source: string };
   practice: string;
   question: string;
 };
+
+/** A lens id or a model name, as the server sends them: a short label, never words. */
+const LENS_ID = /^[a-z][a-z0-9_]{0,63}$/;
+const MODEL = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/;
 
 /** One entry as sent: its day and what was written. Nothing else leaves the phone. */
 export type SentEntry = { date: string; text: string };
@@ -36,7 +43,8 @@ export type ReadFailure =
   | 'failed';
 
 export type ReadResult =
-  | { status: 'cards'; cards: PatternCard[]; entriesRead: number }
+  /** `model` is the model that wrote the cards, when the server says. */
+  | { status: 'cards'; cards: PatternCard[]; entriesRead: number; model?: string }
   /** Nothing recurred clearly enough to name. */
   | { status: 'none'; entriesRead: number }
   /** Language the app answers with care instead of cards. No cards are made. */
@@ -66,11 +74,12 @@ export function parseCard(raw: unknown): PatternCard | null {
   ) {
     return null;
   }
+  const id = typeof lens.id === 'string' && LENS_ID.test(lens.id) ? lens.id : undefined;
   return {
     name: card.name,
     noticed: card.noticed,
     evidence: evidence.slice(0, 2),
-    lens: { text: lens.text, source: lens.source },
+    lens: { ...(id ? { id } : {}), text: lens.text, source: lens.source },
     practice: card.practice,
     question: card.question,
   };
@@ -78,7 +87,7 @@ export function parseCard(raw: unknown): PatternCard | null {
 
 export function parseReading(body: unknown): ReadResult | null {
   if (typeof body !== 'object' || body === null) return null;
-  const { status, cards, entriesRead } = body as Record<string, unknown>;
+  const { status, cards, entriesRead, model } = body as Record<string, unknown>;
   const read = typeof entriesRead === 'number' ? entriesRead : 0;
   if (status === 'support') return { status: 'support' };
   if (status === 'none') return { status: 'none', entriesRead: read };
@@ -87,8 +96,9 @@ export function parseReading(body: unknown): ReadResult | null {
       const one = parseCard(card);
       return one ? [one] : [];
     });
+    const named = typeof model === 'string' && MODEL.test(model) ? { model } : {};
     return parsed.length > 0
-      ? { status: 'cards', cards: parsed.slice(0, 3), entriesRead: read }
+      ? { status: 'cards', cards: parsed.slice(0, 3), entriesRead: read, ...named }
       : { status: 'none', entriesRead: read };
   }
   return null;

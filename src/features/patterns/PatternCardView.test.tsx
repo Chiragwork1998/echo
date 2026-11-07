@@ -1,10 +1,10 @@
-import { screen } from '@testing-library/react-native';
+import { fireEvent, screen } from '@testing-library/react-native';
 
 import type { PatternCard } from '@/services/patterns';
 import { render } from '@/testing/render';
 
-import { figureFor } from './Constellation';
 import { PatternCardView } from './PatternCardView';
+import { patternsCopy } from './patternsCopy';
 
 const card: PatternCard = {
   name: 'Guilty about resting',
@@ -15,6 +15,7 @@ const card: PatternCard = {
     { quote: 'the guilt arrive on schedule', date: '2026-11-04' },
   ],
   lens: {
+    id: 'dispenza_loop',
     text: 'One way to see this is as a loop.',
     source: 'Joe Dispenza · thoughts and feelings in a loop',
   },
@@ -25,7 +26,8 @@ const card: PatternCard = {
 describe('PatternCardView', () => {
   it('sets every part of the card in reading order', async () => {
     const { toJSON } = await render(<PatternCardView card={card} index={1} total={3} />);
-    const text = JSON.stringify(toJSON());
+    // The last two words of a paragraph are tied with a no-break space, so no word sits alone.
+    const text = JSON.stringify(toJSON()).replace(/ /g, ' ');
     const order = [
       'Guilty about resting',
       'It seems that rest brings',
@@ -46,8 +48,8 @@ describe('PatternCardView', () => {
     ).toBeTruthy();
   });
 
-  it('speaks each part with its heading, and hides the decoration', async () => {
-    await render(<PatternCardView card={card} index={1} total={3} />);
+  it('speaks each part with its name, though the page shows no labels above them', async () => {
+    const { toJSON } = await render(<PatternCardView card={card} index={1} total={3} />);
     expect(
       screen.getByLabelText(/^In your words\. It is strange to feel guilty about resting/),
     ).toBeTruthy();
@@ -62,18 +64,38 @@ describe('PatternCardView', () => {
     expect(
       screen.getByLabelText('Ask yourself. What does enough mean on an ordinary day?'),
     ).toBeTruthy();
-    // The brand strip, "1 of 3" and the eyebrow are decoration: a screen reader skips them.
-    expect(screen.queryByText('1 of 3')).toBeNull();
+    // No ornament, and no stacked capitals: the type carries the card.
+    const shown = JSON.stringify(toJSON());
+    expect(shown).not.toMatch(/[✦✧★]/);
+    for (const label of ['IN YOUR WORDS', 'A WAY TO SEE IT', 'ASK YOURSELF', 'THE PATTERN']) {
+      expect(shown).not.toContain(label);
+    }
   });
 
-  it('draws the same constellation for the same name, and a different one for another', () => {
-    expect(figureFor('Quiet scoring')).toEqual(figureFor('Quiet scoring'));
-    expect(figureFor('Quiet scoring')).not.toEqual(figureFor('Yes before thinking'));
-    const { stars, lines } = figureFor('Quiet scoring');
-    expect(stars).toHaveLength(7);
-    for (const [from, to] of lines) {
-      expect(stars[from]).toBeDefined();
-      expect(stars[to]).toBeDefined();
-    }
+  it('sets the person’s words as quotations, each with its day', async () => {
+    const { toJSON } = await render(<PatternCardView card={card} index={1} total={1} />);
+    const text = JSON.stringify(toJSON()).replace(/ /g, ' ');
+    expect(text).toContain('It is strange to feel guilty about resting”');
+    expect(text).toContain('“');
+  });
+
+  it('offers a quiet report on every card', async () => {
+    const onReport = jest.fn();
+    await render(<PatternCardView card={card} index={1} total={1} onReport={onReport} />);
+    await fireEvent.press(
+      screen.getByRole('button', { name: patternsCopy.report.actionSpoken(card.name) }),
+    );
+    expect(onReport).toHaveBeenCalledTimes(1);
+  });
+
+  it('says a card was reported, in place of offering it again', async () => {
+    await render(<PatternCardView card={card} index={1} total={1} onReport={jest.fn()} reported />);
+    expect(screen.queryByRole('button', { name: /Report this card/ })).toBeNull();
+    expect(screen.getByText(patternsCopy.report.reported)).toBeTruthy();
+  });
+
+  it('offers no report where nothing can receive one', async () => {
+    await render(<PatternCardView card={card} index={1} total={1} />);
+    expect(screen.queryByRole('button', { name: /Report this card/ })).toBeNull();
   });
 });

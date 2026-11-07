@@ -99,9 +99,18 @@ export function supportLinesFor(region: string | null | undefined): readonly Sup
   return (region && SUPPORT_LINES[region.toUpperCase()]) || [];
 }
 
+/** The heart of it, said wherever the panel opens. */
+const reach =
+  'If any part of you is thinking about ending your life or hurting yourself, please reach a person who can stay with you through it. You don’t have to explain it well. You only have to reach.';
+
 export const supportCopy = {
   title: 'It sounds like you’re carrying something heavy.',
-  body: 'ECHO has set the pattern cards aside this time. If any part of you is thinking about ending your life or hurting yourself, please reach a person who can stay with you through it. You don’t have to explain it well. You only have to reach.',
+  /** After a reading the server answered with care instead of cards. */
+  body: `ECHO has set the pattern cards aside this time. ${reach}`,
+  /** Anywhere else the panel is offered, such as after a practice. */
+  reach,
+  /** Opened by the person from You, at any time: ECHO has heard nothing, so it assumes nothing. */
+  openTitle: 'If you are struggling, talk to someone now.',
   linesTitle: 'Someone you can talk to now',
   directoryTitle: 'Helplines in other countries',
   directoryAction: `Open ${SUPPORT_DIRECTORY.host}`,

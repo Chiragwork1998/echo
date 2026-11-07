@@ -1,33 +1,69 @@
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import { EchoText } from '@/components/EchoText';
 import { tokens } from '@/design/tokens';
-import { Notice, Quiet } from '@/features/tab-pages/parts';
+import type { EntrySummary } from '@/features/journal';
+import { keepTogether } from '@/features/tab-pages/keepTogether';
+import { Notice, Quiet, Surface, TextAction } from '@/features/tab-pages/parts';
 import { TabPage } from '@/features/tab-pages/TabPage';
+import { detail, question } from '@/features/tab-pages/textStyles';
+import { HOME_PATH } from '@/state/routing';
 
 import { echoesCopy } from './echoesCopy';
-import { EntryRow } from './EntryRow';
+import { EchoesList, EchoesSkeleton } from './EchoesList';
 import { SearchField } from './SearchField';
 import { useEchoes, type EchoesView } from './useEchoes';
 
 export const ENTRY_PATH = '/home/entry';
 const openEntry = (id: string) => router.push({ pathname: ENTRY_PATH, params: { id } } as never);
 
+/** A calm block of words on glass: a Cormorant line, and what to do next. */
+function Composed({ title, body, action }: { title: string; body?: string; action?: ReactNode }) {
+  return (
+    <Surface radius={tokens.radius.large}>
+      <View style={styles.composed} accessible={!action} accessibilityLiveRegion="polite">
+        <EchoText variant="bodyL" style={question} maxFontSizeMultiplier={1.5}>
+          {keepTogether(title)}
+        </EchoText>
+        {body ? (
+          <EchoText
+            variant="bodyM"
+            color="textSecondary"
+            style={detail}
+            maxFontSizeMultiplier={1.6}
+          >
+            {keepTogether(body)}
+          </EchoText>
+        ) : null}
+        {action}
+      </View>
+    </Surface>
+  );
+}
+
 function Body({
   view,
+  waitingRows,
   onRetry,
   onClear,
 }: {
   view: EchoesView;
+  /** What was listed before the search now running. */
+  waitingRows: readonly EntrySummary[];
   onRetry: () => void;
   onClear: () => void;
 }) {
   switch (view.kind) {
     case 'loading':
-      return <Quiet busy>{echoesCopy.loading}</Quiet>;
+      return <EchoesSkeleton />;
     case 'searching':
-      return <Quiet busy>{echoesCopy.searching}</Quiet>;
+      return waitingRows.length > 0 ? (
+        <EchoesList rows={waitingRows} onOpen={openEntry} waiting />
+      ) : (
+        <EchoesSkeleton />
+      );
     case 'error':
       return view.searching ? (
         <Notice
@@ -39,11 +75,23 @@ function Body({
         <Notice message={echoesCopy.loadError} onAction={onRetry} />
       );
     case 'empty':
-      return <Quiet>{echoesCopy.empty}</Quiet>;
+      return (
+        <Composed
+          title={echoesCopy.empty}
+          body={echoesCopy.emptyBody}
+          action={
+            <TextAction
+              label={echoesCopy.goToday}
+              onPress={() => router.navigate(HOME_PATH as never)}
+              style={styles.action}
+            />
+          }
+        />
+      );
     case 'no_matches':
       return (
         <>
-          <Quiet>{echoesCopy.noMatches}</Quiet>
+          <Composed title={echoesCopy.noMatches} body={echoesCopy.noMatchesHint} />
           {view.unreadable > 0 && <Quiet>{echoesCopy.skippedInSearch(view.unreadable)}</Quiet>}
         </>
       );
@@ -51,27 +99,51 @@ function Body({
       return (
         <>
           {view.stale && <Notice message={echoesCopy.loadError} onAction={onRetry} />}
-          <View style={styles.list}>
-            {view.rows.map((entry) => (
-              <EntryRow key={entry.id} entry={entry} onOpen={openEntry} />
-            ))}
-          </View>
+          <EchoesList rows={view.rows} onOpen={openEntry} />
           {view.unreadable > 0 && <Quiet>{echoesCopy.skippedInSearch(view.unreadable)}</Quiet>}
         </>
       );
   }
 }
 
+const NONE: readonly EntrySummary[] = [];
+
+/** Nothing to search before the archive has opened, when it is empty, or when it cannot be read. */
+const searchable = (view: EchoesView) =>
+  view.kind !== 'loading' && view.kind !== 'empty' && !(view.kind === 'error' && !view.searching);
+
 /** The private archive: every committed echo, newest first, searchable on this phone. */
 export function EchoesScreen() {
   const [query, setQuery] = useState('');
   const { view, retry } = useEchoes(query);
+  // While a search runs, the rows already on screen stay, quietly, instead of flashing away.
+  const [shown, setShown] = useState<readonly EntrySummary[]>(NONE);
+  const latest =
+    view.kind === 'list'
+      ? view.rows
+      : view.kind === 'empty' || view.kind === 'no_matches'
+        ? NONE
+        : shown;
+  if (latest !== shown) setShown(latest);
   return (
     <TabPage title={echoesCopy.title}>
-      <SearchField value={query} onChange={setQuery} />
-      <Body view={view} onRetry={() => void retry()} onClear={() => setQuery('')} />
+      {searchable(view) && <SearchField value={query} onChange={setQuery} />}
+      <Body
+        view={view}
+        waitingRows={shown}
+        onRetry={() => void retry()}
+        onClear={() => setQuery('')}
+      />
     </TabPage>
   );
 }
 
-const styles = StyleSheet.create({ list: { gap: tokens.space[12] } });
+const styles = StyleSheet.create({
+  composed: {
+    gap: tokens.space[8],
+    paddingHorizontal: tokens.space[24],
+    paddingTop: tokens.space[24],
+    paddingBottom: tokens.space[20],
+  },
+  action: { marginTop: tokens.space[4], marginBottom: -tokens.space[8] },
+});

@@ -12,12 +12,17 @@ import { PATTERNS_ENTRY_CHARS, PATTERNS_SEND_LIMIT } from '@/services/patterns';
 export const patternsCopy = {
   title: copy.home.tabs[2],
   locked: specCopy.patternsLocked,
+  /** Under the locked line: how far along the person is, or what counts. */
+  lockedSoFar: (count: number, needed: number) =>
+    count === 0 ? 'Each echo you keep on Today counts.' : `${count} of ${needed} so far.`,
+  /** The cairns above it, for a screen reader. */
+  lockedSpoken: (count: number, needed: number) => `${count} of ${needed} reflections`,
   loading: 'Counting your echoes',
   loadError: 'Your echoes couldn’t be loaded.',
+  rhythmTitle: 'Your rhythm',
   intro: 'Counts from your own echoes, worked out on this phone.',
   weekTitle: 'This week',
   reflections: (count: number) => (count === 1 ? '1 reflection' : `${count} reflections`),
-  totalTitle: 'In total',
   minutesTotal: (minutes: number) => `${minutes} min of reflection in total`,
   moodTitle: 'Mood you chose on arrival',
   moodCount: (label: string, count: number) => `${label}, ${count}`,
@@ -25,7 +30,6 @@ export const patternsCopy = {
   thisWeek: 'This week',
   lastWeek: 'Last week',
   weekOf: (date: string) => `Week of ${date}`,
-  noMood: 'No mood chosen',
   skipped: (count: number) =>
     count === 1
       ? '1 echo can’t be opened, so it isn’t counted here.'
@@ -43,9 +47,8 @@ export const patternsCopy = {
     readOn: (date: string) => `Read on ${date}`,
     fromEntries: (count: number) =>
       count === 1 ? 'from 1 entry' : `from your latest ${count} entries`,
-    cardOf: (index: number, total: number) => `${index} of ${total}`,
-    brand: '✦ ECHO ✦',
-    eyebrow: 'The Pattern',
+    // Spoken with each part of a card, so a screen reader can tell them apart. The page shows the
+    // parts by how they are set, and only the practice keeps its words as a lead into the sentence.
     inYourWords: 'In your words',
     aWayToSeeIt: 'A way to see it',
     ideaFrom: (source: string) => `Idea from ${source}`,
@@ -68,6 +71,39 @@ export const patternsCopy = {
     noEntries: 'Your entries couldn’t be opened just now. Try again in a moment.',
     cardLabel: (name: string, index: number, total: number) =>
       `Pattern card ${index} of ${total}: ${name}`,
+  },
+  /**
+   * Reporting a card (docs/PRODUCT_V1.md, See: Google Play's AI content policy). A report carries the
+   * reason, the lens, the model and the app's version, and nothing the card or the person said.
+   */
+  report: {
+    action: 'Report this card',
+    actionSpoken: (name: string) => `Report this card: ${name}`,
+    title: 'Report this card',
+    lead: 'What is wrong with it?',
+    privacy:
+      'ECHO receives only the reason you choose, the idea and the model behind the card, and the app’s version. Never the card’s words, or yours.',
+    reasons: {
+      harmful: 'Harmful',
+      wrong: 'Wrong about me',
+      upsetting: 'Upsetting',
+      other: 'Something else',
+    },
+    reasonsLabel: 'Reasons',
+    send: 'Send report',
+    chooseFirst: 'Choose a reason first',
+    cancel: 'Cancel',
+    sentTitle: 'Report sent',
+    /** Where the report action was, on a card reported in this sitting. */
+    reported: 'Reported',
+    sentBody: 'Thank you for telling ECHO.',
+    keptTitle: 'Kept to send later',
+    keptBody:
+      'ECHO couldn’t be reached just now. The report waits on this phone and is sent the next time you open Patterns.',
+    failedTitle: 'The report couldn’t be sent',
+    failedBody: 'Nothing was sent. You can try again once you’re online.',
+    tryAgain: 'Try again',
+    done: 'Done',
   },
   consent: {
     title: 'Before ECHO reads your entries',

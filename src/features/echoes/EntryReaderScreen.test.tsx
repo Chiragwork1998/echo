@@ -77,6 +77,22 @@ describe('EntryReaderScreen', () => {
     expect(router.back).not.toHaveBeenCalled();
   });
 
+  it('heads an echo with no title by its day, so its words are read once, in place', async () => {
+    seed({ ...base, title: '', promptText: 'What is asking for your attention?' });
+    await render(<EntryReaderScreen id="one" />);
+    expect(await screen.findByText(base.body)).toBeTruthy();
+    expect(screen.getAllByText(base.body)).toHaveLength(1);
+    expect(screen.getByRole('header', { name: /November 5|5 November/ })).toBeTruthy();
+    // The question it answered sits once, quietly, above the words.
+    expect(screen.getByText('What is asking for your attention?')).toBeTruthy();
+  });
+
+  it('marks a morning echo', async () => {
+    seed({ ...base, promptId: 'become' });
+    await render(<EntryReaderScreen id="one" />);
+    expect(await screen.findByText(/Morning · 6 min/)).toBeTruthy();
+  });
+
   it('goes back from the Back button', async () => {
     seed(base);
     await render(<EntryReaderScreen id="one" />);
