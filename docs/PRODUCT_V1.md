@@ -22,37 +22,102 @@ ECHO is a private daily practice for the mind: breathe, speak, and see yourself 
 Four verbs. Each one is short, beautiful, and works offline except where words must be made from voice
 or read by a model.
 
-### 1. Breathe (new)
+### 1. Breathe (new): heart coherence, led by sound, done with the eyes closed
 
-Settle the body first. Short, exhale-led breathing is the best supported way to calm down quickly
-(Balban et al., Cell Reports Medicine, 2023: five minutes a day of cyclic sighing improved mood more
-than mindfulness meditation). Dispenza opens every practice with breath and body for the same reason.
+The owner rejected a plain breathing timer: "QUALITY OR NOTHING. something which genuinely helps
+people." What genuinely helps, and what the best apps in this space (Coherence, HeartMath, Outliyr's
+Coherence) get right:
 
-Practices, in this order:
+- **Sound leads, not the screen.** A breath you follow by ear, with the eyes closed, settles the body.
+  A breath you follow by staring at a ring keeps the mind busy.
+- **Choose by need, not by technique.** Nobody wakes up wanting "4-7-8". They want to calm down, to
+  steady, to focus, to sleep.
+- **Slow breathing near five or six breaths a minute** makes the heart rate rise and fall in a smooth
+  wave with the breath (heart coherence, or resonance breathing). It is the best studied breathing
+  practice for stress and anxiety (Lehrer and Gevirtz, Frontiers in Psychology, 2014; Goessl, Curtiss
+  and Hofmann, Psychological Medicine, 2017).
+- **Breath plus a felt emotion.** HeartMath's Quick Coherence technique and Joe Dispenza's heart
+  practice share one move: breathe as if through the heart, then feel a real moment of gratitude or
+  love again. This is the bridge from Breathe to Become.
+- **Proof it works for you.** Each session ends with a one tap check of how you feel, so the person
+  sees in Patterns whether breathing helps them. A heart reading through the camera comes later (see
+  Heart, below).
 
-| Name | Line shown | Pattern | Default | Free or Plus |
+**What do you need?** Four needs, in this order, each a single row (name in Cormorant, one line in
+Inter). Default lengths below; lengths 3, 5, 10 and 20 minutes.
+
+| Need | Line shown | Breath | Default | Free or Plus |
 |---|---|---|---|---|
-| Sigh | Two breaths in through the nose, one long breath out. The quickest way down. | in 2 s, in again 1 s, out 6 s | 1 min | Free at 1 and 3 min |
-| Steady | In for five, out for five. Slow and even. | in 5.5 s, out 5.5 s | 3 min | Plus |
-| Box | In, hold, out, hold. Four counts each, for before something hard. | 4, 4, 4, 4 s | 2 min | Plus |
-| Sleep | In for four, hold for seven, out for eight. For the end of the day. | 4, 7, 8 s | 3 min | Plus |
+| Settle | When you feel wound up. Long sighs that bring you down fast. | Cyclic sighing: in through the nose 2.5 s, a second short in 1 s, a long out through the mouth 6 s | 3 min | Free |
+| Steady | Heart coherence. Slow, even breathing at your own pace. | Resonance breathing at the person's pace, default 5.5 breaths a minute, in 40 percent and out 60 percent of each breath, no holds | 5 min | Free at 3 and 5 min |
+| Focus | Before something hard. Four counts in, hold, out, hold. | Box: 4, 4, 4, 4 s | 3 min | Plus |
+| Sleep | To end the day. The out breath grows long and the screen goes dark. | In 4 s, out 8 s, and the screen fades to black over the first two minutes | 10 min | Plus |
 
-Lengths: 1, 3, 5 and 10 minutes.
+Plus also opens any length, and **Your pace** for Steady: 4.5 to 6.5 breaths a minute in steps of 0.5,
+chosen by feel ("the pace that feels easy, never forced").
 
-The experience:
+**Before it starts** (one screen, then it gets out of the way): the need, the length, and sound on or
+off (haptics only). For Steady, three short lines explain what will happen, so nothing needs to be read
+with the eyes closed:
 
-- Full screen on the person's own plate (Night loop or Day still). Nothing else on screen but one
-  word. The sky itself breathes: the scrim lifts a little on the in breath and settles on the out
-  breath. No glowing orb in the middle of the screen, no ring, no counter.
-- The word: "Breathe in", "In again" (Sigh only), "Hold", "Breathe out" for the first two rounds, then
-  just "In", "Again", "Hold", "Out".
-- A soft haptic tick at each change of phase. The screen stays awake. A tap shows a quiet "End".
-- Reduce Motion: no movement, the word changes and the scrim changes opacity only. Screen readers hear
-  each phase once, politely.
-- When it ends: "Begin your echo" (straight into today's journal, the bridge from body to words),
-  "One more minute", and "Done".
-- Entry points: Today ("Breathe first", beside or under "Write instead"), and practice suggestions on
-  pattern cards that are about breath.
+> Breathe slowly, as if through your heart.
+> Halfway, a soft bell. When you hear it, remember a moment you felt grateful, or loved, and let
+> yourself feel it again.
+> Close your eyes whenever you are ready.
+
+**During:**
+
+- **Sound is the guide.** A sea swell that rises as you breathe in and falls as you breathe out, under
+  a quiet warm tone that lifts on the in breath and settles on the out breath. Holds are a held hush. A
+  soft bell opens and closes the session, and Steady has one more bell halfway. The sound must be
+  beautiful and never harsh: no clicks at loops, no hiss, no sharp attack, peaks well below clipping. It
+  mixes with the person's own music if they are playing some.
+- **Haptics carry it with sound off:** a soft tick as each in breath begins, a softer one as each out
+  breath begins.
+- **The screen recedes.** For the first breaths: the plate, the sky breathing (the scrim lifts a
+  little on the in breath and settles on the out), a thin tide line of light low on the screen that
+  rises on the in breath and falls on the out, and one word ("Breathe in", "In again", "Hold",
+  "Breathe out", shortening to "In", "Again", "Hold", "Out" after two rounds). After about thirty
+  seconds the word goes, and the screen dims almost to black, keeping only the faint tide line. A tap
+  brings everything back with a quiet End.
+- No orb, no ring, no counter, no timer on screen.
+- The screen stays awake. Reduce Motion: the tide line and the scrim change opacity only. Screen
+  readers hear the phase changes for the first two rounds, then silence, as the sound carries it.
+- Visuals and haptics follow the audio's own clock, so they never drift from the sound.
+- Safety line on the first session only: "If you feel dizzy, breathe normally for a while."
+
+**After:**
+
+- "How do you feel now?" with three quiet choices: Calmer, About the same, Still unsettled. One tap,
+  or skip. Kept on the phone, encrypted, as counts only.
+- Then "Begin your echo" (straight into today's journal, from body to words), "One more minute", and
+  "Done".
+
+**Why it works** (a quiet link on the need's row, one or two sentences each, never a promise):
+
+- Settle: "In a 2023 Stanford study, five minutes a day of cyclic sighing lifted mood more than
+  mindfulness meditation (Balban and others, Cell Reports Medicine)."
+- Steady: "Near five or six breaths a minute, your heart rate rises and falls with each breath in a
+  smooth wave. Practising this is linked with less stress and anxiety (Goessl and others,
+  Psychological Medicine, 2017)."
+- Focus: "Even counts give your attention one simple thing to hold."
+- Sleep: "Long, slow out breaths favour the body's rest response (Laborde and others, Neuroscience and
+  Biobehavioral Reviews, 2022)."
+
+**Entry points:** Today ("Breathe first", a sibling of "Write instead"); Become's "Arrive first" (one
+minute of Steady, haptics and visuals, sound only if the person turned sound on); pattern cards whose
+practice is about breath.
+
+**In Patterns** (the design pass): breath sessions this week, and how often the person felt calmer
+after. Counts only.
+
+### Heart (next, not in the 1.0 build unless validated)
+
+The camera reads the pulse from a fingertip on the lens with the torch on. Nothing is recorded, and no
+image leaves the phone. It shows a live heart wave during Steady, a coherence score after, and a
+resonance pace finder that tries 4.5 to 6.5 breaths a minute and keeps the one that makes the biggest
+heart wave. It ships only once it reads within a few beats a minute of a chest strap or watch on the
+owner's phone. Until then it is built behind a flag that is off in release builds.
 
 ### 2. Speak (exists)
 
@@ -109,7 +174,7 @@ One subscription. Prices live in the store and change without a build. Never wri
 | Recording your voice | Always, and always kept | Always |
 | Live words, Tidy my words | | Yes |
 | Pattern cards | First reading free | Every reading |
-| Breathe | Sigh, 1 and 3 minutes | Every practice and length |
+| Breathe | Settle, and Steady at 3 and 5 minutes | Every need, any length, your own pace |
 | Become, Echoes, search, export, lock, reminders | Yes | Yes |
 
 When the free minutes run out mid month the recording is still kept, safe and encrypted, exactly as it
@@ -137,7 +202,7 @@ Paywall copy (working copy, the lead's):
 - Lead: "The whole practice, with nothing held back."
 - Pattern cards: "ECHO reads your entries and names what keeps returning, in your own words."
 - Unlimited voice: "Speak for as long as you need. Free includes 60 minutes a month."
-- Every breath: "Steady, Box and Sleep, at any length."
+- Every breath: "Focus and Sleep, any length, and Steady at your own pace."
 - Live words and Tidy: "Watch your words arrive as you speak, or have them tidied."
 - Plans come from the store. Yearly is selected and shows its trial: "7 days free, then {price} a
   year". Monthly: "{price} a month".
