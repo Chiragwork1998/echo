@@ -7,3 +7,6 @@ package-lock.json
 *.md
 .claude
 voice-api
+# The static site and the graphic sources are hand set and checked by screenshot (site/README.md).
+site
+docs/launch/store-graphics

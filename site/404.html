@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Page not found | ECHO</title>
+  <meta name="description" content="This page could not be found. Return to ECHO, a private daily practice for the mind.">
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#13263A">
+  <meta name="color-scheme" content="dark">
+  <link rel="icon" href="/favicon-16.png" sizes="16x16" type="image/png">
+  <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="preload" href="/assets/fonts/cormorant-garamond-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/assets/fonts/manrope-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/assets/css/site.css">
+  <script>document.documentElement.className += ' js';</script>
+</head>
+<body>
+  <a class="skip-link button-sm" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <nav class="nav-bar" aria-label="Main">
+      <a class="nav-home" href="/" aria-label="ECHO home"><span class="wordmark title-1">ECHO</span></a>
+      <ul class="nav-links">
+        <li><a class="nav-link title-4" href="/#practice">Practice</a></li>
+        <li><a class="nav-link title-4" href="/privacy/">Privacy</a></li>
+        <li><a class="nav-link title-4" href="/#plans">Plans</a></li>
+        <li><a class="nav-link title-4" href="/support/">Support</a></li>
+      </ul>
+      <a class="button button-primary button-sm nav-cta" href="{{play_testing_url}}">Get early access</a>
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="nav-panel" aria-label="Open menu">
+        <span class="nav-toggle-line"></span><span class="nav-toggle-line"></span>
+      </button>
+    </nav>
+  </header>
+
+  <div class="nav-panel" id="nav-panel" aria-hidden="true">
+    <ul class="nav-panel-list">
+      <li><a class="nav-panel-link heading-4" href="/#practice">Practice</a></li>
+      <li><a class="nav-panel-link heading-4" href="/privacy/">Privacy</a></li>
+      <li><a class="nav-panel-link heading-4" href="/#plans">Plans</a></li>
+      <li><a class="nav-panel-link heading-4" href="/support/">Support</a></li>
+      <li class="nav-panel-cta">
+        <a class="button button-primary button-md" href="{{play_testing_url}}">Get early access on Android
+          <svg aria-hidden="true"><use href="/assets/icons/sprite.svg#arrow-right"></use></svg></a>
+      </li>
+    </ul>
+  </div>
+
+  <main id="main" class="lost">
+    <picture class="lost-image">
+      <source media="(min-width: 768px)" srcset="/assets/img/lost-wide.webp">
+      <img src="/assets/img/lost-tall.webp" width="780" height="1388" alt="Footprints crossing fresh snow toward moonlit mountains.">
+    </picture>
+    <div class="container lost-inner">
+      <div class="lost-card">
+      <p class="title-4 soft">Page not found</p>
+      <h1 class="heading-3 md:heading-1">This page left no trace.</h1>
+      <p class="body-3 md:body-7">The link may be old, or the page may have moved.</p>
+      <div class="lost-actions">
+        <a class="button button-primary button-md is-back" href="/"><svg aria-hidden="true"><use href="/assets/icons/sprite.svg#arrow-left"></use></svg>Back to ECHO</a>
+        <a class="button button-quiet button-md" href="/support/">Get help</a>
+      </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="/assets/js/site.js" defer></script>
+</body>
+</html>
