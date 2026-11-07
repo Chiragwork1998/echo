@@ -142,8 +142,11 @@ function EchoCard({ summary, strong }: CardProps) {
   const entry = draft ?? recent;
   if (!entry) return null;
   const display = entryDisplay(entry);
+  // A draft that has used its seven minutes shows how long it is, never "0 min left".
   const meta = draft
-    ? goldenCopy.minutesLeft(draft.minutesLeft)
+    ? draft.minutesLeft > 0
+      ? goldenCopy.minutesLeft(draft.minutesLeft)
+      : homeLabels.minutes(minutesOf(entry.durationSeconds))
     : `${dayLabel(entry.localDay, rhythm.today)} · ${homeLabels.minutes(minutesOf(entry.durationSeconds))}`;
   const label = (draft ? copy.home.continueEcho : copy.home.recentTitle).toUpperCase();
   const onPress = () => (draft ? continueDraft(draft.id) : openEntry(entry.id));

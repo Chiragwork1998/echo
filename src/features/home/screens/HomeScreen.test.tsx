@@ -136,6 +136,13 @@ describe('Home, Night', () => {
     expect(screen.getByText(goldenCopy.minutesLeft(2))).toBeTruthy();
   });
 
+  it('shows a draft past its seven minutes by its length, never as "0 min left"', async () => {
+    seed(...WEEK, { ...DRAFT, durationSeconds: 9 * 60 + 20 });
+    await render(<HomeScreen />);
+    expect(await screen.findByText('9 min')).toBeTruthy();
+    expect(screen.queryByText(goldenCopy.minutesLeft(0))).toBeNull();
+  });
+
   it('draws seven days, and marks each completed day in words as well as shape', async () => {
     await render(<HomeScreen />);
     await waitFor(() => expect(screen.getAllByLabelText(/completed/)).toHaveLength(4));
