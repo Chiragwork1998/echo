@@ -25,8 +25,12 @@ const crcTable = Array.from({ length: 256 }, (_, index) => {
   return value >>> 0;
 });
 
-export function crc32(bytes: Uint8Array): number {
-  let crc = 0xffffffff;
+/**
+ * The CRC-32 a zip records. Pass the CRC of the bytes before these to carry on from them, so a file
+ * read in pieces is checked without holding it whole: crc32(b, crc32(a)) is crc32 of a then b.
+ */
+export function crc32(bytes: Uint8Array, previous = 0): number {
+  let crc = (previous ^ 0xffffffff) >>> 0;
   for (let i = 0; i < bytes.length; i += 1) {
     crc = (crcTable[(crc ^ (bytes[i] ?? 0)) & 0xff] ?? 0) ^ (crc >>> 8);
   }

@@ -242,9 +242,28 @@ For Echoes and You, once their designs arrive.
 | `openEntryAudio(id)`                         | `JournalResult<{ uri, release() }>`. Call `release()` when playback ends    |
 | `exportJournal()` in `@/services/exportJournal` | `{ ok: true, exported, unreadable }` or `{ ok: false, code }`            |
 | `deleteAllLocal()` in `@/services/deleteAllLocal` | `{ ok: true }` or `{ ok: false, code: 'delete_incomplete' }`. Confirm first. The app returns to Landing by itself |
+| `<RestoreRow />` from `@/features/backup/RestoreRow` | Restore from a backup, whole: one row for Your data, and its own sheet. See below |
 | `usePreferences` / `useTheme().setPreference` | Theme, persisted. Night by default                                         |
 
 `AsyncData<T>` is `{ status, data, error, refresh }`. Its `status` is `loading` only before the first result.
+
+## Restore from a backup
+
+ECHO keeps the journal only on the phone, and Android's backup is off, so the export is the way a journal moves to a new phone. `RestoreRow` reads it back. It is one `Row`, so it sits in You's Your data `Section` beside Export, and everything after the tap happens in its own sheet: the system document picker (`expo-document-picker`), a preview, the restore with its progress, and the result. The sheet is hidden while the journal is locked and comes back after unlock with nothing lost, and nothing starts while it is locked.
+
+`openBackup(uri)` in `@/services/importJournal` takes the picker's copy, reads it on the phone, and returns `{ ok: true, backup: { summary, restore(onProgress), release() } }` or `{ ok: false, code }`. Nothing is written until `restore()`.
+
+- **What it reads.** `echo-export.zip` as `exportJournal` writes it: stored entries only (`src/services/zipReader.ts`), `entries.json` with `formatVersion` 1, `audio/<id><extension>`. `entries.json` is checked against its zip checksum and then strictly with zod: every field present with its type, no unknown field, a known mood, real dates and days, a kept entry with its day and a draft with none, unique ids, and each recording named for its own entry.
+- **What it refuses**, with nothing written and a plain message for each code: `not_backup`, `repacked` (another app compressed it or put it in a folder), `unsafe` (a name that is absolute, has a drive, a backslash, a control character, or a `.`, `..` or empty segment), `too_large`, `too_many`, `newer` (a higher `formatVersion`: "This backup is from a newer version of ECHO. Update ECHO, then try again."), `damaged`, `empty`, `unreadable`, `not_ready`.
+- **Limits** (`LIMITS`): the file up to 4 GiB, the zip32 limit export also stops at; 20,000 entries; two files an entry plus two; `entries.json` up to 64 MiB and the zip's table of contents up to 8 MiB, the only two parts read whole. Recordings are copied out 1 MiB at a time.
+- **How it writes.** One entry at a time, inside the runtime's write queue. An id already on the phone is skipped and never touched, and a tombstone counts: an entry deleted here stays deleted. Each entry is sealed and proved as every entry is, its recording is copied to the temporary folder, checked against the zip's checksum, sealed in frames with `sealAudioFile` exactly as a recording is, and the plaintext copy deleted. The entry, its audio row and its reflection go in one transaction, so a stop at any point leaves each entry whole or absent; a sealed file whose row never landed is removed, or swept at the next launch. The same file restored again adds only what is missing.
+- **What it keeps.** Id, status (drafts come back as drafts), created and committed times, local day, title, body, mode, mood, prompt id and text, length, recording and reflection. `updatedAt` becomes the entry's own time. The export does not carry which recording a draft's words came from, so a restored draft with a recording may offer to turn it into words again.
+- **A recording the backup does not hold whole** (missing, empty, or failing its checksum) restores its entry without it, and the result counts it.
+- **The result.** `{ ok: true, entries, drafts, existing, deleted, withoutAudio }`, or `{ ok: false, code: 'stopped' | 'not_ready', done, total, ...counts }`. Lists, Patterns and Home refresh once, at the end.
+
+**The plaintext.** The person's own file is only ever read. ECHO works on a copy of its own (`pickBackupFile` in `src/features/backup`): on iOS the one the system makes in ECHO's `tmp` when the picker asks for a copy, and on Android one `expo-file-system` makes in `cache/echo-temp` on a background thread, because `expo-document-picker` copies on the main thread and a large backup still arriving from Google Drive would freeze the app. `openBackup` moves that copy at once into `cache/echo-temp/restore-<uuid>/`, and `release()` deletes it: at Not now, when a restore ends however it ends, when a file is refused, and when the row leaves the screen with only a preview open. Each recording's copy in the same folder lives only while it is sealed. Every launch clears `cache/echo-temp`, so a copy a killed app left there goes at the next launch. On iOS, a copy the app was killed before moving waits in `tmp` for the system to clear it.
+
+`importJournal.web.ts` answers `unavailable`: web has no storage.
 
 ## Tests and the visual harness
 
@@ -307,13 +326,14 @@ Playback and transcription open the same way, into `cache/echo-temp/<uuid><ext>`
 
 Export is the exception to bounded memory. `exportJournal` builds a zip that needs each file's whole bytes first, so it holds one recording at a time in memory, at about the recording's length, plus a frame.
 
-**Plaintext does touch disk in three places.** All three are in the OS cache, outside device backups.
+**Plaintext does touch disk in four places.** All four are in the OS cache, outside device backups.
 
 - Recording: until `stop()` finishes. If that fails, until the next launch encrypts it, or the draft is discarded. The consent says a recording is encrypted "when saved" for this reason, and not that it stays encrypted.
 - Playback and transcription: until `release()`, or the next launch. Written a frame at a time, and only handed out once every frame has opened.
 - Export: on iOS, until the share completes. On Android, for at least a minute after the share sheet closes, because the receiving app may still be reading. Android pauses timers in the background and nothing runs while the app is away, so if ECHO leaves the foreground inside that minute, the zip stays until the app next returns to the foreground or launches. That can be days. This is a limit of the platform, and the app cannot shorten it.
+- Restore: the picked backup, from the pick until the restore ends, Not now, or a refusal, and each recording copied out of it while it is sealed. A preview left open behind the lock keeps it until a decision is made or the app next launches.
 
-Every launch removes leftover export and playback files, whatever else happens. Leftover recordings wait for the key, so they can be rescued.
+Every launch removes leftover export, restore and playback files, whatever else happens. Leftover recordings wait for the key, so they can be rescued.
 
 **Deleted content does not leave the disk at once in every case.** It leaves the database and its write-ahead log when a delete or discard finishes, and if that step fails, on the next launch. A draft's earlier revisions stay in the log as ciphertext until that draft is committed, discarded, or deleted, or until the next launch, because emptying the log on every autosave would be too slow.
 
@@ -374,3 +394,12 @@ Native behaviour cannot be proved in Jest. Each of these needs a real device.
 30. Let it go to words. The words match what was said, and `cache/echo-temp` is empty afterwards. Do this once with the phone in airplane mode too: the take stays, the temp copy is released, and Try again works.
 31. With a 30-minute or longer take, watch the app's memory in Android Studio's profiler (or Xcode's memory gauge) while it stops, seals, plays, and goes to words. It should not climb with the length of the take. A take from an earlier build, in the single-envelope format, still plays.
 32. Force stop during the seal of a long take (the moment after Stop), relaunch, and the draft appears with the whole take. `files/echo/audio` holds one `.enc`, with no `.tmp`, and `cache/Audio` is empty.
+
+**Restore from a backup**
+
+33. Export on one phone, share the zip to Drive or Files, and on a second phone, after onboarding, restore it from You. The preview gives the count and the first and last days. Restore, and every entry is in Echoes with its date, Home's week strip marks its days, Patterns counts it, and each recording plays. Pull `echo.db` and `files/echo/audio` with `run-as`: `strings` finds none of the words.
+34. After it finishes, and again after Not now and after a refused file, `cache/echo-temp` is empty, nothing is in `cache/DocumentPicker`, and on iOS nothing is in ECHO's `tmp/<bundle id>-Inbox`. The backup in Drive or Files is still there, unchanged.
+35. Restore the same file again: nothing is added, and the result says they were already on this phone.
+36. Restore a backup of a few hundred megabytes of recordings and force stop mid-way. Relaunch: the entries there each open whole, with their recording, `files/echo/audio` holds one `.enc` per audio row and no `.tmp`, and `cache/echo-temp` is empty. Restore the same file again, and the rest arrive.
+37. With the lock on, choose a file and stay in the picker for more than 30 seconds. On return the lock shows first, and the preview appears only after unlocking.
+38. Pick a file from Google Drive and from a USB or SD card provider, and a zip that is not an export. The first two open, and the third is refused with its message. With a backup of a few hundred megabytes on Drive that is not on the phone yet, the row says Reading your backup while it arrives, and ECHO never stops responding.
