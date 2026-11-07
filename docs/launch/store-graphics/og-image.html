@@ -1,0 +1,90 @@
+<!doctype html>
+<!--
+  Source of site/assets/og.jpg, the image shown when a page of the site is shared. Rendered at
+  1200 x 630 with Playwright, served from the repository root. See docs/launch/store-graphics.md.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>ECHO social image</title>
+  <style>
+    @font-face {
+      font-family: 'Cormorant Garamond';
+      font-weight: 500 600;
+      src: url('/site/assets/fonts/cormorant-garamond-latin.woff2') format('woff2');
+    }
+    @font-face {
+      font-family: 'Manrope';
+      font-weight: 400 600;
+      src: url('/site/assets/fonts/manrope-latin.woff2') format('woff2');
+    }
+    html, body { margin: 0; background: #13263a; }
+    .canvas {
+      position: relative;
+      width: 1200px;
+      height: 630px;
+      overflow: hidden;
+      color: #f7f3eb;
+    }
+    .canvas img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: 50% 32%;
+    }
+    .canvas::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: rgba(19, 38, 58, 0.30);
+    }
+    .content {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+      text-align: center;
+    }
+    .wordmark {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 60px;
+      line-height: 60px;
+      font-weight: 500;
+      letter-spacing: 0.42em;
+      margin-right: -0.42em;
+    }
+    .mark { width: 24px; height: 1px; background: #f7f3eb; opacity: 0.85; }
+    .line {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 36px;
+      line-height: 40px;
+      font-weight: 600;
+      text-shadow: 0 1px 16px rgba(4, 14, 28, 0.45);
+    }
+    .note {
+      font-family: 'Manrope', system-ui, sans-serif;
+      font-size: 18px;
+      line-height: 28px;
+      font-weight: 500;
+      color: #d9e0ea;
+    }
+  </style>
+</head>
+<body>
+  <div class="canvas">
+    <img src="/assets/backgrounds/night/00-landing.webp" alt="">
+    <div class="content">
+      <div class="wordmark">ECHO</div>
+      <div class="mark"></div>
+      <div class="line">A private daily practice for the mind.</div>
+      <div class="note">Breathe, speak, and see yourself clearly.</div>
+    </div>
+  </div>
+</body>
+</html>

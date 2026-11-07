@@ -1,0 +1,78 @@
+<!doctype html>
+<!--
+  Source of docs/launch/store-graphics/feature-graphic-1024x500.png. Rendered at exactly 1024 x 500
+  with Playwright, served from the repository root so the paths below resolve. Same fonts, plate and
+  wordmark as the site. See docs/launch/store-graphics.md.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>ECHO feature graphic</title>
+  <style>
+    @font-face {
+      font-family: 'Cormorant Garamond';
+      font-weight: 500 600;
+      src: url('/site/assets/fonts/cormorant-garamond-latin.woff2') format('woff2');
+    }
+    html, body { margin: 0; background: #13263a; }
+    .canvas {
+      position: relative;
+      width: 1024px;
+      height: 500px;
+      overflow: hidden;
+      color: #f7f3eb;
+      font-family: 'Cormorant Garamond', Georgia, serif;
+    }
+    .canvas img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: 50% 30%;
+    }
+    /* A flat veil of ECHO's navy, never a gradient. */
+    .canvas::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: rgba(19, 38, 58, 0.30);
+    }
+    .content {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      text-align: center;
+    }
+    .wordmark {
+      font-size: 48px;
+      line-height: 48px;
+      font-weight: 500;
+      letter-spacing: 0.42em;
+      margin-right: -0.42em;
+    }
+    .mark { width: 24px; height: 1px; background: #f7f3eb; opacity: 0.85; }
+    .line {
+      font-size: 30px;
+      line-height: 36px;
+      font-weight: 600;
+      text-shadow: 0 1px 16px rgba(4, 14, 28, 0.45);
+    }
+  </style>
+</head>
+<body>
+  <div class="canvas">
+    <img src="/assets/backgrounds/night/00-landing.webp" alt="">
+    <div class="content">
+      <div class="wordmark">ECHO</div>
+      <div class="mark"></div>
+      <div class="line">Breathe, speak, and see yourself clearly.</div>
+    </div>
+  </div>
+</body>
+</html>
