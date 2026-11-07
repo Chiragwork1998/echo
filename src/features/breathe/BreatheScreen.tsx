@@ -261,6 +261,7 @@ export function BreatheScreen() {
             </View>
           </>
         )}
+        {stage.kind === 'after' && <Wash kind="ground" visible style={styles.afterShade} />}
         {stage.kind === 'after' && (
           <View
             style={[
@@ -296,4 +297,5 @@ const styles = StyleSheet.create({
   scroll: { flexGrow: 1 },
   footer: { position: 'absolute' },
   checkShade: { top: 0, height: 560 },
+  afterShade: { bottom: 0, height: 380 },
 });
