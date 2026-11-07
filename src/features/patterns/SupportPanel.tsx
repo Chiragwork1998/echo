@@ -1,112 +1,202 @@
 import { Linking, Pressable, StyleSheet, View } from 'react-native';
 
 import { EchoText } from '@/components/EchoText';
-import { GlassCard } from '@/components/GlassCard';
+import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
+import { keepTogether } from '@/features/tab-pages/keepTogether';
+import { Surface } from '@/features/tab-pages/parts';
+import { detail, prose, question, supporting, textAction } from '@/features/tab-pages/textStyles';
 
 import { deviceRegion } from './deviceRegion';
 import { SUPPORT_DIRECTORY, supportCopy, supportLinesFor } from './supportResources';
 
 const open = (link: string) => void Linking.openURL(link).catch(() => undefined);
 
-type Props = { onClose: () => void; region?: string | null };
+/**
+ * Where the panel is opened, which decides only its first words. After a reading it says the cards
+ * were set aside. After a practice it meets what the person said. From You it assumes nothing.
+ */
+export type SupportContext = 'patterns' | 'practice' | 'open';
+
+const opening: Record<SupportContext, { title: string; body: string }> = {
+  patterns: { title: supportCopy.title, body: supportCopy.body },
+  practice: { title: supportCopy.title, body: supportCopy.reach },
+  open: { title: supportCopy.openTitle, body: supportCopy.reach },
+};
+
+/** The colours the panel is set in: the page's own on glass, or a sheet's ink on its cloth. */
+export type SupportInk = { ink: string; soft: string; accent: string };
+
+type ContentProps = {
+  onClose: () => void;
+  region?: string | null;
+  context?: SupportContext;
+  ink: SupportInk;
+};
 
 /**
- * Shown instead of pattern cards when the server finds language about suicide or self-harm. Calm,
- * unhurried, and never a wall: it can be closed. PENDING legal and product review (see
- * supportResources.ts). Its words are working copy until then.
+ * The words and the ways to reach someone. Calm, unhurried, and never a wall: it can be closed.
+ * PENDING legal and product review (see supportResources.ts). Its words are working copy until then.
  */
-export function SupportPanel({ onClose, region = deviceRegion() }: Props) {
+export function SupportContent({
+  onClose,
+  region = deviceRegion(),
+  context = 'practice',
+  ink,
+}: ContentProps) {
   const lines = supportLinesFor(region);
+  const { title, body } = opening[context];
+  const soft = { color: ink.soft };
   return (
-    <GlassCard radius={tokens.radius.medium} strength="strong">
-      <View style={styles.panel} accessibilityLiveRegion="polite">
-        <EchoText variant="bodyL" serif accessibilityRole="header" style={styles.title}>
-          {supportCopy.title}
-        </EchoText>
-        <EchoText variant="bodyM" color="textSecondary" style={styles.body}>
-          {supportCopy.body}
-        </EchoText>
+    <View style={styles.content} accessibilityLiveRegion="polite">
+      <EchoText
+        variant="bodyL"
+        accessibilityRole="header"
+        accessibilityLabel={title}
+        maxFontSizeMultiplier={1.5}
+        style={[question, { color: ink.ink }]}
+      >
+        {keepTogether(title)}
+      </EchoText>
+      <EchoText variant="bodyM" maxFontSizeMultiplier={1.6} style={[prose, soft]}>
+        {keepTogether(body)}
+      </EchoText>
 
-        {lines.length > 0 && (
-          <View style={styles.group}>
-            <EchoText variant="caption" color="textSecondary" accessibilityRole="header">
-              {supportCopy.linesTitle.toUpperCase()}
-            </EchoText>
-            {lines.map((line) => (
-              <Pressable
-                key={line.name}
-                accessibilityRole="button"
-                accessibilityLabel={`${supportCopy.call(line.name, line.contact)}. ${line.detail}`}
-                onPress={() => open(line.link)}
-                style={({ pressed }) => [styles.line, pressed && styles.pressed]}
-              >
-                <View style={styles.lineTop}>
-                  <View style={styles.lineText}>
-                    <EchoText variant="bodyM">{line.name}</EchoText>
-                    <EchoText variant="bodyL" style={styles.contact}>
-                      {line.contact}
-                    </EchoText>
-                  </View>
-                  <EchoText variant="label" accessibilityElementsHidden>
-                    {supportCopy.callWord.toUpperCase()}
+      {lines.length > 0 && (
+        <View style={styles.group}>
+          <EchoText
+            variant="bodyM"
+            accessibilityRole="header"
+            maxFontSizeMultiplier={1.6}
+            style={[detail, styles.groupName, soft]}
+          >
+            {supportCopy.linesTitle}
+          </EchoText>
+          {lines.map((line) => (
+            <Pressable
+              key={line.name}
+              accessibilityRole="button"
+              accessibilityLabel={`${supportCopy.call(line.name, line.contact)}. ${line.detail}`}
+              onPress={() => open(line.link)}
+              style={({ pressed }) => [styles.line, pressed && styles.pressed]}
+            >
+              <View style={styles.lineTop}>
+                <View style={styles.lineText}>
+                  <EchoText variant="bodyM" maxFontSizeMultiplier={1.6} style={{ color: ink.ink }}>
+                    {line.name}
+                  </EchoText>
+                  <EchoText
+                    variant="bodyL"
+                    maxFontSizeMultiplier={1.6}
+                    style={[styles.contact, { color: ink.ink }]}
+                  >
+                    {line.contact}
                   </EchoText>
                 </View>
-                <EchoText variant="caption" color="textSecondary" style={styles.detail}>
-                  {line.detail}
+                <EchoText
+                  variant="bodyM"
+                  accessibilityElementsHidden
+                  style={[textAction, { color: ink.accent }]}
+                >
+                  {supportCopy.callWord}
                 </EchoText>
-              </Pressable>
-            ))}
-          </View>
-        )}
-
-        <View style={styles.group}>
-          <EchoText variant="caption" color="textSecondary" accessibilityRole="header">
-            {supportCopy.directoryTitle.toUpperCase()}
-          </EchoText>
-          <Pressable
-            accessibilityRole="link"
-            accessibilityLabel={`${SUPPORT_DIRECTORY.name}. ${supportCopy.noLocalLine}`}
-            onPress={() => open(SUPPORT_DIRECTORY.link)}
-            style={({ pressed }) => [styles.line, pressed && styles.pressed]}
-          >
-            <EchoText variant="bodyM">{SUPPORT_DIRECTORY.name}</EchoText>
-            <EchoText variant="caption" color="textSecondary" style={styles.detail}>
-              {`${SUPPORT_DIRECTORY.host}. ${supportCopy.noLocalLine}`}
-            </EchoText>
-          </Pressable>
+              </View>
+              <EchoText variant="caption" maxFontSizeMultiplier={1.6} style={[supporting, soft]}>
+                {line.detail}
+              </EchoText>
+            </Pressable>
+          ))}
         </View>
+      )}
 
-        <EchoText variant="bodyM">{supportCopy.emergency}</EchoText>
-        <EchoText variant="caption" color="textSecondary" style={styles.detail}>
-          {supportCopy.footer}
-        </EchoText>
-
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={supportCopy.close}
-          onPress={onClose}
-          style={styles.close}
+      <View style={styles.group}>
+        <EchoText
+          variant="bodyM"
+          accessibilityRole="header"
+          maxFontSizeMultiplier={1.6}
+          style={[detail, styles.groupName, soft]}
         >
-          <EchoText variant="label">{supportCopy.close.toUpperCase()}</EchoText>
+          {supportCopy.directoryTitle}
+        </EchoText>
+        <Pressable
+          accessibilityRole="link"
+          accessibilityLabel={`${SUPPORT_DIRECTORY.name}. ${supportCopy.noLocalLine}`}
+          onPress={() => open(SUPPORT_DIRECTORY.link)}
+          style={({ pressed }) => [styles.line, pressed && styles.pressed]}
+        >
+          <EchoText variant="bodyM" maxFontSizeMultiplier={1.6} style={{ color: ink.ink }}>
+            {SUPPORT_DIRECTORY.name}
+          </EchoText>
+          <EchoText variant="caption" maxFontSizeMultiplier={1.6} style={[supporting, soft]}>
+            {`${SUPPORT_DIRECTORY.host}. ${supportCopy.noLocalLine}`}
+          </EchoText>
         </Pressable>
       </View>
-    </GlassCard>
+
+      <EchoText variant="bodyM" maxFontSizeMultiplier={1.6} style={[prose, { color: ink.ink }]}>
+        {keepTogether(supportCopy.emergency)}
+      </EchoText>
+      <EchoText variant="caption" maxFontSizeMultiplier={1.6} style={[supporting, soft]}>
+        {keepTogether(supportCopy.footer)}
+      </EchoText>
+
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={supportCopy.close}
+        onPress={onClose}
+        hitSlop={6}
+        style={({ pressed }) => [styles.close, pressed && styles.pressed]}
+      >
+        <EchoText
+          variant="bodyM"
+          maxFontSizeMultiplier={1.5}
+          style={[textAction, { color: ink.ink }]}
+        >
+          {supportCopy.close}
+        </EchoText>
+      </Pressable>
+    </View>
+  );
+}
+
+type Props = { onClose: () => void; region?: string | null; context?: SupportContext };
+
+/**
+ * Shown instead of pattern cards when the server finds language about suicide or self-harm, and
+ * after a practice when the person is still unsettled. On glass, in the page's own ink.
+ */
+export function SupportPanel({ onClose, region, context = 'practice' }: Props) {
+  const { colors } = useTheme();
+  return (
+    <Surface strength="strong" radius={tokens.radius.card}>
+      <View style={styles.panel}>
+        <SupportContent
+          onClose={onClose}
+          region={region}
+          context={context}
+          ink={{ ink: colors.textPrimary, soft: colors.textSecondary, accent: colors.accentWarm }}
+        />
+      </View>
+    </Surface>
   );
 }
 
 const styles = StyleSheet.create({
-  panel: { padding: tokens.space[20], gap: tokens.space[16] },
-  title: { fontSize: 26, lineHeight: 32 },
-  body: { lineHeight: 24 },
+  panel: {
+    paddingHorizontal: tokens.space[24],
+    paddingTop: tokens.space[24],
+    paddingBottom: tokens.space[8],
+  },
+  content: { gap: tokens.space[16] },
   group: { gap: tokens.space[8] },
+  groupName: { fontFamily: 'Inter_500Medium' },
   line: {
     minHeight: tokens.size.tapTarget + 12,
     justifyContent: 'center',
     gap: 2,
     paddingVertical: tokens.space[8],
   },
-  pressed: { opacity: 0.7 },
+  pressed: { opacity: 0.6 },
   lineTop: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -114,8 +204,7 @@ const styles = StyleSheet.create({
     gap: tokens.space[12],
   },
   lineText: { flex: 1 },
-  contact: { letterSpacing: 0.4 },
-  detail: { fontSize: 12.5, lineHeight: 17, letterSpacing: 0.1 },
+  contact: { fontFamily: 'Inter_500Medium', letterSpacing: 0.4 },
   close: {
     minHeight: tokens.size.tapTarget,
     alignSelf: 'center',

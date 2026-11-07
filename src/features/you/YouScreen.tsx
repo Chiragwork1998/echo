@@ -1,18 +1,21 @@
-import { useState } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { useState, type PropsWithChildren } from 'react';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { ChoiceMarker } from '@/components/ChoiceMarker';
 import { EchoText } from '@/components/EchoText';
-import { ToggleRow } from '@/components/ToggleRow';
+import { Icon } from '@/components/Icon';
+import { links } from '@/config/links';
 import { copy } from '@/content/copy';
 import { useTheme, type ThemePreference } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 import { PlusSection } from '@/features/plus/PlusSection';
-import { Heading, Notice, OnPlate, Row, Section } from '@/features/tab-pages/parts';
+import { Heading, Notice, Row, Section, Surface, SwitchRow } from '@/features/tab-pages/parts';
 import { TabPage } from '@/features/tab-pages/TabPage';
-import { onPlate } from '@/features/tab-pages/textStyles';
+import { keepTogether } from '@/features/tab-pages/keepTogether';
+import { detail, runIn } from '@/features/tab-pages/textStyles';
 
-import { APP_VERSION, openSupport, SUPPORT_EMAIL } from './support';
+import { APP_VERSION, openPage, openSupport, SUPPORT_EMAIL } from './support';
+import { SupportSheet } from './SupportSheet';
 import { useDeleteAll, useExport, type ExportState } from './useDataActions';
 import { useLockSetting, type LockNote } from './useLockSetting';
 import { useReminderSetting } from './useReminderSetting';
@@ -25,18 +28,23 @@ const THEMES: readonly { value: ThemePreference; label: string; detail?: string 
   { value: 'automatic', label: youCopy.automatic, detail: youCopy.automaticDetail },
 ];
 
+/** A section and whatever it needs to say beneath its glass. */
+function Group({ children }: PropsWithChildren) {
+  return <View style={styles.group}>{children}</View>;
+}
+
 function Appearance() {
   const { preference, setPreference } = useTheme();
   return (
     <View accessibilityRole="radiogroup" accessibilityLabel={youCopy.appearance}>
       <Section title={youCopy.appearance}>
-        {THEMES.map(({ value, label, detail }) => (
+        {THEMES.map(({ value, label, detail: line }) => (
           <Row
             key={value}
             role="radio"
             label={label}
-            detail={detail}
-            spoken={detail ? `${label}. ${detail}` : label}
+            detail={line}
+            spoken={line ? `${label}. ${line}` : label}
             selected={preference === value}
             onPress={() => setPreference(value)}
             trailing={<ChoiceMarker selected={preference === value} />}
@@ -50,20 +58,20 @@ function Appearance() {
 function Reminder() {
   const reminder = useReminderSetting();
   return (
-    <View style={styles.group}>
-      <Heading>{youCopy.reminder}</Heading>
-      <ToggleRow
-        label={youCopy.reminderSwitch}
-        value={reminder.enabled}
-        onChange={reminder.setEnabled}
-        disabled={reminder.saving}
-      />
-      <Section>
+    <Group>
+      <Section title={youCopy.reminder}>
+        <SwitchRow
+          label={youCopy.reminderSwitch}
+          value={reminder.enabled}
+          onChange={reminder.setEnabled}
+          disabled={reminder.saving}
+        />
         <Row
           label={youCopy.reminderTime}
-          detail={reminder.timeText}
+          value={reminder.timeText}
           hint={youCopy.reminderTimeHint}
           onPress={reminder.openPicker}
+          chevron
         />
       </Section>
       {reminder.blocked && (
@@ -74,7 +82,7 @@ function Reminder() {
         />
       )}
       {reminder.pickerSheet}
-    </View>
+    </Group>
   );
 }
 
@@ -83,41 +91,87 @@ const lockMessage: Record<Exclude<LockNote, 'none' | 'checking'>, string> = {
   failed: youCopy.lockFailed,
 };
 
+const EXPLAINED = [
+  { name: youCopy.voiceWords, text: youCopy.voiceWordsDetail },
+  { name: youCopy.tidyWords, text: youCopy.tidyWordsDetail },
+] as const;
+
+/**
+ * "About this": the privacy choices' longer explanations, opened when wanted, so the list stays a
+ * list. Each one is led by the name of its choice.
+ */
+function AboutThis() {
+  const { colors } = useTheme();
+  const [open, setOpen] = useState(false);
+  return (
+    <View>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={youCopy.aboutThis}
+        accessibilityHint={youCopy.aboutThisHint}
+        accessibilityState={{ expanded: open }}
+        onPress={() => setOpen((now) => !now)}
+        style={({ pressed }) => [styles.disclosure, pressed && styles.pressed]}
+      >
+        <EchoText variant="bodyM" color="textSecondary" style={[detail, styles.fill]}>
+          {youCopy.aboutThis}
+        </EchoText>
+        <View style={{ transform: [{ rotate: open ? '270deg' : '90deg' }] }}>
+          <Icon name="arrow-right" size={16} color={colors.textSecondary} />
+        </View>
+      </Pressable>
+      {open && (
+        <View style={styles.explained}>
+          {EXPLAINED.map(({ name, text }) => (
+            <EchoText
+              key={name}
+              variant="bodyM"
+              color="textSecondary"
+              style={detail}
+              maxFontSizeMultiplier={1.6}
+            >
+              <Text style={[runIn, { color: colors.textPrimary }]}>{`${name}. `}</Text>
+              {keepTogether(text)}
+            </EchoText>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
 function Privacy() {
   const lock = useLockSetting();
   const voice = useVoiceSetting();
   const label = Platform.OS === 'android' ? copy.privacy.lockAndroid : copy.privacy.lockIos;
   return (
-    <View style={styles.group}>
-      <Heading>{youCopy.privacy}</Heading>
-      <ToggleRow
-        label={label}
-        value={lock.enabled}
-        onChange={(next) => void lock.change(next)}
-        disabled={lock.note === 'checking'}
-      />
+    <Group>
+      <Section title={youCopy.privacy}>
+        <SwitchRow
+          label={label}
+          value={lock.enabled}
+          onChange={(next) => void lock.change(next)}
+          disabled={lock.note === 'checking'}
+        />
+        <SwitchRow
+          label={youCopy.voiceWords}
+          value={voice.enabled}
+          onChange={voice.change}
+          hint={youCopy.voiceWordsDetail}
+        />
+        <SwitchRow
+          label={youCopy.tidyWords}
+          value={voice.tidy}
+          onChange={voice.changeTidy}
+          hint={youCopy.tidyWordsDetail}
+        />
+        <AboutThis />
+      </Section>
       {(lock.note === 'unavailable' || lock.note === 'failed') && (
         <Notice message={lockMessage[lock.note]} />
       )}
-      <ToggleRow
-        label={youCopy.voiceWords}
-        value={voice.enabled}
-        onChange={voice.change}
-        hint={youCopy.voiceWordsDetail}
-      />
       {voice.sheet}
-      <ToggleRow
-        label={youCopy.tidyWords}
-        value={voice.tidy}
-        onChange={voice.changeTidy}
-        hint={youCopy.tidyWordsDetail}
-      />
-      <Section>
-        <Row label={youCopy.voiceWordsRow} detail={youCopy.voiceWordsDetail} />
-        <Row label={youCopy.backup} detail={youCopy.backupDetail} />
-        <Row label={youCopy.ai} detail={youCopy.aiDetail} />
-      </Section>
-    </View>
+    </Group>
   );
 }
 
@@ -135,7 +189,7 @@ function Data() {
   const message = exportMessage(exporting.state);
   const working = exporting.state.kind === 'working' || deleting.state === 'deleting';
   return (
-    <View style={styles.group}>
+    <Group>
       <Section title={youCopy.data}>
         <Row
           label={exporting.state.kind === 'working' ? youCopy.exporting : youCopy.export}
@@ -144,6 +198,10 @@ function Data() {
           disabled={working}
           onPress={() => void exporting.run()}
         />
+        {/*
+          Restore from a backup: its own agent builds it as one self-contained row, and it goes here,
+          between keeping a copy and deleting everything.
+        */}
         <Row
           label={deleting.state === 'deleting' ? youCopy.deleting : youCopy.deleteAll}
           detail={youCopy.deleteAllDetail}
@@ -155,57 +213,119 @@ function Data() {
       </Section>
       {message && <Notice message={message} />}
       {deleting.state === 'error' && <Notice message={youCopy.deleteFailed} />}
-    </View>
+    </Group>
   );
 }
 
+type SupportNote = { kind: 'email' } | { kind: 'page'; url: string } | null;
+
 function Support() {
-  const [failed, setFailed] = useState(false);
+  const [note, setNote] = useState<SupportNote>(null);
+  const [struggling, setStruggling] = useState(false);
+  const page = (url: string) =>
+    void openPage(url).then((opened) => setNote(opened ? null : { kind: 'page', url }));
   return (
-    <View style={styles.group}>
+    <Group>
       <Section title={youCopy.support}>
+        <Row
+          label={youCopy.struggling}
+          detail={youCopy.strugglingDetail}
+          onPress={() => setStruggling(true)}
+          chevron
+        />
         <Row
           label={youCopy.supportAction}
           detail={youCopy.supportDetail}
-          onPress={() => void openSupport().then((opened) => setFailed(!opened))}
+          onPress={() =>
+            void openSupport().then((opened) => setNote(opened ? null : { kind: 'email' }))
+          }
+          chevron
         />
+        <Row
+          label={youCopy.privacyPolicy}
+          role="link"
+          onPress={() => page(links.privacy)}
+          chevron
+        />
+        <Row label={youCopy.terms} role="link" onPress={() => page(links.terms)} chevron />
       </Section>
-      {failed && <Notice message={youCopy.supportFailed(SUPPORT_EMAIL)} />}
-    </View>
+      {note?.kind === 'email' && <Notice message={youCopy.supportFailed(SUPPORT_EMAIL)} />}
+      {note?.kind === 'page' && <Notice message={youCopy.pageFailed(note.url)} />}
+      <SupportSheet visible={struggling} onClose={() => setStruggling(false)} />
+    </Group>
   );
 }
 
 function About() {
   return (
-    <View style={styles.group}>
+    <Group>
       <Heading>{youCopy.about}</Heading>
-      <OnPlate>
-        {APP_VERSION ? (
-          <EchoText variant="bodyM" color="textSecondary" style={onPlate}>
-            {youCopy.version(APP_VERSION)}
+      <Surface>
+        <View style={styles.about}>
+          {APP_VERSION ? (
+            <EchoText variant="bodyM" maxFontSizeMultiplier={1.6}>
+              {youCopy.version(APP_VERSION)}
+            </EchoText>
+          ) : null}
+          <EchoText
+            variant="bodyM"
+            color="textSecondary"
+            style={detail}
+            maxFontSizeMultiplier={1.6}
+          >
+            {keepTogether(youCopy.statement)}
           </EchoText>
-        ) : null}
-        <EchoText variant="bodyM" color="textSecondary" style={onPlate}>
-          {youCopy.statement}
-        </EchoText>
-      </OnPlate>
-    </View>
+          <EchoText
+            variant="bodyM"
+            color="textSecondary"
+            style={detail}
+            maxFontSizeMultiplier={1.6}
+          >
+            {keepTogether(youCopy.breatheVoice)}
+          </EchoText>
+        </View>
+      </Surface>
+    </Group>
   );
 }
 
-/** Settings. Every action here shows that it is working and says so when it fails. */
+/**
+ * Settings, in a few calm groups, each one piece of glass with hairlines between its rows. Every
+ * action here shows that it is working and says so when it fails.
+ */
 export function YouScreen() {
   return (
     <TabPage title={youCopy.title}>
-      <PlusSection />
-      <Appearance />
-      <Reminder />
-      <Privacy />
-      <Data />
-      <Support />
-      <About />
+      <View style={styles.groups}>
+        <PlusSection />
+        <Appearance />
+        <Reminder />
+        <Privacy />
+        <Data />
+        <Support />
+        <About />
+      </View>
     </TabPage>
   );
 }
 
-const styles = StyleSheet.create({ group: { gap: tokens.space[8] } });
+const styles = StyleSheet.create({
+  groups: { gap: tokens.space[32] },
+  group: { gap: tokens.space[12] },
+  disclosure: {
+    minHeight: tokens.size.tapTarget,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: tokens.space[12],
+    paddingHorizontal: tokens.space[16],
+    paddingVertical: tokens.space[12],
+  },
+  fill: { flex: 1 },
+  pressed: { opacity: 0.66 },
+  explained: {
+    gap: tokens.space[12],
+    paddingHorizontal: tokens.space[16],
+    paddingBottom: tokens.space[16],
+  },
+  about: { gap: tokens.space[8], padding: tokens.space[16] },
+});

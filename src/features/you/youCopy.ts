@@ -1,9 +1,10 @@
 import { copy } from '@/content/copy';
+import { supportCopy } from '@/features/patterns/supportResources';
 
 /**
  * WORKING COPY. Everything You says that is not in the copy deck. Not locked: the owner approves or
- * replaces it when the designs arrive. `statement` is the wellness-software line the brief asked for
- * in plain words, and it needs the owner's (and legal's) final wording before release.
+ * replaces it on device. `statement` is the wellness-software line the brief asked for in plain
+ * words, and it needs the owner's (and legal's) final wording before release.
  */
 export const youCopy = {
   title: copy.home.tabs[3],
@@ -29,18 +30,14 @@ export const youCopy = {
 
   // Needs the owner's approval. The facts themselves are said in the question that turning it on shows.
   voiceWords: 'Turn my voice into words',
-  voiceWordsRow: 'Your voice',
   voiceWordsDetail:
     'Off: recordings stay on this phone and are never sent. On: your voice goes to OpenAI to become text, sent securely and not stored by OpenAI’s transcription service. Turning it on shows exactly what happens first.',
   tidyWords: 'Tidy my words',
   tidyWordsDetail:
     'Off: your journal keeps your exact words, including ums and changes of mind. On: the text also goes through a second step at OpenAI that removes fillers and tidies it, which OpenAI may keep for up to 30 days to check for abuse.',
-
-  notAvailable: 'Not available yet',
-  backup: 'Private backup',
-  backupDetail: 'Not available yet. Your journal is kept only on this phone.',
-  ai: 'AI reflection',
-  aiDetail: 'Not available yet. ECHO doesn’t send your words anywhere to reflect on them.',
+  /** The privacy choices' longer explanations wait behind this, in place of a wall of text. */
+  aboutThis: 'About this',
+  aboutThisHint: 'Shows what each choice does with your voice and words',
 
   data: 'Your data',
   export: 'Export your journal',
@@ -70,12 +67,21 @@ export const youCopy = {
   deleteFailed: 'Some data couldn’t be removed. Nothing else has changed. Try again.',
 
   support: 'Support',
-  supportAction: 'Email support',
+  /** Opens the support panel, at any time (docs/PRODUCT_V1.md, Trust and safety). */
+  struggling: 'If you are struggling',
+  strugglingDetail: supportCopy.linesTitle,
+  supportAction: 'Contact support',
   supportDetail: 'Opens your email app. No echoes are attached.',
   supportSubject: 'ECHO support',
   supportFailed: (address: string) => `No email app was found. You can write to ${address}.`,
+  privacyPolicy: 'Privacy policy',
+  terms: 'Terms of use',
+  pageFailed: (url: string) =>
+    `That page couldn’t be opened. It is at ${url.replace(/^https:\/\//, '')}.`,
 
   about: 'About',
   version: (version: string) => `Version ${version}`,
   statement: 'ECHO is wellness software. It is not therapy, diagnosis, or emergency care.',
+  /** Said plainly, as the brief asks (docs/PRODUCT_V1.md, Breathe). */
+  breatheVoice: 'The voice in Breathe is synthetic, made with OpenAI.',
 } as const;

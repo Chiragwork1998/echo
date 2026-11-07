@@ -161,7 +161,7 @@ describe('pattern cards', () => {
     expect(await screen.findByText(supportCopy.title)).toBeTruthy();
     expect(screen.getByText(supportCopy.body)).toBeTruthy();
     expect(saveReading).not.toHaveBeenCalled();
-    expect(screen.queryByText(patternsCopy.cards.eyebrow.toUpperCase())).toBeNull();
+    expect(screen.queryByRole('header', { name: /^Pattern card \d/ })).toBeNull();
 
     await fireEvent.press(screen.getByRole('button', { name: /Call Tele-MANAS, 14416/ }));
     expect(Linking.openURL).toHaveBeenCalledWith('tel:14416');

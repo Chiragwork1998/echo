@@ -1,61 +1,185 @@
-import { Children, Fragment, type PropsWithChildren, type ReactNode } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import {
+  Children,
+  Fragment,
+  useEffect,
+  useState,
+  type PropsWithChildren,
+  type ReactNode,
+} from 'react';
+import {
+  AccessibilityInfo,
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  StyleSheet,
+  View,
+  type StyleProp,
+  type TextStyle,
+  type ViewStyle,
+} from 'react-native';
+import Animated, {
+  ReduceMotion,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
 
 import { EchoText } from '@/components/EchoText';
-import { GlassCard } from '@/components/GlassCard';
+import { GlassBlur } from '@/components/GlassCard';
+import { Icon } from '@/components/Icon';
 import { SoftScrim } from '@/components/SoftScrim';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 
+import { keepTogether } from './keepTogether';
 import { pageCopy } from './pageCopy';
-import { onPlate, supporting } from './textStyles';
+import { detail as detailText, groupTitle, onPlate, textAction } from './textStyles';
 
 const ROW_PADDING = tokens.space[16];
+/** Hairlines between rows: the theme's own ink, faint, so the group reads as one surface. */
+const RULE_OPACITY = 0.16;
 
 // The same soft local patch the Privacy step puts behind its notes. Day's snow and clouds are
 // brighter, so its patch is stronger (docs/SPEC_CONFLICTS.md, C-05: no global scrim).
 const SCRIM_ALPHA = { day: 0.36, night: 0.3 } as const;
 const SCRIM_INSET = { x: 34, y: 14 };
+// Behind a few words that hug their patch: lighter and wider, so it reads as shade, never as a smudge.
+const HUG_ALPHA = { day: 0.24, night: 0.2 } as const;
+const HUG_INSET = { x: 44, y: 20 };
 
-/** Keeps text set straight on the photograph legible, with a feathered patch behind it. */
-export function OnPlate({ children }: PropsWithChildren) {
+// Day's snow and cloud are bright, so cream type there leans on the deeper, wider shadow the daily
+// session gives its words on the sky (src/features/journal-session/sky.ts).
+const DAY_PLATE_TEXT: TextStyle = {
+  textShadowColor: 'rgba(8,28,58,0.62)',
+  textShadowRadius: 9,
+  textShadowOffset: { width: 0, height: 1 },
+};
+
+/** The shadow for cream type set straight on the plate, in this theme. */
+export function usePlateText(): TextStyle {
+  const { name } = useTheme();
+  return name === 'day' ? DAY_PLATE_TEXT : onPlate;
+}
+
+/**
+ * Keeps text set straight on the photograph legible, with a feathered patch behind it. `hug` keeps
+ * the patch to the words themselves, so it reads as shade behind them and never as a band across.
+ */
+export function OnPlate({ children, hug }: PropsWithChildren<{ hug?: 'flex-start' | 'center' }>) {
   const { name } = useTheme();
   return (
-    <View>
-      <View pointerEvents="none" style={styles.scrim}>
-        <SoftScrim alpha={SCRIM_ALPHA[name]} />
+    <View style={hug ? { alignSelf: hug } : undefined}>
+      <View pointerEvents="none" style={hug ? styles.hug : styles.scrim}>
+        <SoftScrim alpha={(hug ? HUG_ALPHA : SCRIM_ALPHA)[name]} />
       </View>
       {children}
     </View>
   );
 }
 
-/** A small caption that names the group beneath it. */
-export function Heading({ children }: { children: string }) {
+function useReduceTransparency() {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    void AccessibilityInfo.isReduceTransparencyEnabled().then(setReduced);
+    const sub = AccessibilityInfo.addEventListener('reduceTransparencyChanged', setReduced);
+    return () => sub.remove();
+  }, []);
+  return reduced;
+}
+
+/**
+ * The pages' glass: the handoff's blur, scrim and fine white edge, with no drop shadow under it
+ * (docs/DESIGN_QUALITY.md, Never). With Reduce Transparency it is the strong scrim, unblurred.
+ */
+export function Surface({
+  strength = 'regular',
+  radius = tokens.radius.medium,
+  tint,
+  style,
+  children,
+}: PropsWithChildren<{
+  strength?: 'regular' | 'strong';
+  radius?: number;
+  /** A faint colour over the glass, as Completion's reflection card warms its own. */
+  tint?: string;
+  style?: StyleProp<ViewStyle>;
+}>) {
+  const { colors } = useTheme();
+  const reduced = useReduceTransparency();
+  const strong = strength === 'strong' || reduced;
   return (
-    <OnPlate>
-      <EchoText variant="caption" color="textSecondary" accessibilityRole="header" style={onPlate}>
-        {children.toUpperCase()}
+    <View
+      style={[styles.surface, { borderRadius: radius, borderColor: colors.borderGlass }, style]}
+    >
+      {!reduced && (
+        <GlassBlur radius={strength === 'strong' ? tokens.blur.glassStrong : tokens.blur.glass} />
+      )}
+      <View
+        pointerEvents="none"
+        style={[
+          StyleSheet.absoluteFill,
+          { backgroundColor: strong ? colors.surfaceGlassStrong : colors.surfaceGlass },
+        ]}
+      />
+      {tint && !reduced ? (
+        <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: tint }]} />
+      ) : null}
+      {children}
+    </View>
+  );
+}
+
+/**
+ * The name of a group, set in Cormorant on the plate, in sentence case, the way Home names
+ * "From your path". Never a row of tracked capitals.
+ */
+export function Heading({ children }: { children: string }) {
+  const { name } = useTheme();
+  const shadow = usePlateText();
+  return (
+    <OnPlate hug="flex-start">
+      <EchoText
+        variant="bodyL"
+        accessibilityRole="header"
+        accessibilityLabel={children}
+        maxFontSizeMultiplier={1.5}
+        // A little more weight by Day, as the session's words have on the bright sky.
+        style={[groupTitle, name === 'day' && styles.dayTitle, shadow]}
+      >
+        {keepTogether(children)}
       </EchoText>
     </OnPlate>
   );
 }
 
-/** A heading with its rows on one piece of plain glass. Hairlines between rows, no decoration. */
-export function Section({ title, children }: PropsWithChildren<{ title?: string }>) {
+/** A hairline between the parts of one surface. */
+export function Rule({ inset = ROW_PADDING }: { inset?: number }) {
   const { colors } = useTheme();
+  return (
+    <View
+      style={[
+        styles.rule,
+        { marginHorizontal: inset, backgroundColor: colors.textPrimary, opacity: RULE_OPACITY },
+      ]}
+    />
+  );
+}
+
+/** A group's rows on one piece of glass, with hairlines between them. No decoration. */
+export function Section({ title, children }: PropsWithChildren<{ title?: string }>) {
   const rows = Children.toArray(children);
   return (
     <View style={styles.section}>
       {title ? <Heading>{title}</Heading> : null}
-      <GlassCard radius={tokens.radius.medium}>
+      <Surface>
         {rows.map((row, index) => (
           <Fragment key={index}>
-            {index > 0 && <View style={[styles.rule, { backgroundColor: colors.borderGlass }]} />}
+            {index > 0 && <Rule />}
             {row}
           </Fragment>
         ))}
-      </GlassCard>
+      </Surface>
     </View>
   );
 }
@@ -63,23 +187,28 @@ export function Section({ title, children }: PropsWithChildren<{ title?: string 
 type RowProps = {
   label: string;
   detail?: string;
+  /** A short value set at the end of the row, such as a time. */
+  value?: string;
   /** Without onPress the row is read-only text. */
   onPress?: () => void;
-  role?: 'button' | 'radio';
+  role?: 'button' | 'radio' | 'link';
   selected?: boolean;
   busy?: boolean;
   disabled?: boolean;
   destructive?: boolean;
   hint?: string;
   trailing?: ReactNode;
+  /** A small chevron: this row opens something. */
+  chevron?: boolean;
   /** What a screen reader says, when the visible text alone would leave something out. */
   spoken?: string;
 };
 
-/** One line of a Section: a label, an optional detail, and at most one control. 44 pt or taller. */
+/** One line of a Section: a label, an optional detail, and at most one control. 52 pt or taller. */
 export function Row({
   label,
   detail,
+  value,
   onPress,
   role = 'button',
   selected,
@@ -88,10 +217,12 @@ export function Row({
   destructive,
   hint,
   trailing,
+  chevron,
   spoken: override,
 }: RowProps) {
   const { colors } = useTheme();
-  const spoken = override ?? (detail && role === 'button' ? `${label}. ${detail}` : label);
+  const extra = detail ?? value;
+  const spoken = override ?? (extra && role !== 'radio' ? `${label}. ${extra}` : label);
   const body = (
     <View style={styles.row}>
       <View style={styles.text}>
@@ -104,21 +235,32 @@ export function Row({
         </EchoText>
         {detail ? (
           <EchoText
-            variant="caption"
+            variant="bodyM"
             color="textSecondary"
-            style={supporting}
+            style={detailText}
             maxFontSizeMultiplier={1.6}
           >
-            {detail}
+            {keepTogether(detail)}
           </EchoText>
         ) : null}
       </View>
-      {busy ? <ActivityIndicator color={colors.textPrimary} /> : trailing}
+      {value ? (
+        <EchoText
+          variant="bodyM"
+          color="textSecondary"
+          style={detailText}
+          maxFontSizeMultiplier={1.6}
+        >
+          {value}
+        </EchoText>
+      ) : null}
+      {busy ? <ActivityIndicator size="small" color={colors.textSecondary} /> : trailing}
+      {chevron && !busy ? <Icon name="arrow-right" size={16} color={colors.textSecondary} /> : null}
     </View>
   );
   if (!onPress) {
     return (
-      <View accessible accessibilityLabel={override ?? (detail ? `${label}. ${detail}` : label)}>
+      <View accessible accessibilityLabel={override ?? (extra ? `${label}. ${extra}` : label)}>
         {body}
       </View>
     );
@@ -142,6 +284,127 @@ export function Row({
   );
 }
 
+// Measured from the Privacy goldens, as ToggleRow is (docs/SPEC_CONFLICTS.md, C-13).
+const TRACK = { width: 44, height: 25 };
+const KNOB = 24;
+const KNOB_INSET = 0.5;
+const TRAVEL = TRACK.width - KNOB - KNOB_INSET * 2;
+const KNOB_COLOUR = '#FDFCFC';
+const TRACK_ON_ALPHA = 'B3'; // accentWarm at 70%
+
+/** The golden's switch, drawn inside a row. Decorative: the row carries the role and the state. */
+function SwitchTrack({ value }: { value: boolean }) {
+  const { colors } = useTheme();
+  const on = useSharedValue(value ? 1 : 0);
+  useEffect(() => {
+    on.set(
+      withSpring(value ? 1 : 0, { ...tokens.motion.spring, reduceMotion: ReduceMotion.System }),
+    );
+  }, [value, on]);
+  const knob = useAnimatedStyle(() => ({ transform: [{ translateX: on.get() * TRAVEL }] }));
+  return (
+    <View
+      style={[
+        styles.track,
+        value
+          ? { backgroundColor: `${colors.accentWarm}${TRACK_ON_ALPHA}` }
+          : { borderColor: colors.borderGlass, borderWidth: 1 },
+      ]}
+    >
+      <Animated.View style={[styles.knob, knob]} />
+    </View>
+  );
+}
+
+type SwitchRowProps = {
+  label: string;
+  value: boolean;
+  onChange: (next: boolean) => void;
+  detail?: string;
+  disabled?: boolean;
+  /** Read by screen readers, for example what turning it on does. */
+  hint?: string;
+};
+
+/** A switch as one row of a Section, so a group of settings shares one surface. */
+export function SwitchRow({
+  label,
+  value,
+  onChange,
+  detail,
+  disabled = false,
+  hint,
+}: SwitchRowProps) {
+  return (
+    <Pressable
+      accessibilityRole="switch"
+      accessibilityLabel={label}
+      accessibilityHint={hint}
+      accessibilityState={{ checked: value, disabled }}
+      disabled={disabled}
+      onPress={() => onChange(!value)}
+      style={({ pressed }) => [pressed && styles.pressed, disabled && styles.disabled]}
+    >
+      <View style={styles.row}>
+        <View style={styles.text}>
+          <EchoText variant="bodyM" maxFontSizeMultiplier={1.6}>
+            {label}
+          </EchoText>
+          {detail ? (
+            <EchoText
+              variant="bodyM"
+              color="textSecondary"
+              style={detailText}
+              maxFontSizeMultiplier={1.6}
+            >
+              {keepTogether(detail)}
+            </EchoText>
+          ) : null}
+        </View>
+        <SwitchTrack value={value} />
+      </View>
+    </Pressable>
+  );
+}
+
+/** A quiet word to tap, at least 44 pt tall. Sentence case, in the page's ink. */
+export function TextAction({
+  label,
+  onPress,
+  spoken,
+  hint,
+  tone = 'textPrimary',
+  role = 'button',
+  style,
+  testID,
+}: {
+  label: string;
+  onPress: () => void;
+  /** What a screen reader says, when it should say more than the visible word. */
+  spoken?: string;
+  hint?: string;
+  tone?: 'textPrimary' | 'textSecondary' | 'danger';
+  role?: 'button' | 'link';
+  style?: StyleProp<ViewStyle>;
+  testID?: string;
+}) {
+  return (
+    <Pressable
+      accessibilityRole={role}
+      accessibilityLabel={spoken ?? label}
+      accessibilityHint={hint}
+      onPress={onPress}
+      hitSlop={6}
+      testID={testID}
+      style={({ pressed }) => [styles.action, style, pressed && styles.pressed]}
+    >
+      <EchoText variant="bodyM" color={tone} style={textAction} maxFontSizeMultiplier={1.6}>
+        {label}
+      </EchoText>
+    </Pressable>
+  );
+}
+
 /** An inline message that never replaces the page. Announced politely when it appears. */
 export function Notice({
   message,
@@ -153,44 +416,62 @@ export function Notice({
   onAction?: () => void;
 }) {
   return (
-    <GlassCard radius={tokens.radius.medium} strength="strong">
-      <View style={styles.row} accessibilityLiveRegion="polite">
-        <EchoText variant="bodyM" style={styles.text}>
-          {message}
+    <Surface strength="strong">
+      <View style={styles.notice} accessibilityLiveRegion="polite">
+        <EchoText variant="bodyM" style={[detailText, styles.text]} maxFontSizeMultiplier={1.6}>
+          {keepTogether(message)}
         </EchoText>
-        {onAction ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={actionLabel}
-            onPress={onAction}
-            hitSlop={8}
-            style={styles.action}
-          >
-            <EchoText variant="label">{actionLabel.toUpperCase()}</EchoText>
-          </Pressable>
-        ) : null}
+        {onAction ? <TextAction label={actionLabel} onPress={onAction} /> : null}
       </View>
-    </GlassCard>
+    </Surface>
   );
 }
 
-/** Centred text for empty and waiting states, on glass so that it reads over any part of the plate. */
-export function Quiet({ children, busy }: PropsWithChildren<{ busy?: boolean }>) {
-  const { colors } = useTheme();
+/** A short note on glass, left aligned, for states that need a sentence and nothing else. */
+export function Quiet({ children }: { children: string }) {
   return (
-    <GlassCard radius={tokens.radius.medium}>
-      <View
-        style={styles.quiet}
-        accessible
-        accessibilityLiveRegion="polite"
-        accessibilityState={{ busy }}
-      >
-        {busy ? <ActivityIndicator color={colors.textPrimary} /> : null}
-        <EchoText variant="bodyM" color="textSecondary" align="center">
-          {children}
+    <Surface>
+      <View style={styles.quiet} accessible accessibilityLiveRegion="polite">
+        <EchoText
+          variant="bodyM"
+          color="textSecondary"
+          style={detailText}
+          maxFontSizeMultiplier={1.6}
+        >
+          {keepTogether(children)}
         </EchoText>
       </View>
-    </GlassCard>
+    </Surface>
+  );
+}
+
+/** A bar standing in for a line of text while it loads. */
+export function SkeletonLine({
+  width,
+  height = 10,
+  style,
+}: {
+  width: ViewStyle['width'];
+  height?: number;
+  style?: StyleProp<ViewStyle>;
+}) {
+  return <View style={[styles.bar, { width, height, borderRadius: height / 2 }, style]} />;
+}
+
+/**
+ * A loading state shaped like what is coming. It says what it is waiting for to a screen reader,
+ * and nothing in it moves.
+ */
+export function Loading({ label, children }: PropsWithChildren<{ label: string }>) {
+  return (
+    <View
+      accessible
+      accessibilityLabel={label}
+      accessibilityState={{ busy: true }}
+      accessibilityLiveRegion="polite"
+    >
+      {children}
+    </View>
   );
 }
 
@@ -202,8 +483,17 @@ const styles = StyleSheet.create({
     top: -SCRIM_INSET.y,
     bottom: -SCRIM_INSET.y,
   },
-  section: { gap: tokens.space[8] },
-  rule: { height: StyleSheet.hairlineWidth, marginHorizontal: ROW_PADDING, opacity: 0.5 },
+  hug: {
+    position: 'absolute',
+    left: -HUG_INSET.x,
+    right: -HUG_INSET.x,
+    top: -HUG_INSET.y,
+    bottom: -HUG_INSET.y,
+  },
+  surface: { overflow: 'hidden', borderWidth: 1 },
+  dayTitle: { fontFamily: 'CormorantGaramond_500Medium' },
+  section: { gap: tokens.space[12] },
+  rule: { height: StyleSheet.hairlineWidth },
   row: {
     minHeight: tokens.size.tapTarget + 8,
     flexDirection: 'row',
@@ -213,12 +503,29 @@ const styles = StyleSheet.create({
     paddingVertical: tokens.space[12],
   },
   text: { flex: 1, gap: 2 },
-  pressed: { opacity: 0.7 },
+  pressed: { opacity: 0.66 },
   disabled: { opacity: 0.42 },
-  action: { minHeight: tokens.size.tapTarget, justifyContent: 'center', paddingHorizontal: 6 },
-  quiet: {
-    alignItems: 'center',
-    gap: tokens.space[12],
-    padding: tokens.space[20],
+  track: {
+    width: TRACK.width,
+    height: TRACK.height,
+    borderRadius: TRACK.height / 2,
+    padding: KNOB_INSET,
+    justifyContent: 'center',
   },
+  knob: { width: KNOB, height: KNOB, borderRadius: KNOB / 2, backgroundColor: KNOB_COLOUR },
+  action: {
+    minHeight: tokens.size.tapTarget,
+    justifyContent: 'center',
+    alignSelf: 'flex-start',
+  },
+  notice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: tokens.space[16],
+    paddingHorizontal: ROW_PADDING,
+    paddingVertical: tokens.space[8],
+    minHeight: tokens.size.tapTarget + 8,
+  },
+  quiet: { paddingHorizontal: ROW_PADDING, paddingVertical: tokens.space[16] },
+  bar: { backgroundColor: 'rgba(255,255,255,0.14)' },
 });

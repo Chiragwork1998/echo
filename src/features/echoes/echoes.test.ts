@@ -1,7 +1,16 @@
 import type { EntrySummary } from '@/features/journal';
 
 import { echoesCopy } from './echoesCopy';
-import { entryMeta, entryPreview, entryTitle } from './entryFacts';
+import { byMonth } from './EchoesList';
+import {
+  entryMeta,
+  entryPreview,
+  entryTitle,
+  isMorning,
+  listMeta,
+  marginDate,
+  monthKey,
+} from './entryFacts';
 import { deriveEchoesView } from './useEchoes';
 import { readerView } from './useEntryReader';
 
@@ -39,6 +48,32 @@ describe('entry labels', () => {
   it('hides a preview that only repeats the title', () => {
     expect(entryPreview(row({ title: 'Same words', preview: 'Same words and more' }))).toBe('');
     expect(entryPreview(row())).toBe('A longer preview of the words');
+  });
+
+  it('leads a morning echo with Morning, and says nothing more of an unreadable one', () => {
+    expect(listMeta(row({ promptId: 'become', moodBefore: 'light' }))).toEqual({
+      morning: true,
+      rest: '6 min · Mood: Light',
+    });
+    expect(listMeta(row({ promptId: 'daily' }))).toEqual({ morning: false, rest: '6 min' });
+    expect(listMeta(row({ readable: false, promptId: 'become' }))).toEqual({
+      morning: false,
+      rest: '',
+    });
+    expect(isMorning({ promptId: 'become' })).toBe(true);
+    expect(isMorning({})).toBe(false);
+  });
+
+  it('gathers the archive under months, keeping the newest first', () => {
+    const months = byMonth([
+      row({ id: 'a', localDay: '2026-11-05' }),
+      row({ id: 'b', localDay: '2026-11-01' }),
+      row({ id: 'c', localDay: '2026-10-30' }),
+    ]);
+    expect(months.map((month) => month.rows.map((entry) => entry.id))).toEqual([['a', 'b'], ['c']]);
+    expect(monthKey('2026-11-05')).toBe('2026-11');
+    expect(marginDate('2026-11-05')?.day).toBe('5');
+    expect(marginDate(undefined)).toBeNull();
   });
 });
 

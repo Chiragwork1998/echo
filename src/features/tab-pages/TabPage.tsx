@@ -12,17 +12,18 @@ import { tokens } from '@/design/tokens';
 import { useTabBarSpace } from '@/features/home/tabs/HomeTabBar';
 import { NightFloor } from '@/features/home/today/NightHome';
 
-import { OnPlate } from './parts';
 import { pageCopy } from './pageCopy';
-import { onPlate } from './textStyles';
+import { detail, onPlate } from './textStyles';
 
 // Same top inset as Home (docs/SPEC_CONFLICTS.md, C-03). Content ends this far above the tab bar.
 const HEADER_OFFSET_FROM_SAFE_TOP = -5;
-const ABOVE_TAB_BAR = 18;
-const BELOW_CONTENT = 24;
+const ABOVE_TAB_BAR = 24;
+const BELOW_CONTENT = 32;
 
 type Props = PropsWithChildren<{
   title: string;
+  /** One quiet line under the title, as the goldens pair a heading with a subtitle. */
+  subtitle?: string;
   /** Shows a Back button. Pages reached from a tab hide the tab bar and pass this. */
   onBack?: () => void;
   /** false on pages that hide the tab bar, so that nothing reserves room for it. */
@@ -31,16 +32,22 @@ type Props = PropsWithChildren<{
 
 /**
  * The one layout for Echoes, Patterns, You and the entry reader: the Home plate, a title, and a
- * single scrolling column that stops clear of the floating tab bar. It holds no logic, so a later
- * design pass can replace it wholesale.
+ * single scrolling column that stops clear of the floating tab bar.
+ *
+ * The title sits on the sky. Day's sky is bright, so there it is set in ink, as Day Home sets its
+ * headline; Night's is dark, so there it is cream with the plate's faint shadow. Below the title
+ * everything rests on glass or carries its own local treatment.
  */
-export function TabPage({ title, onBack, tabBar = true, children }: Props) {
+export function TabPage({ title, subtitle, onBack, tabBar = true, children }: Props) {
   const { name, colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { width, gutter } = useLayout();
   const tabBarSpace = useTabBarSpace();
   const bottom = tabBar ? tabBarSpace + ABOVE_TAB_BAR : insets.bottom + BELOW_CONTENT;
   const top = Math.max(insets.top + HEADER_OFFSET_FROM_SAFE_TOP, 8);
+  const day = name === 'day';
+  const ink = day ? colors.textInk : colors.textPrimary;
+  const shadow = day ? undefined : onPlate;
 
   return (
     <View style={styles.root}>
@@ -52,26 +59,43 @@ export function TabPage({ title, onBack, tabBar = true, children }: Props) {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={[styles.scroll, { paddingTop: top, paddingBottom: bottom }]}
+          contentContainerStyle={styles.scroll}
         >
-          <View style={[styles.column, { width, paddingHorizontal: gutter }]}>
+          <View
+            style={[
+              styles.column,
+              { width, paddingHorizontal: gutter, paddingTop: top, paddingBottom: bottom },
+            ]}
+          >
             {onBack && (
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={pageCopy.back}
                 onPress={onBack}
                 hitSlop={4}
-                style={styles.back}
+                style={({ pressed }) => [styles.back, pressed && styles.pressed]}
               >
-                <Icon name="arrow-left" size={22} color={colors.textPrimary} />
+                <Icon name="arrow-left" size={22} color={ink} />
               </Pressable>
             )}
-            <View style={styles.title}>
-              <OnPlate>
-                <EchoText variant="displayM" accessibilityRole="header" style={onPlate}>
-                  {title}
+            <View style={[styles.header, onBack ? styles.headerUnderBack : null]}>
+              <EchoText
+                variant="displayM"
+                accessibilityRole="header"
+                maxFontSizeMultiplier={1.4}
+                style={[{ color: ink }, shadow]}
+              >
+                {title}
+              </EchoText>
+              {subtitle ? (
+                <EchoText
+                  variant="bodyM"
+                  maxFontSizeMultiplier={1.6}
+                  style={[detail, styles.subtitle, { color: ink }, shadow]}
+                >
+                  {subtitle}
                 </EchoText>
-              </OnPlate>
+              ) : null}
             </View>
             {children}
           </View>
@@ -85,12 +109,17 @@ const styles = StyleSheet.create({
   root: { flex: 1, overflow: 'hidden' },
   fill: { flex: 1 },
   scroll: { flexGrow: 1, alignItems: 'center' },
-  column: { gap: tokens.space[16] },
+  // Nothing set on the plate may push the column sideways, so it never scrolls across.
+  column: { gap: tokens.space[24], overflow: 'hidden' },
   back: {
     width: tokens.size.tapTarget,
     height: tokens.size.tapTarget,
     justifyContent: 'center',
     marginLeft: -5,
+    marginBottom: -tokens.space[16],
   },
-  title: { marginTop: tokens.space[8] },
+  pressed: { opacity: 0.6 },
+  header: { marginTop: tokens.space[8], gap: tokens.space[4] },
+  headerUnderBack: { marginTop: 0 },
+  subtitle: { opacity: 0.86 },
 });

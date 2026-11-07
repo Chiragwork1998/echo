@@ -42,18 +42,30 @@ export function canReflect(content: EntryContent, audio?: Entry['audio']): boole
 export const minutesLeft = (durationSeconds: number) =>
   Math.ceil(Math.max(0, SESSION_SECONDS - durationSeconds) / 60);
 
+/**
+ * The words of `text` that fit in `limit` characters, ending on a whole word, with an ellipsis when
+ * anything was left out. A word too long to break at is cut where it must be. Runs on decrypted
+ * text in memory only.
+ */
+export function cutAtWord(text: string, limit: number): string {
+  if (text.length <= limit) return text;
+  const head = text.slice(0, limit + 1);
+  const space = head.search(/\s\S*$/);
+  const words = space > limit / 2 ? head.slice(0, space) : text.slice(0, limit);
+  return `${words.replace(/[\s,;:.!?\-–—]+$/u, '')}…`;
+}
+
 function firstLine(body: string): string {
   const line =
     body
       .split('\n')
       .map((text) => text.trim())
       .find(Boolean) ?? '';
-  return line.length > TITLE_LENGTH ? `${line.slice(0, TITLE_LENGTH).trimEnd()}…` : line;
+  return cutAtWord(line, TITLE_LENGTH);
 }
 
 function previewOf(body: string): string {
-  const flat = body.replace(/\s+/g, ' ').trim();
-  return flat.length > PREVIEW_LENGTH ? `${flat.slice(0, PREVIEW_LENGTH).trimEnd()}…` : flat;
+  return cutAtWord(body.replace(/\s+/g, ' ').trim(), PREVIEW_LENGTH);
 }
 
 export const toSummary = (entry: Entry): EntrySummary => ({
@@ -63,6 +75,7 @@ export const toSummary = (entry: Entry): EntrySummary => ({
   title: entry.title?.trim() || firstLine(entry.body),
   preview: previewOf(entry.body),
   moodBefore: entry.moodBefore,
+  promptId: entry.promptId,
   mode: entry.mode,
   durationSeconds: entry.durationSeconds,
   hasAudio: entry.audio !== undefined,

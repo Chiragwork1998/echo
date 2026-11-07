@@ -16,7 +16,7 @@ import { echoesCopy } from './echoesCopy';
 import { EchoesScreen } from './EchoesScreen';
 
 jest.mock('expo-router', () => ({
-  router: { push: jest.fn(), back: jest.fn() },
+  router: { push: jest.fn(), back: jest.fn(), navigate: jest.fn() },
   usePathname: () => '/home/echoes',
 }));
 jest.mock(
@@ -90,10 +90,52 @@ describe('EchoesScreen', () => {
     expect(screen.getByRole('header', { name: echoesCopy.title })).toBeTruthy();
   });
 
-  it('says where the first echo will appear when there are none', async () => {
+  it('says where the first echo will appear when there are none, and what to do', async () => {
     seed();
     await render(<EchoesScreen />);
     expect(await screen.findByText(echoesCopy.empty)).toBeTruthy();
+    expect(screen.getByText(echoesCopy.emptyBody)).toBeTruthy();
+    // Nothing to search yet.
+    expect(screen.queryByLabelText(echoesCopy.searchLabel)).toBeNull();
+    await fireEvent.press(screen.getByRole('button', { name: echoesCopy.goToday }));
+    expect(router.navigate).toHaveBeenCalledWith('/home');
+  });
+
+  it('names an untitled echo by its first words, cut at a word, never by its question', async () => {
+    seed(
+      entry('a', '2026-11-05', {
+        body: 'I keep saying yes before I have even heard the whole question, and then I spend the evening resenting it.',
+        promptText: 'What is asking for your attention?',
+      }),
+      entry('b', '2026-11-04', {
+        body: 'Short and whole.',
+        promptText: 'What is asking for your attention?',
+      }),
+    );
+    await render(<EchoesScreen />);
+    expect(
+      await screen.findByText('I keep saying yes before I have even heard the whole…'),
+    ).toBeTruthy();
+    expect(screen.getByText('Short and whole.')).toBeTruthy();
+    expect(screen.queryByText('What is asking for your attention?')).toBeNull();
+  });
+
+  it('marks a morning echo quietly, and gathers echoes under their month', async () => {
+    seed(
+      entry('m', '2026-11-05', { promptId: 'become', body: 'Calm, honest, unhurried.' }),
+      entry('e', '2026-10-30', { body: 'An evening in October.' }),
+    );
+    await render(<EchoesScreen />);
+    expect(await screen.findByText(echoesCopy.morning)).toBeTruthy();
+    expect(screen.getAllByText(echoesCopy.morning)).toHaveLength(1);
+    expect(screen.getByRole('button', { name: /Calm, honest, unhurried\..*Morning/ })).toBeTruthy();
+    const months = screen.getAllByRole('header').map((header) => header.props.accessibilityLabel);
+    expect(months).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/^November/),
+        expect.stringMatching(/^October/),
+      ]),
+    );
   });
 
   it('keeps an unreadable echo in the list, says it cannot be opened, and still lets it be opened to delete', async () => {
@@ -156,9 +198,9 @@ describe('EchoesScreen', () => {
   });
 
   it('turns autofill and suggestions off on the search field', async () => {
-    seed();
+    seed(entry('one', '2026-11-05'));
     await render(<EchoesScreen />);
-    const search = screen.getByLabelText(echoesCopy.searchLabel);
+    const search = await screen.findByLabelText(echoesCopy.searchLabel);
     expect(search.props.autoComplete).toBe('off');
     expect(search.props.importantForAutofill).toBe('no');
     expect(search.props.textContentType).toBe('none');
