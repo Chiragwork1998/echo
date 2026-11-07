@@ -214,7 +214,7 @@ Paywall copy (working copy, the lead's):
 - Lead: "The whole practice, with nothing held back."
 - Pattern cards: "ECHO reads your entries and names what keeps returning, in your own words."
 - Unlimited voice: "Speak for as long as you need. Free includes 60 minutes a month."
-- Every practice: "Ten practices for what you are feeling, at any length."
+- Every practice: "All ten breathing practices, at any length, and Heart at your own pace."
 - Live words and Tidy: "Watch your words arrive as you speak, or have them tidied."
 - Plans come from the store. Yearly is selected and shows its trial: "7 days free, then {price} a
   year". Monthly: "{price} a month".

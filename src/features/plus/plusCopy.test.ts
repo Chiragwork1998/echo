@@ -10,7 +10,7 @@ describe('the paywall’s words', () => {
     expect(plusCopy.benefits.map((benefit) => benefit.line)).toEqual([
       'ECHO reads your entries and names what keeps returning, in your own words.',
       'Speak for as long as you need. Free includes 60 minutes a month.',
-      'Focus and Sleep, any length, and Steady at your own pace.',
+      'All ten breathing practices, at any length, and Heart at your own pace.',
       'Watch your words arrive as you speak, or have them tidied.',
     ]);
     expect(plusCopy.finePrint).toBe(

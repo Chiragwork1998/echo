@@ -49,8 +49,8 @@ export const plusCopy = {
       line: 'Speak for as long as you need. Free includes 60 minutes a month.',
     },
     {
-      title: 'Every breath',
-      line: 'Focus and Sleep, any length, and Steady at your own pace.',
+      title: 'Every practice',
+      line: 'All ten breathing practices, at any length, and Heart at your own pace.',
     },
     {
       title: 'Live words and Tidy',

@@ -9,6 +9,7 @@ import {
   packagesOf,
   planFrom,
   purchaseFailure,
+  wholePrice,
 } from './mapping';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -61,13 +62,13 @@ describe('plans from the offering', () => {
     expect(planFrom(storePackage('year', { price: '₹1,999.00', trialWeeks: 1 }))).toEqual({
       id: '$rc_annual',
       period: 'year',
-      price: '₹1,999.00',
+      price: '₹1,999',
       trial: { unit: 'week', count: 1 },
     });
     expect(planFrom(storePackage('month', { price: '₹299.00' }))).toEqual({
       id: '$rc_monthly',
       period: 'month',
-      price: '₹299.00',
+      price: '₹299',
       trial: null,
     });
   });
@@ -133,4 +134,23 @@ describe('what went wrong', () => {
     expect(isBuildFault(failure('23'))).toBe(true);
     expect(isBuildFault(failure(RC.network))).toBe(false);
   });
+});
+
+describe('wholePrice', () => {
+  it.each([
+    ['₹1,999.00', '₹1,999'],
+    ['₹299.00', '₹299'],
+    ['$8.00', '$8'],
+    ['R$ 10,00', 'R$ 10'],
+    ['1.999,00 ₫', '1.999 ₫'],
+  ])('drops the zero fraction from %s', (store, shown) => {
+    expect(wholePrice(store)).toBe(shown);
+  });
+
+  it.each(['$49.99', '₹1,999', '¥1,000', '€8,99'])(
+    'leaves %s exactly as the store wrote it',
+    (store) => {
+      expect(wholePrice(store)).toBe(store);
+    },
+  );
 });

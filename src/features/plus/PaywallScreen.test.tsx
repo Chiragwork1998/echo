@@ -45,8 +45,8 @@ jest.mock('expo-notifications', () => ({
 }));
 
 const DAY = 24 * 60 * 60 * 1000;
-const yearlyLine = '7 days free, then ₹1,999.00 a year';
-const monthlyLine = '₹299.00 a month';
+const yearlyLine = '7 days free, then ₹1,999 a year';
+const monthlyLine = '₹299 a month';
 
 const radio = (name: string | RegExp) => screen.getByRole('radio', { name });
 const button = (name: string | RegExp) => screen.getByRole('button', { name });
@@ -124,7 +124,7 @@ describe('the paywall', () => {
   it('says "Continue" when the store gives this person no trial', async () => {
     mockStore.offerings = offerings([storePackage('year', { price: '₹1,999.00' })]);
     await open();
-    expect(await screen.findByText('₹1,999.00 a year')).toBeTruthy();
+    expect(await screen.findByText('₹1,999 a year')).toBeTruthy();
     expect(button('Continue')).toBeTruthy();
   });
 

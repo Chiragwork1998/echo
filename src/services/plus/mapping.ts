@@ -70,9 +70,19 @@ export function trialOf(pkg: PurchasesPackage, iosEligible: boolean): StorePerio
   return periodOf(intro.periodUnit, intro.periodNumberOfUnits);
 }
 
+/**
+ * A store price without a zero fraction: "₹1,999.00" reads "₹1,999", "R$ 10,00" reads "R$ 10".
+ * Any other fraction stays exactly as the store wrote it ("$49.99").
+ */
+export function wholePrice(text: string): string {
+  return text.replace(/[.,]00(?=\D*$)/, '');
+}
+
 /** The price once any trial or introductory phase is over. */
 export function renewalPrice(pkg: PurchasesPackage): string {
-  return pkg.product.defaultOption?.fullPricePhase?.price.formatted ?? pkg.product.priceString;
+  return wholePrice(
+    pkg.product.defaultOption?.fullPricePhase?.price.formatted ?? pkg.product.priceString,
+  );
 }
 
 function packageFor(offering: PurchasesOffering, period: PlanPeriod): PurchasesPackage | null {
