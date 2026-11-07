@@ -3,7 +3,7 @@
     "name": "ECHO",
     "slug": "echo",
     "scheme": "echo",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "icon": "./assets/app/icon.png",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
@@ -14,7 +14,7 @@
     },
     "android": {
       "package": "com.thesaturnlabs.echo",
-      "versionCode": 1,
+      "versionCode": 2,
       "adaptiveIcon": {
         "foregroundImage": "./assets/app/adaptive-foreground.png",
         "monochromeImage": "./assets/app/adaptive-monochrome.png",
