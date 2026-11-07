@@ -3,10 +3,12 @@ import { Platform } from 'react-native';
 
 import { control } from '@/storage/testing/fakeExpoFileSystem';
 
-import { discardPickerCopies, pickBackupFile } from './pickBackupFile';
+import { pickBackupFile } from './pickBackupFile';
+
+let mockCopy: 'whole' | 'cut short' = 'whole';
 
 jest.mock('expo-document-picker', () => ({ getDocumentAsync: jest.fn() }));
-// The shared stand-in, with the asynchronous copy expo-file-system runs on a background thread.
+// The shared stand-in, with the copy expo-file-system runs on a background thread.
 jest.mock('expo-file-system', () => {
   const fake = jest.requireActual<typeof import('@/storage/testing/fakeExpoFileSystem')>(
     '@/storage/testing/fakeExpoFileSystem',
@@ -15,21 +17,38 @@ jest.mock('expo-file-system', () => {
     async copy(destination: { uri: string }): Promise<void> {
       const bytes = fake.control.get(this.uri);
       if (!bytes) throw new Error('the provider could not be read');
+      if (mockCopy === 'cut short') {
+        fake.control.put(destination.uri, bytes.slice(0, 2));
+        throw new Error('ENOSPC: no space left on device');
+      }
       fake.control.put(destination.uri, bytes);
     }
   }
   return { ...fake, File };
 });
+// The runtime's folder for short-lived plaintext, on the same stand-in.
+jest.mock('@/storage/runtime', () => {
+  const fake = jest.requireActual<typeof import('@/storage/testing/fakeExpoFileSystem')>(
+    '@/storage/testing/fakeExpoFileSystem',
+  );
+  return {
+    getRuntime: async () => ({
+      files: {
+        ensureDirectory: (directory: string) => fake.control.folders.add(directory),
+        remove: (uri: string) => {
+          const file = new fake.File(uri);
+          if (file.exists) file.delete();
+        },
+      },
+      paths: { tempDir: 'file:///cache/echo-temp' },
+      newId: () => 'one',
+    }),
+  };
+});
 
 const getDocument = jest.mocked(getDocumentAsync);
-const FOLDER = 'file:///cache/DocumentPicker';
-const LEFTOVER = `${FOLDER}/left-by-a-killed-restore.zip`;
 const BACKUP = new Uint8Array([0x50, 0x4b, 5, 6, 1, 2, 3]);
-
-function leaveCopy() {
-  control.folders.add(FOLDER);
-  control.put(LEFTOVER, new Uint8Array([1, 2, 3]));
-}
+const COPY = 'file:///cache/echo-temp/picked-one.zip';
 
 const picked = (uri: string) => ({
   canceled: false as const,
@@ -39,6 +58,7 @@ const picked = (uri: string) => ({
 beforeEach(() => {
   control.reset();
   getDocument.mockReset();
+  mockCopy = 'whole';
 });
 
 afterEach(() => jest.restoreAllMocks());
@@ -48,7 +68,7 @@ describe('on iOS', () => {
     const copy = 'file:///tmp/com.thesaturnlabs.echo-Inbox/echo-export.zip';
     getDocument.mockResolvedValue(picked(copy));
     expect(await pickBackupFile()).toEqual({ kind: 'picked', uri: copy });
-    // No second copy: expo-document-picker would make one in its own folder, on the main thread.
+    // No second copy: expo-document-picker would make one, on the main thread.
     expect(getDocument).toHaveBeenCalledWith({
       type: ['application/zip'],
       copyToCacheDirectory: false,
@@ -74,58 +94,37 @@ describe('on Android', () => {
     });
   });
 
-  it('copies the person’s file into ECHO’s cache, and never touches the original', async () => {
+  it('copies the person’s file into the folder every launch clears, and leaves theirs be', async () => {
     control.put(PROVIDER, BACKUP);
     getDocument.mockResolvedValue(picked(PROVIDER));
-    const result = await pickBackupFile();
-    if (result.kind !== 'picked') throw new Error(result.kind);
-    expect(result.uri.startsWith(`${FOLDER}/`)).toBe(true);
-    expect(control.get(result.uri)).toEqual(BACKUP);
+    expect(await pickBackupFile()).toEqual({ kind: 'picked', uri: COPY });
+    expect(control.get(COPY)).toEqual(BACKUP);
     expect(control.get(PROVIDER)).toEqual(BACKUP);
   });
 
-  it('reports a copy that fails, and clears what it left', async () => {
-    getDocument.mockImplementation(async () => {
-      leaveCopy();
-      return picked(PROVIDER);
-    });
+  it('reports a copy cut short, and deletes what it wrote', async () => {
+    control.put(PROVIDER, BACKUP);
+    mockCopy = 'cut short';
+    getDocument.mockResolvedValue(picked(PROVIDER));
     expect(await pickBackupFile()).toEqual({ kind: 'failed' });
-    expect(control.has(LEFTOVER)).toBe(false);
+    expect(control.has(COPY)).toBe(false);
+    expect(control.get(PROVIDER)).toEqual(BACKUP);
+  });
+
+  it('reports a provider that cannot be read', async () => {
+    getDocument.mockResolvedValue(picked(PROVIDER));
+    expect(await pickBackupFile()).toEqual({ kind: 'failed' });
   });
 });
 
-describe('pickBackupFile', () => {
+describe('either way', () => {
   it('says when the person closed it without choosing', async () => {
     getDocument.mockResolvedValue({ canceled: true, assets: null });
     expect(await pickBackupFile()).toEqual({ kind: 'canceled' });
   });
 
-  it('clears a copy a killed restore left behind before it opens', async () => {
-    leaveCopy();
-    getDocument.mockImplementation(async () => {
-      expect(control.has(LEFTOVER)).toBe(false);
-      return { canceled: true, assets: null };
-    });
-    await pickBackupFile();
-    expect(getDocument).toHaveBeenCalled();
-  });
-
-  it('reports a picker that fails, and clears a copy it could not finish', async () => {
-    getDocument.mockImplementation(async () => {
-      leaveCopy();
-      throw new Error('ENOSPC: the disk is full');
-    });
+  it('reports a picker that fails', async () => {
+    getDocument.mockRejectedValue(new Error('a picking is already in progress'));
     expect(await pickBackupFile()).toEqual({ kind: 'failed' });
-    expect(control.has(LEFTOVER)).toBe(false);
-  });
-});
-
-describe('discardPickerCopies', () => {
-  it('removes the folder the copies wait in, and is quiet when there is none', () => {
-    discardPickerCopies();
-    leaveCopy();
-    discardPickerCopies();
-    expect(control.has(LEFTOVER)).toBe(false);
-    expect(control.folders.has(FOLDER)).toBe(false);
   });
 });

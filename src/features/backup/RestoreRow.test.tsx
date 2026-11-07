@@ -21,14 +21,11 @@ import { installRuntime } from '@/storage/runtime';
 import { createTestRuntime, type TestRuntime } from '@/storage/testing/nodePorts';
 import { render } from '@/testing/render';
 
-import { discardPickerCopies, pickBackupFile, type PickResult } from './pickBackupFile';
+import { pickBackupFile, type PickResult } from './pickBackupFile';
 import { restoreCopy } from './restoreCopy';
 import { RestoreRow } from './RestoreRow';
 
-jest.mock('./pickBackupFile', () => ({
-  pickBackupFile: jest.fn(),
-  discardPickerCopies: jest.fn(),
-}));
+jest.mock('./pickBackupFile', () => ({ pickBackupFile: jest.fn() }));
 jest.mock('@/services/importJournal', () => {
   const actual = jest.requireActual('@/services/importJournal');
   return { ...actual, openBackup: jest.fn(actual.openBackup) };
@@ -344,8 +341,6 @@ describe('a file it will not restore', () => {
 
     expect(await screen.findByText(restoreCopy.failed[code])).toBeTruthy();
     expect(button(restoreCopy.chooseAnother)).toBeTruthy();
-    // Anything the picker left is cleared, whatever openBackup reached.
-    expect(discardPickerCopies).toHaveBeenCalled();
     await fireEvent.press(button(restoreCopy.close));
     expect(screen.queryByTestId('restore-sheet')).toBeNull();
   });

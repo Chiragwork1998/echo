@@ -8,7 +8,7 @@ import {
 } from '@/services/importJournal';
 import { useGate } from '@/state/gate';
 
-import { discardPickerCopies, pickBackupFile } from './pickBackupFile';
+import { pickBackupFile } from './pickBackupFile';
 import type { RestoreProblem } from './restoreCopy';
 
 export type RestoreState =
@@ -72,8 +72,7 @@ export function useRestore() {
     const opened = await openBackup(picked.uri);
     busy.current = false;
     if (!opened.ok) {
-      // openBackup deletes the copy it was given. This catches one it never reached.
-      discardPickerCopies();
+      // Refused, and openBackup has already deleted the copy it was given.
       show({ kind: 'failed', problem: opened.code });
       return;
     }
