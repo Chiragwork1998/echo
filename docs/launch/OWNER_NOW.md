@@ -5,13 +5,16 @@ sequence is in `launch-checklist.md`.
 
 ## Today
 
-1. **Google Play developer account** (play.google.com/console). US$25. Personal or organisation:
-   an organisation account (The Saturn Labs, needs a D-U-N-S number) is not subject to the 12 tester,
-   14 day rule; a personal account made after November 2023 is. Identity checks can take days, so
-   start now. Then invite the lead's publishing account if you want the lead to upload builds.
+1. **Google Play developer account** (play.google.com/console). US$25. Personal or organisation.
+   A personal account made after November 2023 must run a closed test with 12 testers for 14 days
+   before production. Third party guides say an organisation account (The Saturn Labs, needs a
+   D-U-N-S number) is exempt; Google's own help page does not say so either way. Identity checks can
+   take days, so start now. Builds are uploaded through EAS with a Play service account key; the lead
+   gives the steps once the account exists.
 2. **Payments profile** in Play Console (Settings, Payments profile): legal name, address, tax IDs,
    bank account. Subscriptions cannot be sold without it.
-3. **RevenueCat** (revenuecat.com, free to start): create the account and a project called ECHO. The lead gives you the exact screens to click once it exists.
+3. **RevenueCat** (revenuecat.com, free to start): create the account and a project called ECHO.
+   The lead gives you the exact screens to click once it exists.
 4. **OpenAI**: create a project called "ECHO voice", set a monthly budget with alerts at 50 and 80
    percent, and create a new API key in it. Rotate the key you pasted in chat on 2026-11-06.
 5. **Upstash** (so the free allowance is enforced across the server, not per machine): open
