@@ -170,17 +170,25 @@ describe('the install token', () => {
   });
 
   it('is sent once, and once more only after the server refuses it (withInstallToken)', async () => {
-    const tokens = { get: jest.fn(async () => 'ei1.a'), renew: jest.fn(async () => 'ei1.b') };
+    const tokens = {
+      get: jest.fn(async () => 'ei1.a'),
+      renew: jest.fn(async (): Promise<string | null> => 'ei1.b'),
+    };
     const attempt = jest.fn(async (token: string | null) =>
       token === 'ei1.a' ? 'refused' : 'done',
     );
     const refused = (result: string) => result === 'refused';
     await expect(withInstallToken(api, attempt, refused, tokens)).resolves.toBe('done');
     expect(attempt.mock.calls).toEqual([['ei1.a'], ['ei1.b']]);
-    // A renewal that gives nothing new is not sent again.
-    tokens.renew.mockResolvedValueOnce('ei1.a');
+    // No new token to be had: once more with the shared token alone, which an older server serves.
+    tokens.renew.mockResolvedValueOnce(null);
     attempt.mockClear();
-    await expect(withInstallToken(api, attempt, refused, tokens)).resolves.toBe('refused');
-    expect(attempt).toHaveBeenCalledTimes(1);
+    await expect(withInstallToken(api, attempt, refused, tokens)).resolves.toBe('done');
+    expect(attempt.mock.calls).toEqual([['ei1.a'], [null]]);
+    // Nothing was sent with a token, and none can be had: nothing more to try.
+    const none = { get: jest.fn(async () => null), renew: jest.fn(async () => null) };
+    const always = jest.fn(async () => 'refused');
+    await expect(withInstallToken(api, always, refused, none)).resolves.toBe('refused');
+    expect(always).toHaveBeenCalledTimes(1);
   });
 });

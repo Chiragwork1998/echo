@@ -49,9 +49,16 @@ describe('privacy rules', () => {
   // Pattern Cards are read there too, under their own consent. Live words (D-007) are the one thing
   // that also opens a socket, straight to OpenAI with a secret ECHO's server hands out. Those are the
   // only places a request or a socket is made. Every other file here stays offline, and adding one
-  // should be a decision, not an accident.
+  // should be a decision, not an accident. install.ts was added on 2026-11-08 (docs/PRODUCT_V1.md,
+  // Server and identity): it asks ECHO's server for this install's token with the install id, which
+  // holds no content, and nothing else.
   const SOCKET = ['src/services/liveTranscription.ts'];
-  const NETWORK = ['src/services/transcription.ts', 'src/services/patterns.ts', ...SOCKET];
+  const NETWORK = [
+    'src/services/transcription.ts',
+    'src/services/patterns.ts',
+    'src/services/install.ts',
+    ...SOCKET,
+  ];
   it.each(production.filter((path) => !NETWORK.includes(path)))(
     '%s makes no network call',
     (path) => {

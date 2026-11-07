@@ -1206,6 +1206,14 @@ describe('this install, and what the month allows', () => {
     expect(held.renew).toHaveBeenCalledTimes(1);
   });
 
+  it('sends with the shared token alone when a refused token cannot be replaced', async () => {
+    const held = tokens('ei1.old', null);
+    send.mockResolvedValueOnce(refused('install_invalid')).mockResolvedValueOnce(reply(200, good));
+    expect((await run({ tokens: held })).ok).toBe(true);
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(headersOf(1)).toEqual({ [TOKEN_HEADER]: TOKEN, Accept: 'application/json' });
+  });
+
   it('does not ask for a new token over a refusal that is not about the install', async () => {
     const held = tokens('ei1.x', 'ei1.y');
     send.mockResolvedValue(refused('unauthorized'));

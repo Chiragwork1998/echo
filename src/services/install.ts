@@ -200,6 +200,8 @@ export const installTokens: InstallTokens = {
 /**
  * One request made with this install's token, and made once more with a new token if the server
  * refused the first. `refused` says, from what the request returned, whether that is what happened.
+ * If no new token can be had, a request that carried one is made once more with the shared token
+ * alone, which a server that still takes it will serve.
  */
 export async function withInstallToken<T>(
   api: VoiceApi,
@@ -211,8 +213,8 @@ export async function withInstallToken<T>(
   const first = await attempt(token);
   if (!refused(first)) return first;
   const renewed = await tokens.renew(api, token).catch(() => null);
-  if (!renewed || renewed === token) return first;
-  return attempt(renewed);
+  if (renewed && renewed !== token) return attempt(renewed);
+  return token ? attempt(null) : first;
 }
 
 /** Tests only: forget the id and the token held in memory, so the next call reads the store again. */
