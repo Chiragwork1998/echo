@@ -22,102 +22,114 @@ ECHO is a private daily practice for the mind: breathe, speak, and see yourself 
 Four verbs. Each one is short, beautiful, and works offline except where words must be made from voice
 or read by a model.
 
-### 1. Breathe (new): heart coherence, led by sound, done with the eyes closed
+### 1. Breathe (new): a practice for what you are feeling
 
-The owner rejected a plain breathing timer: "QUALITY OR NOTHING. something which genuinely helps
-people." What genuinely helps, and what the best apps in this space (Coherence, HeartMath, Outliyr's
-Coherence) get right:
+The owner's direction (2026-11-08): "QUALITY OR NOTHING. something which genuinely helps people",
+"different types of breathing to solve for different things, if I have anxiety and so on", "think
+like Joe Dispenza and all these great people, Psycho-Cybernetics", and no heart measurement.
 
-- **Sound leads, not the screen.** A breath you follow by ear, with the eyes closed, settles the body.
-  A breath you follow by staring at a ring keeps the mind busy.
-- **Choose by need, not by technique.** Nobody wakes up wanting "4-7-8". They want to calm down, to
-  steady, to focus, to sleep.
-- **Slow breathing near five or six breaths a minute** makes the heart rate rise and fall in a smooth
-  wave with the breath (heart coherence, or resonance breathing). It is the best studied breathing
-  practice for stress and anxiety (Lehrer and Gevirtz, Frontiers in Psychology, 2014; Goessl, Curtiss
-  and Hofmann, Psychological Medicine, 2017).
-- **Breath plus a felt emotion.** HeartMath's Quick Coherence technique and Joe Dispenza's heart
-  practice share one move: breathe as if through the heart, then feel a real moment of gratitude or
-  love again. This is the bridge from Breathe to Become.
-- **Proof it works for you.** Each session ends with a one tap check of how you feel, so the person
-  sees in Patterns whether breathing helps them. A heart reading through the camera comes later (see
-  Heart, below).
+So Breathe is not a list of techniques. It asks one question, **"What are you feeling?"**, and answers
+with one short practice made for that feeling: a breath that shifts the body, and one move for the
+mind, each taken from people whose work shows it helps. Every practice credits its source in plain
+words. Nothing is quoted from a book, and no author has reviewed or endorsed ECHO.
 
-**What do you need?** Four needs, in this order, each a single row (name in Cormorant, one line in
-Inter). Default lengths below; lengths 3, 5, 10 and 20 minutes.
+**The library (1.0)**
 
-| Need | Line shown | Breath | Default | Free or Plus |
-|---|---|---|---|---|
-| Settle | When you feel wound up. Long sighs that bring you down fast. | Cyclic sighing: in through the nose 2.5 s, a second short in 1 s, a long out through the mouth 6 s | 3 min | Free |
-| Steady | Heart coherence. Slow, even breathing at your own pace. | Resonance breathing at the person's pace, default 5.5 breaths a minute, in 40 percent and out 60 percent of each breath, no holds | 5 min | Free at 3 and 5 min |
-| Focus | Before something hard. Four counts in, hold, out, hold. | Box: 4, 4, 4, 4 s | 3 min | Plus |
-| Sleep | To end the day. The out breath grows long and the screen goes dark. | In 4 s, out 8 s, and the screen fades to black over the first two minutes | 10 min | Plus |
+| Feeling | Practice | What happens | Source credited | Default | Free or Plus |
+|---|---|---|---|---|---|
+| Anxious | Settle | Cyclic sighing: two breaths in through the nose, one long breath out. At the end the voice asks you to name the feeling in one word, silently. | Balban and others, Stanford, 2023 (cyclic sighing); Dan Siegel (name it to tame it) | 3 min | Free |
+| Panicky | Ground | Long, slow out breaths, as if through a straw, and no holds. The voice helps your eyes find things around you and your feet find the floor, and reminds you that the wave passes. | Peter Levine and Deb Dana (orienting) | 3 min | Free |
+| Hurting | Soothe | A hand on your heart, slow breaths with a longer out breath, and three kind sentences to yourself. | Kristin Neff (the self-compassion break) | 4 min | Free |
+| Wanting to feel grateful | Heart | Heart coherence: about five and a half breaths a minute, at your own pace, as if through the heart. At the halfway bell, a moment of gratitude or love, felt again. | HeartMath Institute (Quick Coherence); Joe Dispenza (elevated emotion) | 5 min | Free at 3 and 5 min |
+| Angry | Cool | You do not have to answer yet. In through the nose, then a long out breath with a quiet hum, lips closed. | Maxwell Maltz, Psycho-Cybernetics (the delayed reaction); humming breath from yoga (bhramari) | 3 min | Plus |
+| Overwhelmed | One thing | Box breathing, four counts each. The voice helps you picture a small quiet room inside you, and rest there. | Mark Divine (box breathing); Maxwell Maltz, Psycho-Cybernetics (the quiet room) | 4 min | Plus |
+| Can't sleep | Sleep | Four rounds of in 4, hold 7, out 8. Then long out breaths while the voice fades and the screen goes dark. | Andrew Weil (4-7-8) | 10 min | Plus |
+| Low or flat | Lift | Sit up. Fuller breaths in and even breaths out, a little brighter each round. Then notice one small thing that is still okay. | Stephen Porges and Deb Dana (moving gently out of shutdown; glimmers) | 3 min | Plus |
+| Before something hard | Ready | Two minutes of box breathing. Then you remember a time you did something hard and it went well, until you can feel that feeling again now. | Maxwell Maltz, Psycho-Cybernetics (the winning feeling) | 4 min | Plus |
+| A craving or an urge | Ride the wave | Slow breaths while you watch the urge rise, peak and fall like a wave, without acting on it. | G. Alan Marlatt (urge surfing) | 3 min | Plus |
 
-Plus also opens any length, and **Your pace** for Steady: 4.5 to 6.5 breaths a minute in steps of 0.5,
-chosen by feel ("the pace that feels easy, never forced").
+Help for panic, anxiety and hurt is never behind a paywall. Plus also opens any length (3, 5, 10, 20
+minutes) and **Your pace** for Heart (4.5 to 6.5 breaths a minute in steps of 0.5, chosen by feel:
+"the pace that feels easy, never forced").
 
-**Before it starts** (one screen, then it gets out of the way): the need, the length, and sound on or
-off (haptics only). For Steady, three short lines explain what will happen, so nothing needs to be read
-with the eyes closed:
+Become has its own practice, **Arrive** (section 3): two minutes of Heart, then the theater of the
+mind. The voice helps you see yourself in one ordinary moment of today, being the person you are
+becoming: how you stand, what you say, how it feels, as if it is already true. Credited to Maxwell
+Maltz, Psycho-Cybernetics (the theater of the mind), and Joe Dispenza (mental rehearsal). Free.
 
-> Breathe slowly, as if through your heart.
-> Halfway, a soft bell. When you hear it, remember a moment you felt grateful, or loved, and let
-> yourself feel it again.
-> Close your eyes whenever you are ready.
+**The screens**
 
-**During:**
+- **What are you feeling?** The question in Cormorant on the plate, and the feelings as a quiet list,
+  each with its practice name and length in small type. No icons, no grid of cards.
+- **Before it starts:** the practice name, one sentence of what will happen, "Why this helps" (one or
+  two sentences and the source, opened with a tap), the length, and voice and sound on or off. Then
+  one Begin.
+- **During:**
+  - **Sound leads**, so it can be done with the eyes closed. A sea swell rises as you breathe in and
+    falls as you breathe out, under a quiet warm tone that lifts and settles with the breath. Holds are
+    a held hush. A soft bell opens and closes each practice and marks its moments. The sound is
+    beautiful and never harsh: no clicks at loops, no hiss, no sharp attack, peaks well below clipping.
+    It mixes with the person's own music.
+  - **A calm voice** speaks the few moments that need words. It is one voice for all of ECHO: warm,
+    slow, never sing song. In breathing it speaks at most once a minute and never over an in breath;
+    in guided imagery (Arrive, One thing, Ready) it may speak every 15 to 20 seconds while it guides.
+    The breath sound dips under it. The lines are ECHO's own words. The voice is synthetic, made once and bundled
+    so practices work offline, and You says so plainly. With voice off, the lines show as text before
+    the practice and at the moment, and the bells mark the moments.
+  - **Haptics** carry the rhythm with the sound off: a soft tick as each in breath begins, a softer one
+    as each out breath begins.
+  - **The screen recedes.** For the first breaths it shows the plate, with the sky breathing (the
+    scrim lifts a little on the in breath and settles on the out), a thin tide line of light low on the
+    screen that rises and falls with the breath, and one word ("Breathe in", "In again", "Hold",
+    "Breathe out", then "In", "Again", "Hold", "Out" after two rounds). After about thirty seconds the
+    word goes and the screen dims almost to black, keeping only the faint tide line. A tap brings it
+    back with a quiet End. No orb, no ring, no counter, no timer.
+  - The screen stays awake. Visuals and haptics follow the audio's own clock. Reduce Motion: the tide
+    line and scrim change opacity only. Screen readers hear the first two rounds, then the sound
+    carries it.
+  - On a person's first practice only: "If you feel dizzy or unwell, stop and breathe normally."
+- **After:**
+  - "How do you feel now?" Calmer, About the same, Still unsettled. One tap, or skip. Kept encrypted
+    on the phone as counts only. After Ground or Soothe, "Still unsettled" also offers the existing
+    support panel ("If you are struggling, talk to someone now").
+  - Then "Begin your echo" (straight into today's journal, from body to words), "One more minute", and
+    "Done".
 
-- **Sound is the guide.** A sea swell that rises as you breathe in and falls as you breathe out, under
-  a quiet warm tone that lifts on the in breath and settles on the out breath. Holds are a held hush. A
-  soft bell opens and closes the session, and Steady has one more bell halfway. The sound must be
-  beautiful and never harsh: no clicks at loops, no hiss, no sharp attack, peaks well below clipping. It
-  mixes with the person's own music if they are playing some.
-- **Haptics carry it with sound off:** a soft tick as each in breath begins, a softer one as each out
-  breath begins.
-- **The screen recedes.** For the first breaths: the plate, the sky breathing (the scrim lifts a
-  little on the in breath and settles on the out), a thin tide line of light low on the screen that
-  rises on the in breath and falls on the out, and one word ("Breathe in", "In again", "Hold",
-  "Breathe out", shortening to "In", "Again", "Hold", "Out" after two rounds). After about thirty
-  seconds the word goes, and the screen dims almost to black, keeping only the faint tide line. A tap
-  brings everything back with a quiet End.
-- No orb, no ring, no counter, no timer on screen.
-- The screen stays awake. Reduce Motion: the tide line and the scrim change opacity only. Screen
-  readers hear the phase changes for the first two rounds, then silence, as the sound carries it.
-- Visuals and haptics follow the audio's own clock, so they never drift from the sound.
-- Safety line on the first session only: "If you feel dizzy, breathe normally for a while."
+Never claim a practice treats anything. It is "for when you feel anxious", not "for anxiety".
 
-**After:**
+**A practice is data.** Engine and content are built separately against this shape (TypeScript, in
+`src/features/breathe/types.ts`):
 
-- "How do you feel now?" with three quiet choices: Calmer, About the same, Still unsettled. One tap,
-  or skip. Kept on the phone, encrypted, as counts only.
-- Then "Begin your echo" (straight into today's journal, from body to words), "One more minute", and
-  "Done".
+```ts
+type Pattern =
+  | { kind: 'sigh'; inhale: number; topUp: number; exhale: number }
+  | { kind: 'paced'; inhale: number; holdIn?: number; exhale: number; holdOut?: number; hum?: boolean }
+  | { kind: 'heart' }; // the person's own pace, in 40 percent and out 60 percent
+type Step =
+  | { kind: 'breath'; pattern: Pattern; seconds: number; stretch?: boolean } // stretch takes up a longer chosen length
+  | { kind: 'voice'; line: string; text: string } // spoken at the start of the next out breath; the breath goes on underneath
+  | { kind: 'bell' }
+  | { kind: 'fade'; seconds: number }; // the screen goes to black (Sleep)
+type Practice = {
+  id: string;
+  feeling: string; // "Anxious"
+  name: string; // "Settle"
+  line: string; // one sentence shown before it starts
+  why: string; // why this helps, one or two sentences
+  source: string; // "Kristin Neff, the self-compassion break"
+  minutes: number; // default length
+  free: boolean | { minutes: number[] };
+  steps: Step[];
+  afterUnsettled?: 'support';
+};
+```
 
-**Why it works** (a quiet link on the need's row, one or two sentences each, never a promise):
+**Entry points:** Today ("Breathe first", a sibling of "Write instead"), Become's Arrive, and pattern
+cards whose practice is about breath. The Night loop (D-009) plays behind Breathe and Rehearse, as it
+does behind Today and the daily session.
 
-- Settle: "In a 2023 Stanford study, five minutes a day of cyclic sighing lifted mood more than
-  mindfulness meditation (Balban and others, Cell Reports Medicine)."
-- Steady: "Near five or six breaths a minute, your heart rate rises and falls with each breath in a
-  smooth wave. Practising this is linked with less stress and anxiety (Goessl and others,
-  Psychological Medicine, 2017)."
-- Focus: "Even counts give your attention one simple thing to hold."
-- Sleep: "Long, slow out breaths favour the body's rest response (Laborde and others, Neuroscience and
-  Biobehavioral Reviews, 2022)."
-
-**Entry points:** Today ("Breathe first", a sibling of "Write instead"); Become's "Arrive first" (one
-minute of Steady, haptics and visuals, sound only if the person turned sound on); pattern cards whose
-practice is about breath.
-
-**In Patterns** (the design pass): breath sessions this week, and how often the person felt calmer
-after. Counts only.
-
-### Heart (next, not in the 1.0 build unless validated)
-
-The camera reads the pulse from a fingertip on the lens with the torch on. Nothing is recorded, and no
-image leaves the phone. It shows a live heart wave during Steady, a coherence score after, and a
-resonance pace finder that tries 4.5 to 6.5 breaths a minute and keeps the one that makes the biggest
-heart wave. It ships only once it reads within a few beats a minute of a chest strap or watch on the
-owner's phone. Until then it is built behind a flag that is off in release builds.
+**In Patterns** (the design pass): practices this week, and how often the person felt calmer after.
+Counts only.
 
 ### 2. Speak (exists)
 
@@ -133,8 +145,8 @@ or names him in the product's copy, except the existing credited lens on pattern
 - Mornings are 4:00 to 11:59, local time.
 - Today's question in the morning is "Who will you be today?" in place of "Where are you, really?".
   Begin works exactly as it does in the evening and saves the entry with `promptId: 'become'`.
-- Before the morning session an optional one minute Steady breath ("Arrive first"), skippable with a tap,
-  free.
+- Before the morning session, Arrive (section 1): two minutes of Heart, then the theater of the mind,
+  skippable with a tap, free.
 - After Reflect on a morning entry, before Completion, the Rehearse moment (about 60 seconds, free):
   the person's own words come back over the sky one phrase at a time (at most the first 240
   characters, whole sentences). Then "Now feel it, as if it is already true." stays while the sky
@@ -174,7 +186,7 @@ One subscription. Prices live in the store and change without a build. Never wri
 | Recording your voice | Always, and always kept | Always |
 | Live words, Tidy my words | | Yes |
 | Pattern cards | First reading free | Every reading |
-| Breathe | Settle, and Steady at 3 and 5 minutes | Every need, any length, your own pace |
+| Breathe | Settle, Ground, Soothe, Heart at 3 and 5 minutes, and Become's Arrive | Every practice, any length, your own pace |
 | Become, Echoes, search, export, lock, reminders | Yes | Yes |
 
 When the free minutes run out mid month the recording is still kept, safe and encrypted, exactly as it
@@ -202,7 +214,7 @@ Paywall copy (working copy, the lead's):
 - Lead: "The whole practice, with nothing held back."
 - Pattern cards: "ECHO reads your entries and names what keeps returning, in your own words."
 - Unlimited voice: "Speak for as long as you need. Free includes 60 minutes a month."
-- Every breath: "Focus and Sleep, any length, and Steady at your own pace."
+- Every practice: "Ten practices for what you are feeling, at any length."
 - Live words and Tidy: "Watch your words arrive as you speak, or have them tidied."
 - Plans come from the store. Yearly is selected and shows its trial: "7 days free, then {price} a
   year". Monthly: "{price} a month".
