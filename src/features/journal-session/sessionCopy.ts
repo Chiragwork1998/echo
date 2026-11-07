@@ -47,6 +47,17 @@ export const sessionCopy = {
         'Something went wrong while sending. Your recording is safe, and trying again may work.',
       audio: 'ECHO couldn’t open this recording just now. It’s safe on this phone.',
       lost: 'One part of what you said couldn’t be turned into words. The rest is here.',
+      /** ECHO Plus's fair use for the month (docs/PRODUCT_V1.md). Rare, and said plainly. */
+      fairUse:
+        'You’ve used this month’s voice into words. Your recording is safe, and it can become words next month.',
+    },
+    /**
+     * The free month is used (docs/PRODUCT_V1.md, ECHO Plus). Said under `untranscribed`, so the note
+     * reads as one: the recording is safe, and why it is not words yet. Nothing was sent or spent.
+     */
+    allowance: {
+      line: 'This month’s 60 free minutes of voice into words are used. It can become words with ECHO Plus, or next month.',
+      plus: 'Get ECHO Plus',
     },
     unavailable:
       'Turning your voice into words isn’t available right now. Your recording is safe, and you can write instead.',

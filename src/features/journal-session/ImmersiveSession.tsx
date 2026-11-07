@@ -412,7 +412,9 @@ export function ImmersiveSession({
                   session.writeInstead();
                 }}
                 onRetry={session.retryTranscription}
+                onPlus={session.getPlus}
                 line={session.speakLine}
+                detail={session.speakDetail}
               />
             )}
           </PaperProvider>

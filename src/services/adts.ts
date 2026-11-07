@@ -104,6 +104,8 @@ export type AdtsPlan = {
   ranges: PieceRange[];
   /** The sound the end of one piece and the start of the next both hold: whole frames. */
   overlapSeconds: number;
+  /** The sound in every frame followed, once each: the take's length, overlaps not counted twice. */
+  seconds: number;
 };
 
 /**
@@ -177,5 +179,5 @@ export async function planAdtsPieces(
     start = before.start;
   }
   ranges.push({ start, end: size });
-  return { ranges, overlapSeconds: overlap * frameSeconds };
+  return { ranges, overlapSeconds: overlap * frameSeconds, seconds: seen * frameSeconds };
 }

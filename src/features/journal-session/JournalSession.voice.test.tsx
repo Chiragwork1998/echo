@@ -66,6 +66,12 @@ jest.mock('@/services/transcription', () => ({
   ...jest.requireActual('@/services/transcription'),
   transcribeEntryAudio: jest.fn(),
 }));
+// The Plus check: whether the person has Plus once the paywall has had its say.
+const mockRequirePlus = jest.fn((_feature: string) => false);
+jest.mock('@/services/plus', () => ({
+  ...jest.requireActual('@/services/plus'),
+  useRequirePlus: () => mockRequirePlus,
+}));
 
 const send = jest.mocked(transcribeEntryAudio);
 const alert = jest.spyOn(Alert, 'alert');
@@ -230,6 +236,67 @@ describe('when the words do not come', () => {
       expect(screen.getByRole('button', { name: sessionCopy.speak.writeInstead })).toBeTruthy();
     },
   );
+});
+
+describe('when this month’s free minutes are used', () => {
+  beforeEach(allowed);
+  const { allowance } = sessionCopy.transcribe;
+
+  it('says the recording is safe, says why it is not words yet, and offers Plus or writing', async () => {
+    send.mockResolvedValueOnce(failed('allowance_used'));
+    await stopRecording();
+    expect(await screen.findByText(sessionCopy.transcribe.untranscribed)).toBeTruthy();
+    expect(screen.getByText(allowance.line)).toBeTruthy();
+    expect(screen.getByRole('button', { name: allowance.plus })).toBeTruthy();
+    expect(screen.getByRole('button', { name: sessionCopy.speak.writeInstead })).toBeTruthy();
+    // Trying again would only be refused again: there is no Try again.
+    expect(screen.queryByRole('button', { name: sessionCopy.errors.retry })).toBeNull();
+    expect(allowance.line).toMatch(/60 free minutes/);
+    expect(allowance.line).toMatch(/ECHO Plus, or next month/);
+  });
+
+  it('asks the Plus check for unlimited voice, and sends nothing while it says no', async () => {
+    send.mockResolvedValueOnce(failed('allowance_used'));
+    await stopRecording();
+    await fireEvent.press(await screen.findByRole('button', { name: allowance.plus }));
+    expect(mockRequirePlus).toHaveBeenCalledWith('voice-unlimited');
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(allowance.line)).toBeTruthy();
+  });
+
+  it('keeps the recording waiting, like an offline take, and sends it once Plus says yes', async () => {
+    send.mockResolvedValueOnce(failed('allowance_used'));
+    await stopRecording();
+    await screen.findByRole('button', { name: allowance.plus });
+    mockRequirePlus.mockReturnValueOnce(true);
+    send.mockResolvedValueOnce(said('Words at last.'));
+    await fireEvent.press(screen.getByRole('button', { name: allowance.plus }));
+    await waitFor(() => expect(field().props.value).toBe('Words at last.'));
+    expect(send).toHaveBeenCalledTimes(2);
+    // The same recording, sent again.
+    expect(send.mock.calls[1]![0]).toBe(send.mock.calls[0]![0]);
+  });
+
+  it('lets the person write instead, and sends nothing more', async () => {
+    send.mockResolvedValueOnce(failed('allowance_used'));
+    await stopRecording();
+    await fireEvent.press(
+      await screen.findByRole('button', { name: sessionCopy.speak.writeInstead }),
+    );
+    await fireEvent.changeText(field(), 'Written, while the recording waits.');
+    expect(field().props.value).toBe('Written, while the recording waits.');
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(voice.cancel).not.toHaveBeenCalled();
+  });
+
+  it('says Plus’s monthly fair use plainly, with no Plus to offer and no Try again', async () => {
+    send.mockResolvedValueOnce(failed('fair_use'));
+    await stopRecording();
+    expect(await screen.findByText(sessionCopy.transcribe.failed.fairUse)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: allowance.plus })).toBeNull();
+    expect(screen.queryByRole('button', { name: sessionCopy.errors.retry })).toBeNull();
+    expect(screen.getByRole('button', { name: sessionCopy.speak.writeInstead })).toBeTruthy();
+  });
 });
 
 describe('speaking again after a recording that cannot become words', () => {

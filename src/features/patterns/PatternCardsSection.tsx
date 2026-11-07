@@ -5,6 +5,7 @@ import type { EntrySummary } from '@/features/journal';
 import { Heading, Notice, OnPlate, Quiet, Row, Section } from '@/features/tab-pages/parts';
 import { onPlate, supporting } from '@/features/tab-pages/textStyles';
 import { tokens } from '@/design/tokens';
+import { useRequirePlus } from '@/services/plus';
 
 import { entriesToSend } from './gatherEntries';
 import { ConsentPanel } from './ConsentPanel';
@@ -41,6 +42,10 @@ function noticeText(notice: CardsNotice, hasCards: boolean): string | null {
           return `${words.offline}${kept}`;
         case 'not_configured':
           return `${words.notConfigured}${kept}`;
+        case 'allowance_used':
+          return `${words.allowanceUsed}${kept}`;
+        case 'reading_cap':
+          return `${words.readingCap}${kept}`;
         case 'no_entries':
           return `${words.noEntries}${kept}`;
         default:
@@ -58,20 +63,34 @@ function noticeText(notice: CardsNotice, hasCards: boolean): string | null {
  */
 export function PatternCardsSection({ entries }: { entries: readonly EntrySummary[] }) {
   const cards = usePatternCards(entries);
+  const requirePlus = useRequirePlus();
   const { saved, notice } = cards;
   const hasCards = Boolean(saved);
 
   if (!cards.loaded) return null;
 
   const text = notice ? noticeText(notice, hasCards) : null;
-  const retry = notice?.kind === 'error' && notice.code !== 'not_configured';
+  const code = notice?.kind === 'error' ? notice.code : null;
+  // Trying again helps with most failures. A used free reading is answered by Plus, and a used month
+  // and a build without a server by nothing the person can do here.
+  const retry =
+    code !== null && !['not_configured', 'allowance_used', 'reading_cap'].includes(code);
+  // The paywall is the Plus check's to show. With Plus, the reading is asked for again at once.
+  const getPlus = () => {
+    if (requirePlus('patterns')) cards.read();
+  };
 
   return (
     <View style={styles.section}>
       <Heading>{words.title}</Heading>
 
       {notice?.kind === 'support' && <SupportPanel onClose={cards.dismissNotice} />}
-      {text && <Notice message={text} onAction={retry ? cards.read : undefined} />}
+      {text &&
+        (code === 'allowance_used' ? (
+          <Notice message={text} actionLabel={words.getPlus} onAction={getPlus} />
+        ) : (
+          <Notice message={text} onAction={retry ? cards.read : undefined} />
+        ))}
 
       {cards.asking && (
         <ConsentPanel

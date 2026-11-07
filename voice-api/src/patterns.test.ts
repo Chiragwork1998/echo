@@ -410,5 +410,5 @@ test('the route reports a failed model call with a code and nothing else', async
   globalThis.fetch = (async () => new Response('{}', { status: 503 })) as typeof fetch;
   const response = await POST(asked(sendable()));
   assert.equal(response.status, 502);
-  assert.deepEqual(await response.json(), { code: 'upstream', retryable: true });
+  assert.deepEqual(await response.json(), { error: 'upstream', code: 'upstream', retryable: true });
 });

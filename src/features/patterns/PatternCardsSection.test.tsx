@@ -29,6 +29,7 @@ jest.mock('@/services/patterns', () => ({
   readPatternCards: jest.fn(),
 }));
 jest.mock('./readingStore');
+// The Plus check: whether the person has Plus once the paywall has had its say.
 jest.mock('./deviceRegion', () => ({ deviceRegion: () => 'IN' }));
 
 const read = jest.mocked(readPatternCards);

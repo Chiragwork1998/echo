@@ -27,7 +27,8 @@ export type PatternCard = {
   name: string;
   noticed: string;
   evidence: { quote: string; date: string }[];
-  lens: { text: string; source: string };
+  /** `id` is the lens in src/lenses.ts, which a report of the card names (api/report.ts). */
+  lens: { id: LensId; text: string; source: string };
   practice: string;
   question: string;
 };
@@ -319,7 +320,7 @@ export function shapeCard(raw: unknown, entries: readonly Entry[]): PatternCard 
     name,
     noticed,
     evidence,
-    lens: { text: lens, source: lensSource(card.lens_id as LensId) },
+    lens: { id: card.lens_id as LensId, text: lens, source: lensSource(card.lens_id as LensId) },
     practice,
     question,
   };

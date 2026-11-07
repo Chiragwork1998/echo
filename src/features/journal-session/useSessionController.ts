@@ -64,6 +64,7 @@ const CAN_START: readonly SpeakView[] = [
   'untranscribed',
   'transcribe_failed',
   'transcribe_unavailable',
+  'transcribe_allowance',
   'failed',
 ];
 
@@ -92,6 +93,11 @@ function failureLine(code: TranscriptionFailure): string {
       return lines.unexpected;
     case 'lost':
       return lines.lost;
+    case 'fair_use':
+      return lines.fairUse;
+    // The note's first line. Its second, about the free month, is `speakDetail`.
+    case 'allowance_used':
+      return sessionCopy.transcribe.untranscribed;
     case 'unauthorized':
     case 'not_configured':
     case 'unavailable':
@@ -160,9 +166,9 @@ export function useSessionController({ variant, initialMode, draftId }: SessionO
   });
   const voice = useVoiceRecorder(draft);
   const transcription = useTranscription(draft);
+  const requirePlus = useRequirePlus();
   const voiceChoice = useVoiceStatus();
   const wordsShown = usePreferences((state) => state.wordsShown);
-  const requirePlus = useRequirePlus();
   const liveWords = useLiveWords();
   // The take being recorded that is also being heard live, and the question that Show words asks.
   const liveTake = useRef<LiveHandle | null>(null);
@@ -478,6 +484,8 @@ export function useSessionController({ variant, initialMode, draftId }: SessionO
     const words = transcription.phase;
     if (words.kind === 'listening') return 'listening';
     if (words.kind === 'failed') {
+      // The free month is used: the recording waits, sealed, as an offline take does.
+      if (words.code === 'allowance_used') return 'transcribe_allowance';
       return UNAVAILABLE_CODES.includes(words.code)
         ? 'transcribe_unavailable'
         : 'transcribe_failed';
@@ -493,6 +501,18 @@ export function useSessionController({ variant, initialMode, draftId }: SessionO
     if (words.kind === 'failed') return failureLine(words.code);
     return null;
   })();
+
+  /** A second line under the note, for the one state that needs it: why the words have not come. */
+  const speakDetail =
+    speakView === 'transcribe_allowance' ? sessionCopy.transcribe.allowance.line : null;
+
+  /**
+   * ECHO Plus, from the note that says the free month is used. The paywall is the Plus check's to
+   * show. If the person has Plus once it returns, the recording that is waiting is sent at once.
+   */
+  const getPlus = () => {
+    if (requirePlus('voice-unlimited')) transcription.retry();
+  };
 
   // A live take that broke is said calmly and stays on screen until its words arrive some other way.
   const liveNote = wordsShown && liveWords.failed ? sessionCopy.liveStopped : null;
@@ -527,6 +547,10 @@ export function useSessionController({ variant, initialMode, draftId }: SessionO
         : null),
     /** The sentence for the transcription states that have actions. */
     speakLine,
+    /** One more line under it, or null. */
+    speakDetail,
+    /** "Get ECHO Plus", from the note that says the free month is used. */
+    getPlus,
     /** Counts the times words have landed, so they can be let in softly. */
     arrival: transcription.arrival,
     consentOpen: transcription.phase.kind === 'consent' || liveAsk !== null,

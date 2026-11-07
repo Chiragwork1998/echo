@@ -6,8 +6,16 @@ import type { JournalResult, PlayableAudio } from '@/features/journal/types';
 import { usePreferences, voiceStatus, type VoiceStatus } from '@/state/preferences';
 
 import { planAdtsPieces } from './adts';
+import { installTokens, withInstallToken, type InstallTokens } from './install';
 import { joinSpokenPieces } from './joinWords';
-import { voiceOrigin } from './voiceApi';
+import {
+  authHeaders,
+  installRefused,
+  refusalOf,
+  voiceOrigin,
+  type ServerRefusal,
+  type VoiceApi,
+} from './voiceApi';
 import { parseWav, planPieces, wavPiece } from './wav';
 
 // Turns a sealed recording into text through ECHO's voice server (docs/OWNER_DECISIONS.md, D-005,
@@ -20,8 +28,15 @@ export type TranscriptionErrorCode =
   | 'consent_required'
   /** No address or token, an unsafe address, or the server says it has no key. */
   | 'not_configured'
-  /** The server did not accept the token. */
+  /** The server did not accept the token, even a new one for this install. */
   | 'unauthorized'
+  /**
+   * This month's free voice into words is used. Nothing was spent: the recording stays, sealed, and
+   * can become words with ECHO Plus or next month, exactly like a take that was made offline.
+   */
+  | 'allowance_used'
+  /** ECHO Plus's fair use of voice into words for the month is used. The recording stays for next month. */
+  | 'fair_use'
   /** The phone reports that it has no connection. Said only when that is true. */
   | 'offline'
   /** Something went wrong in sending that is not known to be the network. */
@@ -136,11 +151,14 @@ const responseSchema = z.object({
   seconds: z.number().nullable().optional(),
 });
 const refineSchema = z.object({ text: z.string() });
-const failureSchema = z.object({ code: z.string().optional(), retryable: z.boolean().optional() });
 
 /** From the status alone when the body says nothing useful, and from the server's code when it does. */
-function failureFrom(status: number, body: z.infer<typeof failureSchema> | null) {
-  const code = body?.code;
+function failureFrom(status: number, refusal: ServerRefusal) {
+  const code = refusal.error;
+  // Refused before anything was spent. Plus's is the fair use cap; anyone else's is the free month.
+  if (status === 402 && code === 'allowance_used') {
+    return fail(refusal.plan === 'plus' ? 'fair_use' : 'allowance_used');
+  }
   if (status === 401 || status === 403) return fail('unauthorized');
   if (status === 413) return fail('too_long');
   if (status === 415) return fail('unsupported');
@@ -148,7 +166,7 @@ function failureFrom(status: number, body: z.infer<typeof failureSchema> | null)
   if (status === 429) return fail('rate_limited', true);
   if (status === 503 && code === 'not_configured') return fail('not_configured');
   if (status === 400) return fail('unsupported');
-  return fail('server', status >= 500 || body?.retryable === true);
+  return fail('server', status >= 500 || refusal.retryable === true);
 }
 
 export type OpenAudio = (entryId: string) => Promise<JournalResult<PlayableAudio>>;
@@ -182,7 +200,17 @@ export type TranscribeDeps = {
   style: () => WordsStyle;
   /** Whether the phone reports a connection. null when that cannot be known. */
   online: () => Promise<boolean | null>;
+  /** This install's token for the server, and a new one when it is refused (install.ts). */
+  tokens: InstallTokens;
+  /**
+   * What this install has used of the month's voice into words, asked before a take that goes in
+   * pieces. null when it cannot be known, and the server then decides piece by piece.
+   */
+  allowance: (api: VoiceApi, deps: AllowanceDeps) => Promise<VoiceAllowance | null>;
 };
+
+export type VoiceAllowance = { plan: 'free' | 'plus'; usedSeconds: number; limitSeconds: number };
+type AllowanceDeps = Pick<TranscribeDeps, 'fetch' | 'tokens'>;
 
 type FileSystem = typeof import('expo-file-system');
 // Loaded here so that a screen that merely imports this service works where the native module is
@@ -234,7 +262,70 @@ const defaults = (): TranscribeDeps => ({
   pieceSeconds: PIECE_SECONDS,
   style: () => (usePreferences.getState().tidyWords ? 'tidy' : 'exact'),
   online: connected,
+  tokens: installTokens,
+  allowance: askAllowance,
 });
+
+export const ALLOWANCE_PATH = '/api/allowance';
+const ALLOWANCE_TIMEOUT_MS = 10_000;
+
+const allowanceSchema = z.object({
+  plan: z.enum(['free', 'plus']),
+  voice: z.object({ usedSeconds: z.number(), limitSeconds: z.number() }),
+});
+
+/** The month so far, from the server. null on anything else: an older server, no connection, a build with no install token. */
+export async function askAllowance(
+  api: VoiceApi,
+  deps: AllowanceDeps,
+): Promise<VoiceAllowance | null> {
+  const once = async (installToken: string | null) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), ALLOWANCE_TIMEOUT_MS);
+    try {
+      const response = await deps.fetch(`${api.url}${ALLOWANCE_PATH}`, {
+        method: 'GET',
+        headers: { ...authHeaders(api, installToken), Accept: 'application/json' },
+        signal: controller.signal,
+      });
+      return {
+        status: response.status,
+        body: (await response.json().catch(() => null)) as unknown,
+      };
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  try {
+    const { status, body } = await withInstallToken(
+      api,
+      once,
+      (answer) => installRefused(answer.status, refusalOf(answer.body)),
+      deps.tokens,
+    );
+    if (status !== 200) return null;
+    const parsed = allowanceSchema.safeParse(body);
+    return parsed.success ? { plan: parsed.data.plan, ...parsed.data.voice } : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A take sent in pieces is all or nothing: if one piece were refused, the pieces before it would have
+ * been spent for no words. So before the first is sent, the take is measured against what is left of
+ * the month, and one that will not fit is kept whole, sealed, and nothing is sent. One second is kept
+ * in hand for how the server rounds each piece. If the month cannot be known, the server decides.
+ */
+async function holdBack(
+  api: VoiceApi,
+  deps: TranscribeDeps,
+  seconds: number,
+): Promise<TranscriptionResult<never> | null> {
+  const month = await deps.allowance(api, deps).catch(() => null);
+  if (!month || month.usedSeconds + Math.ceil(seconds) + 1 <= month.limitSeconds) return null;
+  return fail(month.plan === 'plus' ? 'fair_use' : 'allowance_used');
+}
 
 /** Bytes in memory that Expo's fetch can send as a file: it reads a part through bytes(). */
 export function bytesPart(bytes: Uint8Array, name: string, type: string): Blob {
@@ -253,8 +344,10 @@ export async function transcribeEntryAudio(
 ): Promise<TranscriptionResult<Transcript>> {
   const deps = { ...defaults(), ...overrides };
   if (deps.status() !== 'allowed') return fail('consent_required');
-  const endpoint = voiceEndpoint(deps.url);
-  if (!endpoint || !deps.token) return fail('not_configured');
+  const origin = voiceOrigin(deps.url);
+  if (!origin || !deps.token) return fail('not_configured');
+  const api: VoiceApi = { url: origin, token: deps.token };
+  const endpoint = `${origin}${TRANSCRIBE_PATH}`;
   if (options.signal?.aborted) return fail('cancelled');
 
   let opened: JournalResult<PlayableAudio>;
@@ -270,7 +363,7 @@ export async function transcribeEntryAudio(
   }
   const audio = opened.value;
   try {
-    return await upload(audio.uri, endpoint, deps.token, deps, options.signal);
+    return await upload(audio.uri, endpoint, api, deps, options.signal);
   } finally {
     try {
       audio.release();
@@ -289,7 +382,7 @@ const plain = ({ raw: _raw, ...transcript }: Sent): Transcript => transcript;
 async function upload(
   uri: string,
   endpoint: string,
-  token: string,
+  api: VoiceApi,
   deps: TranscribeDeps,
   outside: AbortSignal | undefined,
 ): Promise<TranscriptionResult<Transcript>> {
@@ -297,7 +390,7 @@ async function upload(
   if (!TYPES[extension]) return fail('unsupported');
   const bytes = deps.sizeOf(uri);
   const whole = async (): Promise<TranscriptionResult<Transcript>> => {
-    const sent = await post(endpoint, token, deps, outside, () => ({
+    const sent = await post(endpoint, api, deps, outside, () => ({
       value: deps.filePart(uri),
       name: `speech.${extension}`,
     }));
@@ -308,10 +401,10 @@ async function upload(
   // is told now rather than after sending most of it.
   if (bytes !== null) {
     if (extension === 'aac' && bytes > AAC_WHOLE_BELOW_BYTES) {
-      return uploadAac(uri, bytes, endpoint, token, deps, outside, whole);
+      return uploadAac(uri, bytes, endpoint, api, deps, outside, whole);
     }
     if (bytes > MAX_UPLOAD_BYTES) {
-      if (extension === 'wav') return uploadWavInPieces(uri, bytes, endpoint, token, deps, outside);
+      if (extension === 'wav') return uploadWavInPieces(uri, bytes, endpoint, api, deps, outside);
       return fail('too_long');
     }
   }
@@ -340,7 +433,7 @@ async function uploadWavInPieces(
   uri: string,
   size: number,
   endpoint: string,
-  token: string,
+  api: VoiceApi,
   deps: TranscribeDeps,
   outside: AbortSignal | undefined,
 ): Promise<TranscriptionResult<Transcript>> {
@@ -356,6 +449,9 @@ async function uploadWavInPieces(
   } catch {
     return fail('audio_unavailable', true);
   }
+  // Every sample is sent once: the pieces do not overlap.
+  const held = await holdBack(api, deps, info.dataBytes / (info.sampleRate * info.channels * 2));
+  if (held) return held;
   return sendPieces(
     {
       count: ranges.length,
@@ -368,7 +464,7 @@ async function uploadWavInPieces(
       overlapSeconds: 0,
     },
     endpoint,
-    token,
+    api,
     deps,
     outside,
   );
@@ -385,7 +481,7 @@ async function uploadAac(
   uri: string,
   size: number,
   endpoint: string,
-  token: string,
+  api: VoiceApi,
   deps: TranscribeDeps,
   outside: AbortSignal | undefined,
   whole: () => Promise<TranscriptionResult<Transcript>>,
@@ -408,6 +504,9 @@ async function uploadAac(
   if (!plan) return size > MAX_UPLOAD_BYTES ? fail('too_long') : whole();
   const { ranges, overlapSeconds } = plan;
   if (ranges.length === 1) return whole();
+  // The server counts each piece whole, so the sound two pieces share is counted twice.
+  const held = await holdBack(api, deps, plan.seconds + overlapSeconds * (ranges.length - 1));
+  if (held) return held;
   return sendPieces(
     {
       count: ranges.length,
@@ -420,7 +519,7 @@ async function uploadAac(
       overlapSeconds,
     },
     endpoint,
-    token,
+    api,
     deps,
     outside,
   );
@@ -455,7 +554,7 @@ async function romaniseAgain(
 async function sendPieces(
   plan: PiecePlan,
   endpoint: string,
-  token: string,
+  api: VoiceApi,
   deps: TranscribeDeps,
   outside: AbortSignal | undefined,
 ): Promise<TranscriptionResult<Transcript>> {
@@ -493,7 +592,7 @@ async function sendPieces(
       const ask = () =>
         post(
           endpoint,
-          token,
+          api,
           { ...deps, timeoutMs },
           stop.signal,
           () => ({ value: bytesPart(bytes, plan.name, plan.type), name: plan.name }),
@@ -558,15 +657,43 @@ async function sendPieces(
   };
 }
 
-/** One request, with its own timeout, and a failure named for what it was. */
+/** What one attempt brought back, and whether the server refused this install's token. */
+type Attempt<T> = { result: TranscriptionResult<T>; refusedInstall: boolean };
+const settled = <T>(result: TranscriptionResult<T>): Attempt<T> => ({
+  result,
+  refusedInstall: false,
+});
+
+/**
+ * One request, with its own timeout, and a failure named for what it was. It carries this install's
+ * token, and if the server refuses the token it is sent once more with a new one.
+ */
 async function post(
   endpoint: string,
-  token: string,
+  api: VoiceApi,
   deps: TranscribeDeps,
   outside: AbortSignal | undefined,
   part: () => Part,
   style: WordsStyle = deps.style(),
 ): Promise<TranscriptionResult<Sent>> {
+  const { result } = await withInstallToken(
+    api,
+    (installToken) => postOnce(endpoint, api, installToken, deps, outside, part, style),
+    (attempt) => attempt.refusedInstall,
+    deps.tokens,
+  );
+  return result;
+}
+
+async function postOnce(
+  endpoint: string,
+  api: VoiceApi,
+  installToken: string | null,
+  deps: TranscribeDeps,
+  outside: AbortSignal | undefined,
+  part: () => Part,
+  style: WordsStyle,
+): Promise<Attempt<Sent>> {
   // A request that cannot be built has not met the network, and is not reported as the network.
   let form: FormData;
   try {
@@ -575,7 +702,7 @@ async function post(
     form.append('file', value, name);
     form.append('style', style);
   } catch {
-    return fail('unexpected', true);
+    return settled(fail('unexpected', true));
   }
 
   const controller = new AbortController();
@@ -591,22 +718,27 @@ async function post(
   try {
     const response = await deps.fetch(endpoint, {
       method: 'POST',
-      headers: { [TOKEN_HEADER]: token, Accept: 'application/json' },
+      headers: { ...authHeaders(api, installToken), Accept: 'application/json' },
       body: form,
       signal: controller.signal,
     });
     const body: unknown = await response.json().catch(() => null);
     // The body is part of the request: a stall while reading it is a timeout, not a bad reply.
-    if (timedOut) return fail('timeout', true);
-    if (outside?.aborted) return fail('cancelled');
-    if (!response.ok)
-      return failureFrom(response.status, failureSchema.safeParse(body).data ?? null);
+    if (timedOut) return settled(fail('timeout', true));
+    if (outside?.aborted) return settled(fail('cancelled'));
+    if (!response.ok) {
+      const refusal = refusalOf(body);
+      return {
+        result: failureFrom(response.status, refusal),
+        refusedInstall: installRefused(response.status, refusal),
+      };
+    }
 
     const parsed = responseSchema.safeParse(body);
-    if (!parsed.success) return fail('invalid_response');
+    if (!parsed.success) return settled(fail('invalid_response'));
     const text = parsed.data.text.trim();
-    if (text.length === 0) return fail('no_speech');
-    return {
+    if (text.length === 0) return settled(fail('no_speech'));
+    return settled({
       ok: true,
       value: {
         text,
@@ -615,9 +747,9 @@ async function post(
         languages: parsed.data.languages ?? [],
         seconds: parsed.data.seconds ?? null,
       },
-    };
+    });
   } catch {
-    return await failedToSend(timedOut, outside, deps.online);
+    return settled(await failedToSend(timedOut, outside, deps.online));
   } finally {
     clearTimeout(timer);
     outside?.removeEventListener('abort', stop);
@@ -646,7 +778,7 @@ export const hasDevanagari = (text: string) => /[ऀ-ॿ]/.test(text);
 
 export type RefineDeps = Pick<
   TranscribeDeps,
-  'fetch' | 'url' | 'token' | 'timeoutMs' | 'status' | 'style' | 'online'
+  'fetch' | 'url' | 'token' | 'timeoutMs' | 'status' | 'style' | 'online' | 'tokens'
 >;
 
 /**
@@ -666,10 +798,30 @@ export async function refineWords(
   const style = deps.style();
   if (style === 'exact' && !hasDevanagari(spoken)) return { ok: true, value: { text: spoken } };
 
-  const endpoint = voiceEndpoint(deps.url, REFINE_PATH);
-  if (!endpoint || !deps.token) return fail('not_configured');
+  const origin = voiceOrigin(deps.url);
+  if (!origin || !deps.token) return fail('not_configured');
   if (options.signal?.aborted) return fail('cancelled');
+  const api: VoiceApi = { url: origin, token: deps.token };
+  const { result } = await withInstallToken(
+    api,
+    (installToken) =>
+      refineOnce(`${origin}${REFINE_PATH}`, api, installToken, spoken, style, options, deps),
+    (attempt) => attempt.refusedInstall,
+    deps.tokens,
+  );
+  return result;
+}
 
+async function refineOnce(
+  endpoint: string,
+  api: VoiceApi,
+  installToken: string | null,
+  spoken: string,
+  style: WordsStyle,
+  options: { signal?: AbortSignal },
+  deps: RefineDeps,
+): Promise<Attempt<{ text: string }>> {
+  if (options.signal?.aborted) return settled(fail('cancelled'));
   const controller = new AbortController();
   let timedOut = false;
   const timer = setTimeout(() => {
@@ -682,7 +834,7 @@ export async function refineWords(
     const response = await deps.fetch(endpoint, {
       method: 'POST',
       headers: {
-        [TOKEN_HEADER]: deps.token,
+        ...authHeaders(api, installToken),
         Accept: 'application/json',
         'Content-Type': 'application/json',
       },
@@ -690,15 +842,22 @@ export async function refineWords(
       signal: controller.signal,
     });
     const body: unknown = await response.json().catch(() => null);
-    if (timedOut) return fail('timeout', true);
-    if (options.signal?.aborted) return fail('cancelled');
-    if (!response.ok)
-      return failureFrom(response.status, failureSchema.safeParse(body).data ?? null);
+    if (timedOut) return settled(fail('timeout', true));
+    if (options.signal?.aborted) return settled(fail('cancelled'));
+    if (!response.ok) {
+      const refusal = refusalOf(body);
+      return {
+        result: failureFrom(response.status, refusal),
+        refusedInstall: installRefused(response.status, refusal),
+      };
+    }
     const parsed = refineSchema.safeParse(body);
-    if (!parsed.success || parsed.data.text.trim().length === 0) return fail('invalid_response');
-    return { ok: true, value: { text: parsed.data.text.trim() } };
+    if (!parsed.success || parsed.data.text.trim().length === 0) {
+      return settled(fail('invalid_response'));
+    }
+    return settled({ ok: true, value: { text: parsed.data.text.trim() } });
   } catch {
-    return await failedToSend(timedOut, options.signal, deps.online);
+    return settled(await failedToSend(timedOut, options.signal, deps.online));
   } finally {
     clearTimeout(timer);
     options.signal?.removeEventListener('abort', stop);
@@ -710,4 +869,6 @@ export const UNAVAILABLE_CODES: readonly string[] = [
   'unauthorized',
   'not_configured',
   'unavailable',
+  // Plus's month is used: only the next month helps. The free month has its own note, with Plus in it.
+  'fair_use',
 ];

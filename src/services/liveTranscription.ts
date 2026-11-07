@@ -1,4 +1,5 @@
-import { VOICE_TOKEN_HEADER, voiceApi, type VoiceApi } from './voiceApi';
+import { installTokens, withInstallToken, type InstallTokens } from './install';
+import { authHeaders, installRefused, refusalOf, voiceApi, type VoiceApi } from './voiceApi';
 
 // Live words (docs/OWNER_DECISIONS.md, D-007, D-008): a take streamed to OpenAI's realtime
 // transcription while it is spoken. The OpenAI key never reaches the phone. ECHO's server hands out a
@@ -79,6 +80,8 @@ export type LiveDeps = {
   timeoutMs: number;
   /** Whether the person agreed to their voice being streamed as it is spoken (`liveAllowed`). */
   allowed: () => boolean;
+  /** This install's token for the server, and a new one when it is refused (install.ts). */
+  tokens: InstallTokens;
 };
 
 type Preferences = typeof import('@/state/preferences');
@@ -94,6 +97,7 @@ const defaults = (): LiveDeps => ({
     const { liveAllowed, usePreferences } = require('@/state/preferences') as Preferences;
     return liveAllowed(usePreferences.getState().voiceConsent);
   },
+  tokens: installTokens,
 });
 
 export const LIVE_SESSION_PATH = '/api/live-session';
@@ -130,15 +134,30 @@ export function liveAddress(
 
 type Granted = { url: string; secret: string; update: unknown };
 
+/**
+ * Asks for a secret with this install's token, and once more with a new token if it was refused.
+ * Any other refusal, such as live words not being in the person's plan (402), is no secret: the take
+ * is then sent after it ends, and its words come that way.
+ */
 async function mint(deps: LiveDeps): Promise<Granted | null> {
-  if (!deps.api) return null;
-  const response = await deps.fetch(`${deps.api.url}${LIVE_SESSION_PATH}`, {
-    method: 'POST',
-    headers: { [VOICE_TOKEN_HEADER]: deps.api.token, Accept: 'application/json' },
-    signal: AbortSignal.timeout(deps.timeoutMs),
-  });
-  if (!response.ok) return null;
-  const body = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+  const api = deps.api;
+  if (!api) return null;
+  const once = async (installToken: string | null) => {
+    const response = await deps.fetch(`${api.url}${LIVE_SESSION_PATH}`, {
+      method: 'POST',
+      headers: { ...authHeaders(api, installToken), Accept: 'application/json' },
+      signal: AbortSignal.timeout(deps.timeoutMs),
+    });
+    const body = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+    return { ok: response.ok, status: response.status, body };
+  };
+  const { ok, body } = await withInstallToken(
+    api,
+    once,
+    (answer) => installRefused(answer.status, refusalOf(answer.body)),
+    deps.tokens,
+  );
+  if (!ok) return null;
   const url = liveAddress(body?.url);
   if (!url || typeof body?.secret !== 'string' || body.secret.length === 0) return null;
   return { url, secret: body.secret, update: body.update };

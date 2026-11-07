@@ -58,6 +58,12 @@ export const patternsCopy = {
     busy: 'You’ve asked a few times in a short while. Try again a little later.',
     failed: 'The reading didn’t finish. You can try again in a moment.',
     notConfigured: 'Pattern cards aren’t available in this build of ECHO.',
+    /** The free reading is used (docs/PRODUCT_V1.md, ECHO Plus). Offered with `getPlus`. */
+    allowanceUsed:
+      'Your free reading has been used. With ECHO Plus, ECHO reads your patterns whenever you ask.',
+    /** ECHO Plus's readings for the month are used. Rare, and said plainly. */
+    readingCap: 'This month’s readings are used. More come next month.',
+    getPlus: 'Get ECHO Plus',
     notKept: 'These cards couldn’t be kept on this phone, so they’ll be gone when you close ECHO.',
     noEntries: 'Your entries couldn’t be opened just now. Try again in a moment.',
     cardLabel: (name: string, index: number, total: number) =>
