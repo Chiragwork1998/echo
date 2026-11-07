@@ -261,7 +261,7 @@ ECHO keeps the journal only on the phone, and Android's backup is off, so the ex
 - **A recording the backup does not hold whole** (missing, empty, or failing its checksum) restores its entry without it, and the result counts it.
 - **The result.** `{ ok: true, entries, drafts, existing, deleted, withoutAudio }`, or `{ ok: false, code: 'stopped' | 'not_ready', done, total, ...counts }`. Lists, Patterns and Home refresh once, at the end.
 
-**The plaintext.** The picker copies the file to `cache/DocumentPicker`. `openBackup` moves it at once into `cache/echo-temp/restore-<uuid>/`, which every launch clears, and `release()` deletes it: at Not now, when a restore ends however it ends, when a file is refused, and when the row leaves the screen with only a preview open. Each recording's copy in the same folder lives only while it is sealed. A copy the picker could not finish, or one a killed restore never moved, is removed before the next pick.
+**The plaintext.** The person's own file is only ever read. ECHO works on a copy of its own (`pickBackupFile` in `src/features/backup`): on iOS the one the system makes in ECHO's `tmp` when the picker asks for a copy, and on Android one `expo-file-system` makes in `cache/DocumentPicker` on a background thread, because `expo-document-picker` copies on the main thread and a large backup still arriving from Google Drive would freeze the app. `openBackup` moves that copy at once into `cache/echo-temp/restore-<uuid>/`, which every launch clears, and `release()` deletes it: at Not now, when a restore ends however it ends, when a file is refused, and when the row leaves the screen with only a preview open. Each recording's copy in the same folder lives only while it is sealed. A copy cut short, or one a killed restore never moved, is removed from `cache/DocumentPicker` before the next pick; on iOS such a copy waits in `tmp` for the system to clear it.
 
 `importJournal.web.ts` answers `unavailable`: web has no storage.
 
@@ -398,8 +398,8 @@ Native behaviour cannot be proved in Jest. Each of these needs a real device.
 **Restore from a backup**
 
 33. Export on one phone, share the zip to Drive or Files, and on a second phone, after onboarding, restore it from You. The preview gives the count and the first and last days. Restore, and every entry is in Echoes with its date, Home's week strip marks its days, Patterns counts it, and each recording plays. Pull `echo.db` and `files/echo/audio` with `run-as`: `strings` finds none of the words.
-34. After it finishes, and again after Not now and after a refused file, `cache/echo-temp` and `cache/DocumentPicker` are empty.
+34. After it finishes, and again after Not now and after a refused file, `cache/echo-temp` and `cache/DocumentPicker` are empty, and on iOS so is ECHO's `tmp/<bundle id>-Inbox`. The backup in Drive or Files is still there, unchanged.
 35. Restore the same file again: nothing is added, and the result says they were already on this phone.
 36. Restore a backup of a few hundred megabytes of recordings and force stop mid-way. Relaunch: the entries there each open whole, with their recording, `files/echo/audio` holds one `.enc` per audio row and no `.tmp`, and `cache/echo-temp` is empty. Restore the same file again, and the rest arrive.
 37. With the lock on, choose a file and stay in the picker for more than 30 seconds. On return the lock shows first, and the preview appears only after unlocking.
-38. Pick a file from Google Drive and from a USB or SD card provider, and a zip that is not an export. The first two open, and the third is refused with its message.
+38. Pick a file from Google Drive and from a USB or SD card provider, and a zip that is not an export. The first two open, and the third is refused with its message. With a backup of a few hundred megabytes on Drive that is not on the phone yet, the row says Reading your backup while it arrives, and ECHO never stops responding.
