@@ -16,6 +16,14 @@
     "api/live-session.ts": {
       "maxDuration": 30,
       "memory": 256
+    },
+    "api/install.ts": {
+      "maxDuration": 10,
+      "memory": 256
+    },
+    "api/allowance.ts": {
+      "maxDuration": 10,
+      "memory": 256
     }
   }
 }
