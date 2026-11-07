@@ -19,6 +19,8 @@ import { tokens } from '@/design/tokens';
 import { useReduceMotion } from '@/design/useReduceMotion';
 import { deleteAllLocal } from '@/services/deleteAllLocal';
 import { loadScreenCapture } from '@/services/nativeModules';
+import { startPlus } from '@/services/plus/engine';
+import { shouldOfferPlus, usePlusStore } from '@/services/plus/store';
 import {
   bootApp,
   disableLock,
@@ -58,14 +60,21 @@ function SafeArea({ children }: PropsWithChildren) {
   );
 }
 
-// The plate each top-level route opens on, for the colour behind it. Onboarding opens on Intent.
-const ROOT_PLATE: Record<string, string> = { index: 'landing', onboarding: 'intent', home: 'home' };
+// The plate each top-level route opens on, for the colour behind it. Onboarding opens on Intent, and
+// ECHO Plus sits over Home's plate.
+const ROOT_PLATE: Record<string, string> = {
+  index: 'landing',
+  onboarding: 'intent',
+  home: 'home',
+  plus: 'home',
+};
 
 function Navigator({ resume, onSettled }: { resume: string; onSettled: () => void }) {
   const { target, colors } = useTheme();
   const reduced = useReduceMotion();
   const pathname = usePathname();
   const completed = useOnboarding((state) => state.completedAt !== undefined);
+  const offerPlus = usePlusStore(shouldOfferPlus);
   const initial = useRef(true);
 
   // Plates scale as the journey moves (see plateMotion), so they need to know where it is.
@@ -81,6 +90,7 @@ function Navigator({ resume, onSettled }: { resume: string; onSettled: () => voi
       step: useOnboarding.getState().step,
       resume,
       initial: initial.current,
+      offerPlus,
     });
     if (decision.action === 'replace') {
       router.replace(decision.path as never);
@@ -91,7 +101,7 @@ function Navigator({ resume, onSettled }: { resume: string; onSettled: () => voi
     onSettled();
     const step = stepForPath(pathname);
     if (step !== null) setOnboardingStep(step);
-  }, [completed, onSettled, pathname, resume]);
+  }, [completed, offerPlus, onSettled, pathname, resume]);
 
   return (
     <>
@@ -296,6 +306,7 @@ export default function RootLayout() {
 
   useEffect(() => {
     void bootApp();
+    void startPlus();
   }, []);
 
   useEffect(() => {

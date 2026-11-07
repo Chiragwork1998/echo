@@ -9,6 +9,7 @@ import {
   type AuthFailure,
   type LockMethod,
 } from '@/services/biometric';
+import { hydratePlus } from '@/services/plus/store';
 import { DatabaseTooNewError } from '@/storage/migrations';
 import { getRuntime, type Runtime } from '@/storage/runtime';
 import { qa } from '@/testing/qa';
@@ -94,6 +95,13 @@ async function resolve(runtime: Runtime): Promise<void> {
     await hydratePreferences(runtime.db, runtime.serial);
   } catch {
     // Night is an acceptable theme. A missing preference is no reason to keep someone out.
+  }
+
+  try {
+    // ECHO Plus as the last launch knew it, so an offline launch still knows it.
+    await hydratePlus(runtime.db, runtime.serial);
+  } catch {
+    // The store's own answer arrives once it is reached. Nothing here keeps anyone out either.
   }
 
   try {

@@ -7,6 +7,9 @@ import { Alert, AppState, Platform } from 'react-native';
 import { clearToast, showToast } from '@/components/Toast';
 import { deleteAllLocal } from '@/services/deleteAllLocal';
 import { getLockMethod } from '@/services/biometric';
+import { startPlus } from '@/services/plus/engine';
+import { markOffered, usePlusStore } from '@/services/plus/store';
+import { withBillingForTests, withoutBillingForTests } from '@/testing/plus';
 
 import RootLayout from '../../app/_layout';
 import { bootApp, RELOCK_AFTER_MS, resetGateForTests, unlock, useGate } from './gate';
@@ -59,6 +62,11 @@ jest.mock('@/services/deleteAllLocal', () => ({
 jest.mock('@/services/biometric', () => ({
   getLockMethod: jest.fn(async () => 'passcode'),
   authenticate: jest.fn(),
+}));
+
+jest.mock('@/services/plus/engine', () => ({
+  ...jest.requireActual('@/services/plus/engine'),
+  startPlus: jest.fn(async () => undefined),
 }));
 
 const replace = jest.mocked(router.replace);
@@ -151,6 +159,65 @@ describe('once ready', () => {
     await setGate({ status: { kind: 'ready', resume: '/onboarding/completion' } });
     await act(async () => useOnboarding.setState({ completedAt: 1 }));
     expect(replace).toHaveBeenLastCalledWith('/home');
+  });
+
+  it('starts ECHO Plus once, at launch', async () => {
+    await render(<RootLayout />);
+    expect(startPlus).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the ECHO Plus offer after onboarding', () => {
+  beforeEach(() => withBillingForTests({ status: 'free', source: 'live' }));
+  afterEach(() => act(async () => withoutBillingForTests()));
+
+  async function finishOnboarding() {
+    pathname.mockReturnValue('/onboarding/completion');
+    useOnboarding.setState({ step: 8 });
+    await render(<RootLayout />);
+    await setGate({ status: { kind: 'ready', resume: '/onboarding/completion' } });
+    await act(async () => useOnboarding.setState({ completedAt: 1 }));
+  }
+
+  it('shows the paywall in place of Home, once, as Completion finishes', async () => {
+    await finishOnboarding();
+    expect(replace).toHaveBeenLastCalledWith('/plus?from=onboarding');
+  });
+
+  it('stays out of the way once seen: the paywall stays put, and nothing sends it back', async () => {
+    await finishOnboarding();
+    replace.mockClear();
+    // The paywall marks itself seen as it appears, and the root layout looks again.
+    pathname.mockReturnValue('/plus');
+    await act(async () => markOffered());
+    expect(usePlusStore.getState().offered).toBe(true);
+    expect(replace).not.toHaveBeenCalled();
+    // The lock coming and going does not move anyone either.
+    await setGate({
+      lock: { kind: 'locked', method: 'passcode', failure: null, canDisable: false },
+    });
+    await setGate({ lock: { kind: 'unlocked' } });
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it('goes straight Home for someone who has already seen it', async () => {
+    usePlusStore.setState({ offered: true });
+    await finishOnboarding();
+    expect(replace).toHaveBeenLastCalledWith('/home');
+  });
+
+  it('goes straight Home for someone who already has Plus', async () => {
+    usePlusStore.setState({ status: 'plus' });
+    await finishOnboarding();
+    expect(replace).toHaveBeenLastCalledWith('/home');
+  });
+
+  it('is not shown to a finished user on a later launch', async () => {
+    useOnboarding.setState({ step: 8, completedAt: 1 });
+    await render(<RootLayout />);
+    await setGate({ status: { kind: 'ready', resume: '/home' } });
+    expect(replace).toHaveBeenLastCalledWith('/home');
+    expect(replace).not.toHaveBeenCalledWith('/plus?from=onboarding');
   });
 });
 
