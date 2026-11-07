@@ -5,10 +5,12 @@ import { DEFAULT_PRACTICE, usePreferences } from '@/state/preferences';
 import { useRequirePlus, usePlus } from '@/services/plus';
 import { render } from '@/testing/render';
 
+import { freeAtAll } from './access';
 import { JOURNAL_AUDIO_MODE } from './audio';
 import { breatheCopy } from './breatheCopy';
 import { BreatheScreen } from './BreatheScreen';
 import { recordPractice } from './feelingStore';
+import { PRACTICES } from './library/practices';
 import { supportCopy } from '@/features/patterns/supportResources';
 
 const mockAudio = {
@@ -74,10 +76,15 @@ describe('What are you feeling?', () => {
   it('lists every feeling with its practice and length, marking Plus only for someone without it', async () => {
     await render(<BreatheScreen />);
     expect(screen.getByRole('header', { name: breatheCopy.title })).toBeTruthy();
-    expect(row('settle')).toHaveProp('accessibilityLabel', 'Anxious. Settle, 3 min');
-    expect(row('heart')).toHaveProp('accessibilityLabel', 'Wanting to feel grateful. Heart, 5 min');
-    expect(row('cool')).toHaveProp('accessibilityLabel', 'Angry. Cool, 3 min, Plus');
-    expect(screen.getAllByText(/· Plus$/)).toHaveLength(6);
+    for (const practice of PRACTICES) {
+      const plus = freeAtAll(practice) ? '' : ', Plus';
+      expect(row(practice.id)).toHaveProp(
+        'accessibilityLabel',
+        `${practice.feeling}. ${practice.name}, ${practice.minutes} min${plus}`,
+      );
+    }
+    const plusOnly = PRACTICES.filter((practice) => !freeAtAll(practice));
+    expect(screen.getAllByText(/· Plus$/)).toHaveLength(plusOnly.length);
   });
 
   it('marks nothing for someone with Plus', async () => {
@@ -156,9 +163,11 @@ describe('Before it starts', () => {
 
   it('opens why it helps on a tap, with its source', async () => {
     await openHeart();
-    expect(screen.queryByText(/^From HeartMath/)).toBeNull();
+    const heart = PRACTICES.find((practice) => practice.id === 'heart');
+    const source = breatheCopy.source(heart?.source ?? '');
+    expect(screen.queryByText(source)).toBeNull();
     await fireEvent.press(screen.getByTestId('breathe-why'));
-    expect(screen.getByText(/^From HeartMath/)).toBeTruthy();
+    expect(screen.getByText(source)).toBeTruthy();
   });
 
   it('remembers the voice and the sound, and shows the lines to read when the voice is off', async () => {

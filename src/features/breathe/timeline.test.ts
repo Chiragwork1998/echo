@@ -93,13 +93,25 @@ describe('a practice in time', () => {
   });
 
   it('goes dark on a fade, carries on breathing under it, and ends without a bell', () => {
-    const timeline = compile(PRACTICES.find((item) => item.id === 'sleep') as Practice);
+    const timeline = compile(
+      practice({
+        steps: [
+          {
+            kind: 'breath',
+            pattern: { kind: 'paced', inhale: 4, holdIn: 7, exhale: 8 },
+            seconds: 76,
+          },
+          { kind: 'fade', seconds: 120 },
+          { kind: 'breath', pattern: { kind: 'paced', inhale: 4, exhale: 8 }, seconds: 120 },
+        ],
+      }),
+    );
     const fade = timeline.cues.find((cue) => cue.kind === 'fade');
+    // Four rounds of 4-7-8 first, then the dark comes on over two minutes while the breath goes on.
+    expect(timeline.segments[0]?.rounds).toBe(4);
     expect(fade).toMatchObject({ atMs: 76_000, ms: 120_000 });
     expect(timeline.endsInDark).toBe(true);
     expect(timeline.cues.some((cue) => cue.kind === 'bell' && cue.bell === 'close')).toBe(false);
-    // Four rounds of 4-7-8 first.
-    expect(timeline.segments[0]?.rounds).toBe(4);
   });
 
   it('takes a longer chosen length up in its stretch steps, in whole rounds', () => {
