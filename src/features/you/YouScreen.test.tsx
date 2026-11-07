@@ -420,10 +420,12 @@ describe('You: support and about', () => {
     expect(screen.getByRole('header', { name: youCopy.title })).toBeTruthy();
   });
 
-  it('says plainly that the voice in Breathe is synthetic, made with OpenAI', async () => {
+  it('says plainly that the voice in Breathe is AI generated, made with OpenAI', async () => {
     await render(<YouScreen />);
     expect(screen.getByText(youCopy.breatheVoice)).toBeTruthy();
-    expect(youCopy.breatheVoice).toBe('The voice in Breathe is synthetic, made with OpenAI.');
+    expect(youCopy.breatheVoice).toBe(
+      'The voice in Breathe is AI generated, made with OpenAI. It is not a real person.',
+    );
   });
 
   it('opens the support panel at any time, with someone to call and a way to close it', async () => {

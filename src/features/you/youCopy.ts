@@ -1,5 +1,6 @@
 import { copy } from '@/content/copy';
 import { supportCopy } from '@/features/patterns/supportResources';
+import { SYNTHETIC_VOICE_NOTE } from '@/features/breathe/library';
 
 /**
  * WORKING COPY. Everything You says that is not in the copy deck. Not locked: the owner approves or
@@ -83,5 +84,6 @@ export const youCopy = {
   version: (version: string) => `Version ${version}`,
   statement: 'ECHO is wellness software. It is not therapy, diagnosis, or emergency care.',
   /** Said plainly, as the brief asks (docs/PRODUCT_V1.md, Breathe). */
-  breatheVoice: 'The voice in Breathe is synthetic, made with OpenAI.',
+  // One source for the disclosure OpenAI's usage policies ask for: the Breathe library's own line.
+  breatheVoice: SYNTHETIC_VOICE_NOTE,
 } as const;
