@@ -42,16 +42,18 @@ Production plates are richer and more saturated than the plates inside the golde
 
 ## Before public launch
 
-**Launch blocker. The voice server can be spent by anyone who opens the app.** `EXPO_PUBLIC_VOICE_TOKEN` is read by the app, so it ships inside the bundle. Anyone who unpacks the app can take it and call all four routes with it: `/api/transcribe`, `/api/refine`, `/api/live-session` and `/api/patterns`. `/api/live-session` hands out a realtime session secret that is billed to ECHO's OpenAI account, and `/api/patterns` and tidy `/api/refine` are model calls on arbitrary text. The only things standing in the way are the limits below, and none of them is a defence against someone who means it:
+**Launch blocker, now narrowed. What the shared token can spend is bounded, but not yet proved to come from the app.** `EXPO_PUBLIC_VOICE_TOKEN` is read by the app, so it ships inside the bundle. Since 2026-11-08 (voice-api/README.md, "Who is asking, and what it may spend") it is used only to ask `/api/install` for an install token: a token the server signs for one install id, which every other route requires and counts against. What that changed, and what it did not:
 
-- The rate limit and the count of wrong tokens are held in memory, per Vercel instance. A second instance counts for itself, and an instance that restarts forgets. They stop casual abuse and nothing else.
-- The token is shared by every install, so one install cannot be told from another, and one cannot be turned off without turning off all of them.
-- ffmpeg is bounded (30 seconds, four at once per instance, 25 MiB of output), `/api/refine` takes at most 100,000 characters, and each route has a body limit. These cap what one request can cost, not how many are made.
+- **Done: one install can be told from another.** Each install's voice minutes, pattern readings, live words and tidy are counted against its own allowance (Free: 60 minutes a month, the first reading, no live words or tidy; Plus: 20 hours and monthly caps), measured from the audio itself, and refused with `402` before anything is spent. Plus comes from RevenueCat, and RevenueCat being down means free, never unlimited. A tampered or expired token is refused.
+- **Done: a hard ceiling per day.** `ECHO_DAILY_AUDIO_SECONDS` and `ECHO_DAILY_MODEL_CALLS` cap the whole server for a UTC day, whoever is asking, and answer `503 busy` past them. A bug or an attack costs at most a known amount a day.
+- **Done in code, not yet in production: counts that hold across instances.** Allowances, ceilings and the `/api/install` rate limit live in Upstash Redis. Until Upstash is connected they fall back to memory per instance, which is no real limit. **Owner action:** accept Upstash's Marketplace terms (below).
+- **Still open: the shared token still works on its own** for the owner's v3 build while `ECHO_LEGACY_TOKEN` is not `deny`. Such requests have no per-install allowance, only the daily ceilings. Set `ECHO_LEGACY_TOKEN=deny` once no build that predates install tokens is in use.
+- **Still open: anyone with the shared token can make installs.** `/api/install` allows 60 an hour per address, each with its own free allowance, so a determined person can multiply free minutes until the daily ceiling stops everyone. The in-memory request rate limits are also still per instance.
 
-Before the app is public, all three of these must be done:
+Before the app is public, these must be done:
 
-1. **Prove the app is the app.** App Attest on iOS and Play Integrity on Android, or a per-install token the server issues after that check, so a token taken from one phone is useless on another and a bad install can be revoked alone.
-2. **Rate limits that hold across instances.** Vercel Firewall rate limits on `/api/*`, keyed by IP and by install, with the in-memory limits kept as a second layer.
-3. **A dedicated OpenAI project with a spend cap.** ECHO's voice server should use its own project and key, with a monthly hard limit and usage alerts, so that the worst case is a known number and cannot reach any other use of the account.
+1. **Prove the app is the app.** Play Integrity on Android and App Attest on iOS, checked by `/api/install` before it issues a token (`voice-api/src/attest.ts` is the place; `@expo/app-integrity` on the phone), then `ECHO_REQUIRE_ATTESTATION=1`, so the shared token alone can no longer make installs. A bad install can already be refused alone by its token.
+2. **Upstash connected in production** (Owner action: accept the terms at https://vercel.com/chiragtalwar-finzarccoms-projects/~/integrations/accept-terms/upstash, then connect an Upstash for Redis database on the free plan to `echo-voice` for Production and Preview), and `ECHO_LEGACY_TOKEN=deny` once v3 is retired. Optionally, Vercel Firewall rate limits on `/api/*` as a second layer in front of the in-memory ones.
+3. **A dedicated OpenAI project with a spend cap.** ECHO's voice server should use its own project and key, with a monthly hard limit and usage alerts, so that the worst case is a known number and cannot reach any other use of the account. The daily ceilings should then be set to fit inside that cap. **Owner action.**
 
-Public launch is blocked until all three are done. **Owner action.**
+Public launch is blocked until all three are done.

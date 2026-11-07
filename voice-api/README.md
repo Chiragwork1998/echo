@@ -1,9 +1,11 @@
 # ECHO voice API
 
-Turns a spoken journal entry into text. It holds no state: audio and text exist only in memory for
-the length of the request, and nothing about their content is logged.
+Turns a spoken journal entry into text. It holds no state about what people say: audio and text exist
+only in memory for the length of the request, and nothing about their content is logged. What it does
+keep is counts: how much of an allowance each install has used, and how much the whole server has
+spent today (see "Who is asking, and what it may spend").
 
-`POST /api/transcribe`, multipart form with `file` and an optional `style`, and the `x-echo-voice-token` header.
+`POST /api/transcribe`, multipart form with `file` and an optional `style`, and an install token (below).
 
 `style` is `exact` (the default, and what anything unknown means) or `tidy` (D-008). Exact returns the
 transcript as OpenAI's transcription heard it: every word, filler, and self-correction, with only the
@@ -17,11 +19,11 @@ the untouched transcript is returned if it fails. The choice is one constant, `H
 Returns `{ text, raw, polished, romanised, style, languages, seconds }`. If a second step fails, `text`
 is the unchanged transcript, so a person's words are never lost to it.
 
-`POST /api/refine`, JSON `{ text, style }`, with the same header: the same rules for words that were
+`POST /api/refine`, JSON `{ text, style }`, with the same token: the same rules for words that were
 heard live and never went through `/api/transcribe`. Exact text with no Devanagari comes back as it
 is, with no model call.
 
-`POST /api/live-session`, no body, with the same header: mints a short-lived OpenAI client secret for a
+`POST /api/live-session`, no body, with the same token: mints a short-lived OpenAI client secret for a
 realtime transcription session (`gpt-live-transcribe`, 24 kHz PCM, no voice detection) and returns
 `{ url, secret, expiresAt, sampleRate, update }`. The phone connects to `url` straight away with the
 subprotocols `realtime` and `openai-insecure-api-key.<secret>`, sends `update` as its first message,
@@ -31,9 +33,6 @@ that. Optional: `ECHO_LIVE_DELAY` (`minimal`, `low`, `medium`, `high`, `xhigh`; 
 treats `/v1/realtime` as 30 days of abuse-monitoring retention, which the app's consent says.
 
 Production: https://echo-voice-roan.vercel.app, in the `chiragtalwar-finzarccoms-projects` Vercel team. Run locally with `npm run dev`.
-
-Environment: `OPENAI_API_KEY`, `ECHO_VOICE_TOKEN`. Optional: `ECHO_TRANSCRIBE_MODEL`,
-`ECHO_POLISH_MODEL`.
 
 A request is limited twice over: Vercel rejects bodies over 4.5 MB, and OpenAI rejects files over 25 MB.
 An Android `.aac` becomes FLAC in `src/audio.ts` before OpenAI sees it, about 46 KB a second, because
@@ -45,7 +44,7 @@ The app cuts a long take into pieces and sends them up to three at a time: a liv
 at its quietest moments into pieces of about 4 MB (83 seconds), and a hidden take on Android is an ADTS
 `.aac`, cut between frames into pieces of 20 to 320 seconds that overlap by five seconds, whose words the
 app joins. Each piece is an ordinary request to `/api/transcribe`, and counts as one against the limit of 120
-per ten minutes per address: an hour of `.aac` is 13, an hour of WAV is 44. A piece that comes back with no
+per ten minutes per install: an hour of `.aac` is 13, an hour of WAV is 44. A piece that comes back with no
 speech is sent a second time by the app before it counts as silence, so a silent piece costs two.
 
 ffmpeg is held to limits in `src/audio.ts`, because it runs for as long as a request lets it: a conversion is
@@ -57,26 +56,132 @@ constants in `LIMITS`.
 `/api/refine` takes up to 100,000 characters, which is an hour and a half of speech at a fast 200 words a
 minute. An hour is about 70,000.
 
-Every route counts a wrong token against the address that sent it: after 20 in ten minutes the address is
-answered `429` without its token being looked at, so a right guess is no more use than a wrong one. The count,
-like the rate limit, is held in memory per instance and is dropped when its window is over, with at most 5,000
-addresses remembered. It stops casual abuse and nothing more, as below.
+Every failure has one shape: `{ error, code, retryable }`, where `error` names it and `code` repeats it for
+builds made before `error` existed. Some add fields, as below.
 
-`ECHO_VOICE_TOKEN` ships inside the app, so it stops casual abuse only. Before public launch this
-needs App Attest and Play Integrity, or per-account auth, plus an OpenAI spend limit. See "Before public
+## Who is asking, and what it may spend
+
+### Install tokens
+
+The shared app token (`ECHO_VOICE_TOKEN`) ships inside the app, so on its own it proves nothing. It is
+used for one thing: `POST /api/install` with `{ installId }` and the `x-echo-voice-token` header returns
+`{ token, expiresAt }`, an install token for that install (`src/token.ts`). The token is
+`ei1.<payload>.<signature>`: the install id, when it was issued and when it ends (30 days), signed with
+HMAC-SHA256 under `ECHO_INSTALL_SECRET`. The server keeps no list of tokens. Every other route takes it in
+the `x-echo-install-token` header and knows the install from it. A token that was not signed here is
+refused `401 install_invalid` and counted as a wrong guess; an expired one is refused the same way, so the
+app asks for a new one, and is not counted. `/api/install` is limited per address: 20 in ten minutes on
+each instance, and 60 an hour across all of them (an IPv6 address counts as its /64).
+
+To replace the secret without turning every phone away, set the new one as `ECHO_INSTALL_SECRET` and the
+old one as `ECHO_INSTALL_SECRET_PREVIOUS` for 30 days. Both must be at least 32 characters.
+
+Proving that the app is the app (Play Integrity, App Attest through `@expo/app-integrity`) is not built.
+`src/attest.ts` is where it goes: `/api/install` already passes an optional `attestation` to it, a token
+issued after a proof carries `a: 1`, and `ECHO_REQUIRE_ATTESTATION=1` will refuse installs that bring none.
+Until then anyone with the shared token can make installs, at the rate above, each with its own free
+allowance. The day's ceilings are what bound that.
+
+### Builds with only the shared token
+
+The owner's test build (v3) predates install tokens. A request with the shared token and no install token
+is served while `ECHO_LEGACY_TOKEN` is anything but `deny` (the default is to allow), under the day's
+ceilings and the per-address rate limits, with no per-install allowance. With `deny` it is refused
+`401 install_required`. An install token that fails is never rescued by also sending the shared token.
+
+### Allowances
+
+From `docs/PRODUCT_V1.md`, in `ALLOWANCES` in `src/meter.ts`. Months and days are UTC.
+
+| | Free | ECHO Plus |
+|---|---|---|
+| Voice into words (`/api/transcribe`) | 60 minutes a month | 20 hours a month |
+| Pattern readings | The first, ever (5 tries a month) | 30 a month (60 tries) |
+| Live words (`/api/live-session`) | None | 300 sessions a month |
+| Tidy | None: the words come back exact | 1,500 a month, then exact |
+| Hindi in Roman script on `/api/refine` | 300 a month, then as heard | 3,000 a month |
+
+Seconds are measured from the file (`src/measure.ts`), never from anything the phone says: WAV by its
+samples, counted to the end of the file whatever its header claims; ADTS frame by frame, the way ffmpeg
+reads it, junk and a cut-off last frame included; MP4 (`.m4a`) by its time-to-sample table. A file that
+cannot be measured, including `.mp3` and `.webm`, is refused `415 unsupported_audio`. The fixtures in
+`src/fixtures` are synthetic (macOS `say`), and the tests check the count against ffmpeg's own decode.
+
+Everything a request will cost is reserved before anything is sent to OpenAI. One that does not fit is
+refused `402 { error: 'allowance_used', feature, plan, resetsAt }` and spends nothing: `feature` is `voice`,
+`patterns` or `live-words`, and `resetsAt` is the next month's first moment, or null when waiting will not
+help (live words on the free plan, or the free reading once it is used). A request that was let in and could
+not be served (OpenAI refused it, the converter was full) gives back what it took. Silence is not given
+back: OpenAI heard it. A reading that makes no cards gives the reading back but keeps the try.
+`GET /api/allowance` returns `{ plan, voice: { usedSeconds, limitSeconds, resetsAt } }`, which the app reads
+before sending a long take in pieces, so a take that will not fit is kept whole rather than half spent.
+
+### Who has Plus
+
+An install has Plus if RevenueCat says its `plus` entitlement is active (`GET /v1/subscribers/{installId}`
+with `REVENUECAT_SECRET_KEY`; the app uses the install id as RevenueCat's app user id), or if its id is in
+`ECHO_PLUS_INSTALLS` (comma separated, for the owner). Answers are kept for ten minutes, and before a free
+install is refused a cached answer is checked again, so someone who has just subscribed is served. With no
+RevenueCat key everyone has Plus, as the app treats everyone today, and the day's ceilings do the limiting.
+When RevenueCat cannot be reached the answer is free, never unlimited, and it is not asked again from that
+instance for 30 seconds.
+
+### The day's ceilings
+
+`ECHO_DAILY_AUDIO_SECONDS` (default 36,000: ten hours) and `ECHO_DAILY_MODEL_CALLS` (default 3,000) cap a
+UTC day for the whole server, whoever is asking. Model calls are reserved at the most a request can make
+(two for a transcription, two for a reading) and settled at what it made. A live session cannot be measured
+here, so it counts as five minutes of audio against the day (`LIVE_GUARD_MS`). Past a ceiling every request
+is refused `503 { error: 'busy', retryAfter }`, with a `retry-after` header, until the next UTC day. Set them
+from what the OpenAI project's spend cap allows: they are the brake, the spend cap is the wall.
+
+### Where the counts live
+
+`src/store.ts`: `QuotaStore`, kept in Upstash Redis through its REST API when `UPSTASH_REDIS_REST_URL` and
+`UPSTASH_REDIS_REST_TOKEN` (or the Vercel Marketplace's `KV_REST_API_URL` and `KV_REST_API_TOKEN`) are set,
+and in memory otherwise. Memory holds only for one instance until it restarts, so production without
+Upstash has no real allowance or ceiling: the log says `{"store":"memory","durable":false}` on Vercel when
+that happens. Each spend is one transaction that adds every amount, and one that would go over a limit takes
+it back at once, so requests racing for the last of an allowance can both be refused but can never both be
+let past it. When the store cannot be reached, requests are refused as `503 busy` rather than counted as
+nothing. Keys hold hashed install ids, periods and feature names, never content.
+
+### Reporting a card
+
+`POST /api/report`, JSON `{ reason, lens, model, appVersion }` and an install token (or the shared token
+while legacy is allowed), for Google Play's rule that a person can report what a model wrote. `reason` is
+`harmful`, `wrong`, `upsetting` or `other`; `lens` is a lens id from `src/lenses.ts` (each card now carries
+it as `lens.id`) or null; `model` and `appVersion` are labels of at most 64 characters from
+`[A-Za-z0-9._+-]`, with no spaces, so no words can travel in them (`1.0.0+42`, not `1.0.0 (42)`). Any
+other field, such as `text`, refuses the whole report with 400. It is counted by UTC day, reason and lens,
+logged in one line of those labels, and limited to 10 in ten minutes per instance and 30 a day per install.
+
+### Logs
+
+One line per request: the route, the status, the size and the time, and for an install its tag (the first
+12 hex characters of a SHA-256 of its id, `src/token.ts`), its plan, and which allowance refused it. Never
+words, audio, quotes, tokens or install ids.
+
+### Environment
+
+Required: `OPENAI_API_KEY`, `ECHO_VOICE_TOKEN`, `ECHO_INSTALL_SECRET`. For counts that hold: Upstash, as
+above. Optional: `REVENUECAT_SECRET_KEY`, `ECHO_PLUS_INSTALLS`, `ECHO_LEGACY_TOKEN`,
+`ECHO_DAILY_AUDIO_SECONDS`, `ECHO_DAILY_MODEL_CALLS`, `ECHO_INSTALL_SECRET_PREVIOUS`,
+`ECHO_REQUIRE_ATTESTATION`, `ECHO_TRANSCRIBE_MODEL`, `ECHO_POLISH_MODEL`, `ECHO_PATTERNS_MODEL`,
+`ECHO_LIVE_DELAY`. Locally, `npm run dev` signs install tokens with a secret made for the run unless
+`ECHO_INSTALL_SECRET_FILE` names one. What is still needed before public launch is in "Before public
 launch" in `docs/SPEC_CONFLICTS.md`.
 
 ## Pattern Cards
 
-`POST /api/patterns`, JSON `{ entries: [{ date: 'YYYY-MM-DD', text }] }`, with the same
-`x-echo-voice-token` header. At least 5 entries, and the newest 30 are read, up to 6,000 characters
-each. Holds nothing: entries exist in memory for the length of the request, and the log line holds
-sizes and timing only.
+`POST /api/patterns`, JSON `{ entries: [{ date: 'YYYY-MM-DD', text }] }`, with an install token. At least
+5 entries, and the newest 30 are read, up to 6,000 characters each. Holds nothing: entries exist in memory
+for the length of the request, and the log line holds sizes and timing only.
 
 Returns `{ status: 'cards', cards, entriesRead }`, `{ status: 'none', entriesRead }`, or
 `{ status: 'support' }`. `support` means language about suicide or self-harm was found: no cards are
 made and the app shows its care message. That screen runs on the server before anything is sent to
-OpenAI, and the model is asked to flag it too.
+OpenAI, and before any allowance is looked at, so care is never refused. The model is asked to flag it too.
 
 Every quote on a card is checked against the entry it names, and a card needs verified quotes from
 two different entries. Cards that diagnose, label or promise a cure are dropped. The ideas the cards
