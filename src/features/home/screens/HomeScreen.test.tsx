@@ -32,6 +32,11 @@ jest.mock(
   'react-native-safe-area-context',
   () => jest.requireActual('react-native-safe-area-context/jest/mock').default,
 );
+// Evening, whatever the hour the tests run: the morning question is tested in become.test.tsx.
+jest.mock('@/features/become/morning', () => ({
+  ...jest.requireActual('@/features/become/morning'),
+  useMorning: () => false,
+}));
 jest.mock('@/features/journal', () => {
   const actual = jest.requireActual('@/features/journal');
   return { ...actual, useHomeSummary: jest.fn(actual.useHomeSummary) };

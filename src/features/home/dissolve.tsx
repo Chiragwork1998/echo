@@ -20,6 +20,9 @@ import {
 } from 'react-native-reanimated';
 
 import { useReduceMotion } from '@/design/useReduceMotion';
+import { arriveOffered } from '@/features/become/arrive';
+import { useMorning } from '@/features/become/morning';
+import { usePreferences } from '@/state/preferences';
 
 /** Everything on Home melts away over this long, and the photograph never moves (D-003). */
 export const DISSOLVE_MS = 900;
@@ -169,19 +172,37 @@ export function useHomeVeil() {
   return useAnimatedStyle(() => ({ opacity: 1 - progress.get() }));
 }
 
-/** Home's ways into the daily session. Each one dissolves Home first. */
+/**
+ * What a new session is opened with: its mode, and in the morning the Become question and, while it
+ * is still offered, Arrive first.
+ */
+export function sessionParams(
+  mode: 'voice' | 'write',
+  morning: boolean,
+  arrive: boolean,
+): Record<string, string> {
+  if (!morning) return { mode };
+  return arrive ? { mode, prompt: 'become', arrive: '1' } : { mode, prompt: 'become' };
+}
+
+/** Home's ways into the daily session, and into Breathe. Each one dissolves Home first. */
 export function useSessionEntry() {
   const { dissolve } = useHomeDissolve();
+  const morning = useMorning();
+  const arrive = usePreferences((state) => arriveOffered(state.practice));
   return useMemo(
     () => ({
       // Begin is the spoken session and Write instead is the written one (D-006). Neither follows what
       // was used last: the route says which, so the same stone always does the same thing.
-      begin: () => dissolve({ pathname: '/home/session', params: { mode: 'voice' } }),
-      writeInstead: () => dissolve({ pathname: '/home/session', params: { mode: 'write' } }),
+      begin: () =>
+        dissolve({ pathname: '/home/session', params: sessionParams('voice', morning, arrive) }),
+      writeInstead: () =>
+        dissolve({ pathname: '/home/session', params: sessionParams('write', morning, arrive) }),
       continueDraft: (draftId: string) =>
         dissolve({ pathname: '/home/session', params: { draftId } }),
+      breathe: () => dissolve('/home/breathe'),
     }),
-    [dissolve],
+    [arrive, dissolve, morning],
   );
 }
 

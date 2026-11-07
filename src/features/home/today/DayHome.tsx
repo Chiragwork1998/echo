@@ -12,6 +12,9 @@ import { goldenCopy } from '@/content/goldenCopy';
 import { useLayout } from '@/design/layout';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
+import { becomeCopy } from '@/features/become/becomeCopy';
+import { useMorning } from '@/features/become/morning';
+import { breatheCopy } from '@/features/breathe/breatheCopy';
 import type { HomeSummary } from '@/features/journal';
 
 import { useSessionEntry } from '../dissolve';
@@ -115,6 +118,28 @@ function BeginCta() {
   );
 }
 
+/** Breathe first: the same quiet link as Write instead, beside it. */
+function BreatheFirst() {
+  const { breathe } = useSessionEntry();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={breatheCopy.breatheFirst}
+      onPress={() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        breathe();
+      }}
+      hitSlop={{ top: 10, bottom: 10, left: 12, right: 12 }}
+      style={({ pressed }) => [styles.writeInstead, pressed && styles.ctaPressed]}
+      testID="home-breathe-first"
+    >
+      <OneLineLabel variant="caption" color="textSecondary" style={styles.writeInsteadLabel}>
+        {breatheCopy.breatheFirst}
+      </OneLineLabel>
+    </Pressable>
+  );
+}
+
 /** Voice is the way in (D-006). Writing is one quiet step away, never a second button. */
 function WriteInstead() {
   const { writeInstead } = useSessionEntry();
@@ -126,7 +151,7 @@ function WriteInstead() {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         writeInstead();
       }}
-      hitSlop={{ top: 10, bottom: 10, left: 24, right: 24 }}
+      hitSlop={{ top: 10, bottom: 10, left: 12, right: 12 }}
       style={({ pressed }) => [styles.writeInstead, pressed && styles.ctaPressed]}
     >
       <OneLineLabel variant="caption" color="textSecondary" style={styles.writeInsteadLabel}>
@@ -140,6 +165,7 @@ function TodayCard({ summary, strong }: { summary: HomeSummary; strong: boolean 
   const { rhythm } = summary;
   const done = rhythm.week.filter((day) => day.completed).length;
   const showRhythm = done > 0 || rhythm.currentStreak > 0;
+  const morning = useMorning();
   return (
     <GlassCard radius={tokens.radius.button} strength={strong ? 'strong' : 'regular'}>
       <View style={styles.today}>
@@ -147,10 +173,13 @@ function TodayCard({ summary, strong }: { summary: HomeSummary; strong: boolean 
           {copy.home.eyebrow.toUpperCase()}
         </EchoText>
         <EchoText variant="displayM" align="center" style={styles.prompt}>
-          {copy.home.prompt}
+          {morning ? becomeCopy.question : copy.home.prompt}
         </EchoText>
         <BeginCta />
-        <WriteInstead />
+        <View style={styles.links}>
+          <BreatheFirst />
+          <WriteInstead />
+        </View>
         {showRhythm && (
           <>
             <Pebbles count={Math.max(done, 1)} />
@@ -337,7 +366,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   ctaPressed: { opacity: 0.9, transform: [{ scale: 0.985 }] },
-  writeInstead: { minHeight: 24, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
+  links: { flexDirection: 'row', justifyContent: 'center', gap: 28, marginTop: 4 },
+  writeInstead: { minHeight: 24, alignItems: 'center', justifyContent: 'center' },
   writeInsteadLabel: {
     fontSize: 11,
     lineHeight: 15,

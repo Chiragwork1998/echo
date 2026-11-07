@@ -6,11 +6,16 @@ import { NIGHT_LOOP_COVER_GRACE_MS } from '@/design/nightLoop';
 import { useTheme } from '@/design/theme';
 
 /**
- * The routes under /home on which the plate is what the person is looking at: Home, and the daily
- * session, whose screen is transparent. Every other route here (Echoes, Patterns, You, an entry,
- * Completion) wears a plate of its own that covers this one.
+ * The routes under /home on which the plate is what the person is looking at: Home, the daily
+ * session, Breathe and Rehearse, whose screens are transparent. Every other route here (Echoes,
+ * Patterns, You, an entry, Completion) wears a plate of its own that covers this one.
  */
-export const LOOP_PATHS: readonly string[] = ['/home', '/home/session'];
+export const LOOP_PATHS: readonly string[] = [
+  '/home',
+  '/home/session',
+  '/home/breathe',
+  '/home/rehearse',
+];
 
 type SurfaceProps = { playing: boolean };
 

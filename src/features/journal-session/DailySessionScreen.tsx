@@ -1,7 +1,10 @@
 import { useLocalSearchParams } from 'expo-router';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
+import { arriveOffered } from '@/features/become/arrive';
+import { ArriveFirst } from '@/features/become/ArriveFirst';
 import { useHomeDissolve } from '@/features/home/dissolve';
+import { usePreferences } from '@/state/preferences';
 
 import { JournalSession } from './JournalSession';
 
@@ -16,6 +19,9 @@ function modeFrom(value: string | undefined) {
 /**
  * Today's echo, at /home/session. `mode=voice` opens in Speak, `mode=write` in Write, and
  * `draftId` continues that draft. Back returns to Home. Reflect goes to Completion.
+ *
+ * A morning session (Become) carries `prompt=become`: it asks "Who will you be today?" and rehearses
+ * after Reflect. `arrive=1` opens it with Arrive, until that has been skipped three mornings running.
  */
 export function DailySessionScreen() {
   // Home dissolved to make room for this. While it is here Home stays empty, and when it goes Home
@@ -25,8 +31,18 @@ export function DailySessionScreen() {
     sessionOpened();
     return sessionClosed;
   }, [sessionOpened, sessionClosed]);
-  const params = useLocalSearchParams<{ mode?: string; draftId?: string }>();
+  const params = useLocalSearchParams<{
+    mode?: string;
+    draftId?: string;
+    prompt?: string;
+    arrive?: string;
+  }>();
   const draftId = first(params.draftId);
+  const [arriving, setArriving] = useState(
+    () => first(params.arrive) === '1' && arriveOffered(usePreferences.getState().practice),
+  );
+  // Arrive first, then the book. Nothing of the session starts until it has handed over.
+  if (arriving) return <ArriveFirst onArrived={() => setArriving(false)} />;
   return (
     <JournalSession
       // A different draft is a different session: the draft hook opens one draft per mount.
@@ -34,6 +50,7 @@ export function DailySessionScreen() {
       variant="daily"
       initialMode={modeFrom(first(params.mode))}
       draftId={draftId}
+      become={first(params.prompt) === 'become'}
     />
   );
 }

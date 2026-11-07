@@ -7,7 +7,14 @@ export const ENVELOPE_VERSION = 1;
 export const FRAMED_VERSION = 2;
 
 export type ObjectKind =
-  'entry' | 'audio' | 'audio_meta' | 'reflection' | 'onboarding' | 'canary' | 'patterns';
+  | 'entry'
+  | 'audio'
+  | 'audio_meta'
+  | 'reflection'
+  | 'onboarding'
+  | 'canary'
+  | 'patterns'
+  | 'breathe';
 
 /** Deliberately carries nothing from the failed object: errors can reach logs and crash reports. */
 export class DecryptionError extends Error {
