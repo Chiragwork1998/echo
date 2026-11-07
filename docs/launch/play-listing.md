@@ -47,7 +47,7 @@ ECHO asks one question: what are you feeling? Then it gives you a short practice
 Help for panic, anxiety and hurt is never behind a paywall. Settle uses cyclic sighing: in a 2023 Stanford study, five minutes a day of cyclic sighing lifted mood more than mindfulness meditation (Balban et al., Cell Reports Medicine).
 
 Speak for seven minutes
-Answer one honest question out loud over a living mountain sky, or write if you prefer. ECHO keeps your exact words, ums and changes of mind included, and tidies them only if you ask. Watch your words appear as you speak, or keep them hidden so it is only you and the mountains. Speak English, Hindi, or both. Hindi is written in Roman script, the way you would text it.
+Answer one honest question out loud over a living mountain sky, or write if you prefer. ECHO keeps your exact words, ums and changes of mind included, and tidies them only if you ask. Keep your words hidden so it is only you and the mountains, or, with ECHO Plus, watch them appear as you speak. Speak English, Hindi, or both. Hindi is written in Roman script, the way you would text it.
 
 Begin the day as who you mean to be
 Mornings ask a different question: who will you be today? Arrive gives you two minutes of slow breathing, then helps you picture one ordinary moment of the day ahead as the person you are becoming. After you speak, your own words come back to you, one phrase at a time.
@@ -73,7 +73,9 @@ ECHO is wellness software. It is not therapy, diagnosis or emergency care. If yo
 Questions or ideas: {{support_email}}
 ```
 
-## What's new (500 characters at most), first early access build
+3,980 characters with the placeholder in place. Recount after `{{support_email}}` is filled in: an address of up to 37 characters keeps it under 4,000.
+
+## What’s new (500 characters at most), first early access build
 
 ```
 The first early access build of ECHO. Breathe for what you feel, speak your seven minute echo, begin your mornings with Arrive, and see what keeps returning in pattern cards. Tell us what works and what doesn't at {{support_email}}.
