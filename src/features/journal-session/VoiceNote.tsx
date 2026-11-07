@@ -19,6 +19,7 @@ export const VOICE_NOTES: readonly SpeakView[] = [
   'untranscribed',
   'transcribe_failed',
   'transcribe_unavailable',
+  'transcribe_allowance',
 ];
 
 const LINES: Partial<Record<SpeakView, string>> = {
@@ -30,6 +31,7 @@ const LINES: Partial<Record<SpeakView, string>> = {
   untranscribed: sessionCopy.transcribe.untranscribed,
   transcribe_failed: sessionCopy.transcribe.failed.server,
   transcribe_unavailable: sessionCopy.transcribe.unavailable,
+  transcribe_allowance: sessionCopy.transcribe.untranscribed,
 };
 
 function Action({ label, onPress }: { label: string; onPress: () => void }) {
@@ -61,15 +63,28 @@ type Props = {
   onWrite: () => void;
   /** Try again, or turn a recording with no words yet into words. */
   onRetry: () => void;
+  /** ECHO Plus, when the free month of voice into words is used. */
+  onPlus?: () => void;
   /** The sentence for the transcription states, from the failure's code. */
   line: string | null;
+  /** One more line under it, in the same voice, or null. */
+  detail?: string | null;
 };
 
 /**
  * What the microphone needs the person to know: why it asks, that it is off, that it could not
  * start. Plain words on the sky with one or two quiet actions, never a card.
  */
-export function VoiceNote({ view, onAllow, onSettings, onWrite, onRetry, line }: Props) {
+export function VoiceNote({
+  view,
+  onAllow,
+  onSettings,
+  onWrite,
+  onRetry,
+  onPlus,
+  line,
+  detail,
+}: Props) {
   const { text, shadow } = useSkyInk();
   return (
     <View style={styles.root} accessibilityLiveRegion="polite">
@@ -83,6 +98,17 @@ export function VoiceNote({ view, onAllow, onSettings, onWrite, onRetry, line }:
       >
         {line ?? LINES[view]}
       </EchoText>
+      {detail ? (
+        <EchoText
+          variant="bodyL"
+          serif
+          align="center"
+          maxFontSizeMultiplier={1.5}
+          style={[styles.line, styles.detail, { color: text }, shadow]}
+        >
+          {detail}
+        </EchoText>
+      ) : null}
       {view === 'explain' && <Action label={sessionCopy.speak.allow} onPress={onAllow} />}
       {view === 'denied' && <Action label={sessionCopy.speak.settings} onPress={onSettings} />}
       {view === 'untranscribed' && (
@@ -90,6 +116,9 @@ export function VoiceNote({ view, onAllow, onSettings, onWrite, onRetry, line }:
       )}
       {view === 'transcribe_failed' && (
         <Action label={sessionCopy.errors.retry} onPress={onRetry} />
+      )}
+      {view === 'transcribe_allowance' && onPlus && (
+        <Action label={sessionCopy.transcribe.allowance.plus} onPress={onPlus} />
       )}
       <Action label={sessionCopy.speak.writeInstead} onPress={onWrite} />
     </View>
@@ -99,6 +128,7 @@ export function VoiceNote({ view, onAllow, onSettings, onWrite, onRetry, line }:
 const styles = StyleSheet.create({
   root: { alignItems: 'center', gap: 4, paddingHorizontal: 40 },
   line: { fontFamily: SERIF, fontSize: 20, lineHeight: 27 },
+  detail: { marginTop: 6 },
   action: { minHeight: 44, minWidth: 44, alignItems: 'center', justifyContent: 'center' },
   actionLabel: { fontFamily: SERIF, fontSize: 21, lineHeight: 27, textDecorationLine: 'underline' },
 });

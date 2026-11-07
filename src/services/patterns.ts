@@ -1,4 +1,5 @@
-import { VOICE_TOKEN_HEADER, voiceApi } from './voiceApi';
+import { installTokens, withInstallToken, type InstallTokens } from './install';
+import { authHeaders, installRefused, refusalOf, voiceApi } from './voiceApi';
 
 /** The most entries one reading sends, newest first. Said plainly in the consent. */
 export const PATTERNS_SEND_LIMIT = 30;
@@ -28,6 +29,10 @@ export type ReadFailure =
   | 'offline'
   /** Too many readings in a short while. */
   | 'busy'
+  /** The free reading has been used. ECHO Plus reads whenever asked. */
+  | 'allowance_used'
+  /** ECHO Plus's readings for the month are used. More come next month. */
+  | 'reading_cap'
   | 'failed';
 
 export type ReadResult =
@@ -96,38 +101,57 @@ export function parseReading(body: unknown): ReadResult | null {
 export async function readPatternCards(
   entries: readonly SentEntry[],
   send: typeof fetch = fetch,
+  tokens: InstallTokens = installTokens,
 ): Promise<ReadResult> {
   const api = voiceApi();
   if (!api) return { status: 'error', code: 'not_configured', retryable: false };
 
-  // Not AbortSignal.timeout: Hermes does not reliably have it.
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  try {
-    let response: Response;
+  const once = async (installToken: string | null) => {
+    // Not AbortSignal.timeout: Hermes does not reliably have it.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
     try {
-      response = await send(`${api.url}/api/patterns`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', [VOICE_TOKEN_HEADER]: api.token },
-        body: JSON.stringify({ entries }),
-        signal: controller.signal,
-      });
-    } catch {
-      return { status: 'error', code: 'offline', retryable: true };
+      let response: Response;
+      try {
+        response = await send(`${api.url}/api/patterns`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeaders(api, installToken) },
+          body: JSON.stringify({ entries }),
+          signal: controller.signal,
+        });
+      } catch {
+        return { result: offline, refusedInstall: false };
+      }
+      let body: unknown;
+      try {
+        body = await response.json();
+      } catch {
+        body = undefined;
+      }
+      return {
+        result: readingFrom(response.status, body),
+        refusedInstall: installRefused(response.status, refusalOf(body)),
+      };
+    } finally {
+      clearTimeout(timer);
     }
+  };
+  const { result } = await withInstallToken(api, once, (attempt) => attempt.refusedInstall, tokens);
+  return result;
+}
 
-    if (response.status === 429) return { status: 'error', code: 'busy', retryable: true };
-    if (!response.ok) {
-      return { status: 'error', code: 'failed', retryable: response.status >= 500 };
-    }
-    try {
-      return (
-        parseReading(await response.json()) ?? { status: 'error', code: 'failed', retryable: true }
-      );
-    } catch {
-      return { status: 'error', code: 'failed', retryable: true };
-    }
-  } finally {
-    clearTimeout(timer);
+const offline: ReadResult = { status: 'error', code: 'offline', retryable: true };
+
+/** What a reply means for the person. A refusal is named for what it was; nothing here throws. */
+function readingFrom(status: number, body: unknown): ReadResult {
+  if (status === 429) return { status: 'error', code: 'busy', retryable: true };
+  if (status === 402 && refusalOf(body).error === 'allowance_used') {
+    const code = refusalOf(body).plan === 'plus' ? 'reading_cap' : 'allowance_used';
+    return { status: 'error', code, retryable: false };
   }
+  if (status < 200 || status >= 300) {
+    return { status: 'error', code: 'failed', retryable: status >= 500 };
+  }
+  if (body === undefined) return { status: 'error', code: 'failed', retryable: true };
+  return parseReading(body) ?? { status: 'error', code: 'failed', retryable: true };
 }

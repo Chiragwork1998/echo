@@ -234,7 +234,9 @@ export function WrittenSession({ session }: { session: SessionController }) {
               onSettings={openSettings}
               onWrite={writeInstead}
               onRetry={session.retryTranscription}
+              onPlus={session.getPlus}
               line={session.speakLine}
+              detail={session.speakDetail}
             />
           </WritingSurface>
         )}

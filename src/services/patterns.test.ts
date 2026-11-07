@@ -110,4 +110,41 @@ describe('readPatternCards', () => {
     const notJson = jest.fn(async () => new Response('not json')) as unknown as typeof fetch;
     expect(await readPatternCards(entries, notJson)).toMatchObject({ code: 'failed' });
   });
+
+  const noTokens = { get: async () => null, renew: async () => null };
+
+  it('says the free reading is used, and Plus’s month, when the server refuses with 402', async () => {
+    const refused = (plan: string) =>
+      jest.fn(async () =>
+        reply(402, { error: 'allowance_used', feature: 'patterns', plan, resetsAt: null }),
+      ) as unknown as typeof fetch;
+    expect(await readPatternCards(entries, refused('free'), noTokens)).toEqual({
+      status: 'error',
+      code: 'allowance_used',
+      retryable: false,
+    });
+    expect(await readPatternCards(entries, refused('plus'), noTokens)).toEqual({
+      status: 'error',
+      code: 'reading_cap',
+      retryable: false,
+    });
+  });
+
+  it('sends this install’s token, and asks once for a new one if it is refused', async () => {
+    const send = jest
+      .fn()
+      .mockResolvedValueOnce(reply(401, { error: 'install_invalid', code: 'install_invalid' }))
+      .mockResolvedValueOnce(reply(200, { status: 'none', entriesRead: 1 }));
+    const tokens = { get: jest.fn(async () => 'ei1.old'), renew: jest.fn(async () => 'ei1.new') };
+    expect(await readPatternCards(entries, send as unknown as typeof fetch, tokens)).toEqual({
+      status: 'none',
+      entriesRead: 1,
+    });
+    const headers = (call: number) =>
+      (send.mock.calls[call]![1] as RequestInit).headers as Record<string, string>;
+    expect(headers(0)['x-echo-install-token']).toBe('ei1.old');
+    expect(headers(1)['x-echo-install-token']).toBe('ei1.new');
+    expect(headers(1)['x-echo-voice-token']).toBe('app-token');
+    expect(tokens.renew).toHaveBeenCalledTimes(1);
+  });
 });

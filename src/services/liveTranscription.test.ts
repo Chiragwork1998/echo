@@ -42,6 +42,7 @@ const deps = (overrides: Partial<LiveDeps> = {}): Partial<LiveDeps> => ({
   WebSocket: FakeSocket,
   timeoutMs: 500,
   allowed: () => true,
+  tokens: { get: async () => null, renew: async () => null },
   ...overrides,
 });
 
@@ -135,6 +136,54 @@ describe('openLiveSocket and consent', () => {
     FakeSocket.last.onopen?.();
     expect(await opening).not.toBeNull();
     expect(asked.fetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Before the block below: its last test turns fake timers on and off, and this environment has no
+// global setTimeout after that, so nothing that needs one can run after it.
+describe('openLiveSocket and this install', () => {
+  const handlers = () => ({ onEvent: jest.fn<void, [LiveEvent]>(), onClose: jest.fn() });
+  const refused = (status: number, body: unknown) =>
+    ({ ok: false, status, json: async () => body }) as Response;
+  const headersOf = (fetch: unknown, call: number) =>
+    ((fetch as jest.Mock).mock.calls[call]![1] as RequestInit).headers as Record<string, string>;
+
+  it('asks for the secret with this install’s token, and once more with a new one if refused', async () => {
+    const fetch = jest
+      .fn()
+      .mockResolvedValueOnce(refused(401, { error: 'install_invalid' }))
+      .mockResolvedValueOnce(granted());
+    const tokens = { get: jest.fn(async () => 'ei1.old'), renew: jest.fn(async () => 'ei1.new') };
+    const before = FakeSocket.last;
+    const opening = openLiveSocket(handlers(), deps({ fetch, tokens }));
+    // The socket is made once the second answer is in: wait for it, however many steps that takes.
+    for (let i = 0; i < 50 && FakeSocket.last === before; i += 1) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    expect(FakeSocket.last).not.toBe(before);
+    FakeSocket.last.onopen?.();
+    expect(await opening).not.toBeNull();
+    expect(headersOf(fetch, 0)['x-echo-install-token']).toBe('ei1.old');
+    expect(headersOf(fetch, 1)['x-echo-install-token']).toBe('ei1.new');
+    expect(headersOf(fetch, 1)['x-echo-voice-token']).toBe('app-token');
+    expect(tokens.renew).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens nothing when live words are not in the plan (402): the take is sent after it ends', async () => {
+    FakeSocket.last = undefined as unknown as FakeSocket;
+    const fetch = jest.fn(async () =>
+      refused(402, {
+        error: 'allowance_used',
+        feature: 'live-words',
+        plan: 'free',
+        resetsAt: null,
+      }),
+    );
+    const tokens = { get: jest.fn(async () => 'ei1.me'), renew: jest.fn(async () => 'ei1.other') };
+    expect(await openLiveSocket(handlers(), deps({ fetch, tokens }))).toBeNull();
+    expect(FakeSocket.last).toBeUndefined();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(tokens.renew).not.toHaveBeenCalled();
   });
 });
 

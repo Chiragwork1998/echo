@@ -1,6 +1,8 @@
 import type { JournalResult, PlayableAudio } from '@/features/journal/types';
 
+import type { InstallTokens } from './install';
 import {
+  askAllowance,
   bytesPart,
   MAX_UPLOAD_BYTES,
   PIECE_BYTES,
@@ -63,6 +65,8 @@ function audioAt(uri: string): JournalResult<PlayableAudio> {
 // A part Expo's fetch can read has bytes(): an expo-file-system File. The tests stand one in.
 const filePart = (uri: string) =>
   ({ uri, bytes: async () => new Uint8Array([1]) }) as unknown as Blob;
+/** No install token to be had: what an older server, or no connection, leaves the app with. */
+const noTokens: InstallTokens = { get: async () => null, renew: async () => null };
 const run = (overrides: Partial<TranscribeDeps> = {}, options = {}) =>
   transcribeEntryAudio(
     'draft-1',
@@ -75,6 +79,8 @@ const run = (overrides: Partial<TranscribeDeps> = {}, options = {}) =>
       filePart,
       style: () => 'exact',
       online: async () => true,
+      tokens: noTokens,
+      allowance: async () => null,
       ...overrides,
     },
   );
@@ -370,11 +376,12 @@ describe('consent gating', () => {
     const { usePreferences, VOICE_POLICY_VERSION } =
       jest.requireActual<typeof import('@/state/preferences')>('@/state/preferences');
     usePreferences.setState({ voiceConsent: { choice: 'allowed', version: VOICE_POLICY_VERSION } });
-    return transcribeEntryAudio('d', { open }, { fetch: send, url: URL_LOCAL, token: TOKEN })
+    const deps = { fetch: send, url: URL_LOCAL, token: TOKEN, tokens: noTokens };
+    return transcribeEntryAudio('d', { open }, deps)
       .then((allowed) => {
         expect(allowed.ok).toBe(true);
         usePreferences.setState({ voiceConsent: { choice: 'allowed', version: 0 } });
-        return transcribeEntryAudio('d', { open }, { fetch: send, url: URL_LOCAL, token: TOKEN });
+        return transcribeEntryAudio('d', { open }, deps);
       })
       .then((stale) => {
         expect(stale).toEqual({ ok: false, error: { code: 'consent_required', retryable: false } });
@@ -1082,6 +1089,7 @@ describe('refineWords: the same rules for words heard live', () => {
         status,
         style: () => 'exact',
         online: async () => true,
+        tokens: noTokens,
         ...overrides,
       },
     );
@@ -1140,6 +1148,210 @@ describe('refineWords: the same rules for words heard live', () => {
     expect(await refineRun('यार')).toEqual({
       ok: false,
       error: { code: 'invalid_response', retryable: false },
+    });
+  });
+});
+
+describe('this install, and what the month allows', () => {
+  const INSTALL_HEADER = 'x-echo-install-token';
+  const headersOf = (call: number) => (send.mock.calls[call]![1] as RequestInit).headers;
+  const tokens = (first: string | null, renewed: string | null = null) => ({
+    get: jest.fn(async () => first),
+    renew: jest.fn(async () => renewed),
+  });
+  const refused = (error: string) => reply(401, { error, code: error, retryable: false });
+
+  it('sends this install’s token beside the shared one', async () => {
+    await run({ tokens: tokens('ei1.install') });
+    expect(headersOf(0)).toEqual({
+      [TOKEN_HEADER]: TOKEN,
+      [INSTALL_HEADER]: 'ei1.install',
+      Accept: 'application/json',
+    });
+  });
+
+  it('sends the shared token alone when there is no install token to be had', async () => {
+    expect((await run()).ok).toBe(true);
+    expect(headersOf(0)).toEqual({ [TOKEN_HEADER]: TOKEN, Accept: 'application/json' });
+  });
+
+  it('asks once for a new token when the server refuses this one, and sends again with it', async () => {
+    const held = tokens('ei1.old', 'ei1.new');
+    send.mockResolvedValueOnce(refused('install_invalid')).mockResolvedValueOnce(reply(200, good));
+    expect((await run({ tokens: held })).ok).toBe(true);
+    expect(held.renew).toHaveBeenCalledTimes(1);
+    expect(held.renew).toHaveBeenCalledWith({ url: URL_LOCAL, token: TOKEN }, 'ei1.old');
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(headersOf(1)).toMatchObject({ [INSTALL_HEADER]: 'ei1.new' });
+    // One recording, opened once and let go of once, however many times it was sent.
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks for a token when the server now requires one and none was sent', async () => {
+    const held = tokens(null, 'ei1.fresh');
+    send.mockResolvedValueOnce(refused('install_required')).mockResolvedValueOnce(reply(200, good));
+    expect((await run({ tokens: held })).ok).toBe(true);
+    expect(headersOf(1)).toMatchObject({ [INSTALL_HEADER]: 'ei1.fresh' });
+  });
+
+  it('says unauthorized when the new token is refused too, and asks no more', async () => {
+    const held = tokens('ei1.old', 'ei1.new');
+    send.mockResolvedValue(refused('install_invalid'));
+    expect(await failedWith(run({ tokens: held }))).toEqual({
+      code: 'unauthorized',
+      retryable: false,
+    });
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(held.renew).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not ask for a new token over a refusal that is not about the install', async () => {
+    const held = tokens('ei1.x', 'ei1.y');
+    send.mockResolvedValue(refused('unauthorized'));
+    expect(await failedWith(run({ tokens: held }))).toEqual({
+      code: 'unauthorized',
+      retryable: false,
+    });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(held.renew).not.toHaveBeenCalled();
+  });
+
+  it.each<[unknown, TranscriptionErrorCode]>([
+    [
+      {
+        error: 'allowance_used',
+        feature: 'voice',
+        plan: 'free',
+        resetsAt: '2026-12-01T00:00:00.000Z',
+      },
+      'allowance_used',
+    ],
+    [
+      { error: 'allowance_used', code: 'allowance_used', feature: 'voice', plan: 'plus' },
+      'fair_use',
+    ],
+    [{ code: 'allowance_used' }, 'allowance_used'],
+  ])('maps a used month, 402 %j, to %s, which no retry mends', async (body, code) => {
+    send.mockResolvedValue(reply(402, body));
+    expect(await failedWith(run())).toEqual({ code, retryable: false });
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it('maps the day’s ceiling, 503 busy, to a server failure worth trying again', async () => {
+    send.mockResolvedValue(
+      reply(503, { error: 'busy', code: 'busy', retryable: true, retryAfter: 600 }),
+    );
+    expect(await failedWith(run())).toEqual({ code: 'server', retryable: true });
+  });
+
+  it('refines words with this install’s token, and renews it once the same way', async () => {
+    const held = tokens('ei1.old', 'ei1.new');
+    send
+      .mockResolvedValueOnce(refused('install_invalid'))
+      .mockResolvedValueOnce(reply(200, { text: 'aaj mann bhaari hai' }));
+    const result = await refineWords(
+      'आज मन भारी है',
+      {},
+      { fetch: send, url: URL_LOCAL, token: TOKEN, status, style: () => 'exact', tokens: held },
+    );
+    expect(result).toEqual({ ok: true, value: { text: 'aaj mann bhaari hai' } });
+    expect(headersOf(0)).toMatchObject({ [INSTALL_HEADER]: 'ei1.old' });
+    expect(headersOf(1)).toMatchObject({ [INSTALL_HEADER]: 'ei1.new' });
+  });
+
+  describe('a take in pieces is all or nothing', () => {
+    const RATE = 24_000;
+    // 100 seconds of 24 kHz WAV: two pieces.
+    const wav = (() => {
+      const pcm = new Uint8Array(RATE * 2 * 100);
+      const file = new Uint8Array(44 + pcm.length);
+      file.set(wavHeader({ sampleRate: RATE, channels: 1 }, pcm.length));
+      return file;
+    })();
+    const long = (allowance: TranscribeDeps['allowance']) =>
+      run({
+        sizeOf: () => wav.length,
+        readRange: async (_uri, offset, length) => wav.slice(offset, offset + length),
+        allowance,
+      });
+    const month = (usedSeconds: number, plan: 'free' | 'plus' = 'free') =>
+      jest.fn(async () => ({ plan, usedSeconds, limitSeconds: plan === 'free' ? 3_600 : 72_000 }));
+
+    beforeEach(() => open.mockResolvedValue(audioAt('file:///cache/echo/take.wav')));
+
+    it('is kept whole when it will not fit what is left of the month, and nothing is sent', async () => {
+      expect(await failedWith(long(month(3_520)))).toEqual({
+        code: 'allowance_used',
+        retryable: false,
+      });
+      expect(send).not.toHaveBeenCalled();
+      expect(release).toHaveBeenCalledTimes(1);
+      expect(await failedWith(long(month(71_950, 'plus')))).toEqual({
+        code: 'fair_use',
+        retryable: false,
+      });
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it('is sent when it fits, to the second', async () => {
+      send.mockResolvedValue(reply(200, { ...good, text: 'words' }));
+      // 100 seconds, and one more kept in hand for how the server rounds.
+      expect((await long(month(3_499))).ok).toBe(true);
+      expect(send).toHaveBeenCalledTimes(2);
+      send.mockClear();
+      expect(await failedWith(long(month(3_500)))).toEqual({
+        code: 'allowance_used',
+        retryable: false,
+      });
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it('is sent when the month cannot be known, and the server decides each piece', async () => {
+      send.mockResolvedValue(reply(200, { ...good, text: 'words' }));
+      expect((await long(async () => null)).ok).toBe(true);
+      expect((await long(async () => Promise.reject(new Error('no')))).ok).toBe(true);
+    });
+
+    it('is not asked about for a take that goes in one request', async () => {
+      const allowance = month(3_599);
+      expect((await run({ allowance })).ok).toBe(true);
+      expect(allowance).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('askAllowance', () => {
+    const api = { url: URL_LOCAL, token: TOKEN };
+
+    it('asks the server about this install’s month, and reads the answer', async () => {
+      send.mockResolvedValue(
+        reply(200, {
+          plan: 'free',
+          voice: { usedSeconds: 90, limitSeconds: 3_600, resetsAt: '2026-12-01T00:00:00.000Z' },
+        }),
+      );
+      expect(await askAllowance(api, { fetch: send, tokens: tokens('ei1.me') })).toEqual({
+        plan: 'free',
+        usedSeconds: 90,
+        limitSeconds: 3_600,
+      });
+      const [url, init] = send.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe(`${URL_LOCAL}/api/allowance`);
+      expect(init.method).toBe('GET');
+      expect(init.headers).toMatchObject({ [INSTALL_HEADER]: 'ei1.me', [TOKEN_HEADER]: TOKEN });
+    });
+
+    it('knows nothing from an older server, a build with only the shared token, or no connection', async () => {
+      for (const answer of [
+        reply(404, undefined),
+        reply(200, { plan: 'legacy', voice: null }),
+        reply(200, { words: 'no' }),
+      ]) {
+        send.mockResolvedValueOnce(answer);
+        expect(await askAllowance(api, { fetch: send, tokens: noTokens })).toBeNull();
+      }
+      send.mockRejectedValueOnce(new TypeError('Network request failed'));
+      expect(await askAllowance(api, { fetch: send, tokens: noTokens })).toBeNull();
     });
   });
 });

@@ -237,6 +237,9 @@ describe('when the words do not come back', () => {
     'unauthorized',
     'not_configured',
     'audio_unavailable',
+    // The month's voice into words is used: kept exactly as an offline take is.
+    'allowance_used',
+    'fair_use',
   ])('on %s the page and the recording are untouched, and Try again works', async (code) => {
     send.mockResolvedValueOnce(failed(code));
     const { result } = await mount();
@@ -292,6 +295,26 @@ describe('speaking several times', () => {
     expect((await stored()).transcribedAudioId).toBe('a2');
     expect(result.current.words.arrival).toBe(2);
     expect(result.current.words.phase).toEqual({ kind: 'idle' });
+  });
+
+  it('keeps a take refused for the free month ahead of the next, as it keeps an offline one', async () => {
+    openAudio.mockResolvedValue({
+      ok: true,
+      value: { uri: 'file:///kept/one.m4a', release: jest.fn() },
+    });
+    send.mockResolvedValueOnce(failed('allowance_used'));
+    const { result } = await mount();
+    await act(async () => result.current.words.enqueue(audio('a1')));
+    await settle();
+    expect(result.current.words.phase).toEqual({ kind: 'failed', code: 'allowance_used' });
+
+    // Speaking again does not let go of it: it is not a take that can never become words.
+    await act(async () => result.current.words.holdCurrent());
+    send.mockResolvedValueOnce(said('One.')).mockResolvedValueOnce(said('Two.'));
+    await act(async () => result.current.words.enqueue(audio('a2')));
+    await settle();
+    expect(send).toHaveBeenCalledTimes(3);
+    expect(result.current.draft.content.body).toBe('Before.\n\nOne.\n\nTwo.');
   });
 
   it('keeps a failed take ahead of the ones after it, and sends its kept copy again', async () => {
