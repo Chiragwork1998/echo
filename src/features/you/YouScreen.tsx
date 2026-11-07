@@ -21,6 +21,7 @@ import { useLockSetting, type LockNote } from './useLockSetting';
 import { useReminderSetting } from './useReminderSetting';
 import { useVoiceSetting } from './useVoiceSetting';
 import { youCopy } from './youCopy';
+import { RestoreRow } from '@/features/backup/RestoreRow';
 
 const THEMES: readonly { value: ThemePreference; label: string; detail?: string }[] = [
   { value: 'day', label: youCopy.day },
@@ -198,10 +199,8 @@ function Data() {
           disabled={working}
           onPress={() => void exporting.run()}
         />
-        {/*
-          Restore from a backup: its own agent builds it as one self-contained row, and it goes here,
-          between keeping a copy and deleting everything.
-        */}
+        {/* Between keeping a copy and deleting everything: bringing a copy back. */}
+        <RestoreRow />
         <Row
           label={deleting.state === 'deleting' ? youCopy.deleting : youCopy.deleteAll}
           detail={youCopy.deleteAllDetail}
