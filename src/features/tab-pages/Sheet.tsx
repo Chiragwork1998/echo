@@ -1,13 +1,31 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import type { PropsWithChildren, ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type PropsWithChildren,
+  type ReactNode,
+} from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import Animated, {
+  Easing,
+  ReduceMotion,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { EchoModal } from '@/components/EchoModal';
 import { EchoText } from '@/components/EchoText';
+import { EASE } from '@/design/ease';
+import { cue } from '@/design/haptics';
 import { parseColor } from '@/design/mixColor';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
+import { useReduceMotion } from '@/design/useReduceMotion';
 import { useTone } from '@/features/onboarding/rhythm/tone';
 
 import { keepTogether } from './keepTogether';
@@ -16,68 +34,237 @@ import { detail, question, textAction } from './textStyles';
 const MAX_WIDTH = 430;
 const SIDE = tokens.space[12];
 
+// Paper arriving: the sheet lands fast and settles slowly, as a page set down does. EASE has gone
+// 87 percent of the way by 180 ms, so the 520 ms is mostly the last few points coming to rest.
+const SCRIM_IN_MS = 320;
+const SHEET_RISE_MS = 520;
+const SHEET_FADE_IN_MS = 240;
+const RISE = 24;
+// It leaves quicker and lower than it came: set down, then lifted away.
+const SHEET_OUT_MS = 240;
+const SCRIM_OUT_MS = 260;
+const SINK = 12;
+/** The window outlasts its own exit, so it is still there to see (and still counted) while it fades. */
+const UNMOUNT_MS = 280;
+// Reduce Motion: the sheet and the scrim fade, and nothing travels.
+const REDUCED_IN_MS = tokens.motion.fast;
+const REDUCED_OUT_MS = 140;
+const REDUCED_UNMOUNT_MS = 160;
+/** A dialog handing over to the next one: the new words fade in on the same sheet. */
+const HANDOFF_MS = 200;
+
+/** True while the sheet is on its way out: its buttons hold the look they were pressed with. */
+const LeavingContext = createContext(false);
+
 type Props = PropsWithChildren<{
   visible: boolean;
   /** The system Back button, Escape, and a tap outside the sheet. */
   onClose: () => void;
   /** Always in view beneath the part that scrolls: the sheet's actions. */
   footer?: ReactNode;
-  /** False to go at once instead of fading, as when the lock takes the screen: nothing fades over it. */
+  /** False to go at once instead of arriving, as when the lock takes the screen: nothing fades over it. */
   animated?: boolean;
+  /**
+   * Names what the sheet says now. When it changes while the sheet is open, the sheet stays where it
+   * is and its words fade in, rather than rising again.
+   */
+  contentKey?: string | number;
   /** Names the sheet's window, where Back arrives. The dimmed page around it is `${testID}-outside`. */
   testID?: string;
 }>;
 
+/** The sheet's words and actions, fading in when they replace others on a sheet already open. */
+function Presented({ fade, children }: PropsWithChildren<{ fade: boolean }>) {
+  const reduced = useReduceMotion();
+  const shown = useSharedValue(fade ? 0 : 1);
+  useEffect(() => {
+    if (!fade) return;
+    shown.set(
+      withTiming(1, {
+        duration: reduced ? tokens.motion.fast : HANDOFF_MS,
+        easing: EASE,
+        reduceMotion: ReduceMotion.Never,
+      }),
+    );
+  }, [fade, reduced, shown]);
+  const style = useAnimatedStyle(() => ({ opacity: shown.get() }));
+  return <Animated.View style={[styles.presented, style]}>{children}</Animated.View>;
+}
+
 /**
  * A sheet over the page, in the same cloth as the voice consent sheet: cream with ink by Day,
- * midnight with cream by Night, a fine edge and no shadow. It fades in and out, which is all Reduce
- * Motion would leave of it anyway. The person never loses their place beneath it.
+ * midnight with cream by Night, a fine edge and no shadow. It arrives like paper set down: the page
+ * dims over 320 ms while the sheet rises 24 pt and settles, and it leaves a little quicker. Content
+ * and buttons are live from the first frame. Under Reduce Motion it only fades. The person never
+ * loses their place beneath it.
  */
-export function Sheet({ visible, onClose, footer, animated = true, children, testID }: Props) {
+export function Sheet({
+  visible,
+  onClose,
+  footer,
+  animated = true,
+  contentKey,
+  children,
+  testID,
+}: Props) {
   const tone = useTone();
+  const reduced = useReduceMotion();
   const { bottom } = useSafeAreaInsets();
   // The consent sheet's cloth, made whole: nothing of the page should read through a sheet.
   const rgb = parseColor(tone.sheet);
   const cloth = rgb ? `rgb(${rgb[0]},${rgb[1]},${rgb[2]})` : tone.sheet;
+
+  // The window stays up for the length of its exit. A timer ends it, never an animation callback.
+  const [mounted, setMounted] = useState(visible);
+  if (visible && !mounted) setMounted(true);
+  const present = animated ? mounted : visible;
+  const leaving = present && !visible;
+
+  const [shownKey, setShownKey] = useState(contentKey);
+  const [handoff, setHandoff] = useState(false);
+  if (contentKey !== shownKey) {
+    setShownKey(contentKey);
+    setHandoff(mounted && visible);
+  }
+
+  const rest = visible && !animated;
+  const dim = useSharedValue(rest ? 1 : 0);
+  const fade = useSharedValue(rest ? 1 : 0);
+  const y = useSharedValue(rest || reduced ? 0 : RISE);
+  const wasVisible = useRef(visible);
+
+  useEffect(() => {
+    const was = wasVisible.current;
+    wasVisible.current = visible;
+    const hide = () => {
+      dim.set(0);
+      fade.set(0);
+      y.set(reduced ? 0 : RISE);
+    };
+    if (visible) {
+      if (!animated) {
+        dim.set(1);
+        fade.set(1);
+        y.set(0);
+        return;
+      }
+      const options = { reduceMotion: ReduceMotion.Never };
+      dim.set(
+        withTiming(1, {
+          ...options,
+          duration: reduced ? REDUCED_IN_MS : SCRIM_IN_MS,
+          easing: Easing.out(Easing.quad),
+        }),
+      );
+      fade.set(
+        withTiming(1, {
+          ...options,
+          duration: reduced ? REDUCED_IN_MS : SHEET_FADE_IN_MS,
+          easing: Easing.out(Easing.cubic),
+        }),
+      );
+      // Starts from wherever an exit in progress had got to, so a quick re-open never jumps.
+      y.set(withTiming(0, { ...options, duration: reduced ? 0 : SHEET_RISE_MS, easing: EASE }));
+      return;
+    }
+    if (!was) return;
+    if (!animated) {
+      hide();
+      return;
+    }
+    const options = { reduceMotion: ReduceMotion.Never };
+    fade.set(
+      withTiming(0, {
+        ...options,
+        duration: reduced ? REDUCED_OUT_MS : SHEET_OUT_MS,
+        easing: Easing.out(Easing.cubic),
+      }),
+    );
+    dim.set(
+      withTiming(0, {
+        ...options,
+        duration: reduced ? REDUCED_OUT_MS : SCRIM_OUT_MS,
+        easing: Easing.out(Easing.quad),
+      }),
+    );
+    if (!reduced) {
+      y.set(
+        withTiming(SINK, { ...options, duration: SHEET_OUT_MS, easing: Easing.out(Easing.cubic) }),
+      );
+    }
+    const done = setTimeout(
+      () => {
+        hide();
+        setHandoff(false);
+        setMounted(false);
+      },
+      reduced ? REDUCED_UNMOUNT_MS : UNMOUNT_MS,
+    );
+    // A re-open inside the exit clears this, and the entrance carries on from where the exit was.
+    return () => clearTimeout(done);
+  }, [animated, dim, fade, reduced, visible, y]);
+
+  const scrim = useAnimatedStyle(() => ({ opacity: dim.get() }));
+  const paper = useAnimatedStyle(() => ({
+    opacity: fade.get(),
+    transform: [{ translateY: y.get() }],
+  }));
+
   return (
     <EchoModal
       transparent
-      animationType={animated ? 'fade' : 'none'}
-      visible={visible}
-      onRequestClose={onClose}
-      testID={testID}
+      animationType="none"
+      visible={present}
+      // A window on its way out is no longer the sheet: it names nothing and takes no Back.
+      onRequestClose={leaving ? undefined : onClose}
+      testID={leaving ? undefined : testID}
     >
-      <View style={styles.scrim}>
-        <Pressable
-          testID={testID && `${testID}-outside`}
-          style={StyleSheet.absoluteFill}
-          onPress={onClose}
-          accessible={false}
-          importantForAccessibility="no"
-        />
+      <LeavingContext.Provider value={leaving}>
         <View
-          accessibilityViewIsModal
-          onAccessibilityEscape={onClose}
-          style={[
-            styles.sheet,
-            {
-              backgroundColor: cloth,
-              borderColor: tone.edge,
-              marginBottom: Math.max(bottom, SIDE) + tokens.space[8],
-            },
-          ]}
+          testID={testID && `${testID}-stage`}
+          style={styles.stage}
+          pointerEvents={leaving ? 'none' : 'auto'}
+          accessibilityElementsHidden={leaving}
+          importantForAccessibility={leaving ? 'no-hide-descendants' : 'auto'}
         >
-          <ScrollView
-            style={styles.scroll}
-            contentContainerStyle={styles.body}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
+          <Animated.View
+            pointerEvents="none"
+            style={[StyleSheet.absoluteFill, styles.dim, scrim]}
+          />
+          <Pressable
+            testID={testID && `${testID}-outside`}
+            style={StyleSheet.absoluteFill}
+            onPress={onClose}
+            accessible={false}
+            importantForAccessibility="no"
+          />
+          <Animated.View
+            accessibilityViewIsModal
+            onAccessibilityEscape={onClose}
+            style={[
+              styles.sheet,
+              {
+                backgroundColor: cloth,
+                borderColor: tone.edge,
+                marginBottom: Math.max(bottom, SIDE) + tokens.space[8],
+              },
+              paper,
+            ]}
           >
-            {children}
-          </ScrollView>
-          {footer ? <View style={styles.footer}>{footer}</View> : null}
+            <Presented key={contentKey} fade={handoff}>
+              <ScrollView
+                style={styles.scroll}
+                contentContainerStyle={styles.body}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+              >
+                {children}
+              </ScrollView>
+              {footer ? <View style={styles.footer}>{footer}</View> : null}
+            </Presented>
+          </Animated.View>
         </View>
-      </View>
+      </LeavingContext.Provider>
     </EchoModal>
   );
 }
@@ -134,6 +321,9 @@ export function SheetButton({
   hint?: string;
 }) {
   const { name, colors } = useTheme();
+  const leaving = useContext(LeavingContext);
+  // The button that was chosen keeps the look of being pressed while the sheet leaves.
+  const [chosen, setChosen] = useState(false);
   const day = name === 'day';
   const blocked = disabled || busy;
   const labelColour = day ? colors.textPrimary : colors.textInk;
@@ -154,11 +344,16 @@ export function SheetButton({
       accessibilityHint={disabled ? hint : undefined}
       accessibilityState={{ disabled: blocked, busy }}
       disabled={blocked}
-      onPress={onPress}
+      onPress={() => {
+        // A sheet's primary action is the one that confirms: felt once, as it begins.
+        cue('commit');
+        setChosen(true);
+        onPress();
+      }}
       style={({ pressed }) => [
         styles.button,
         blocked && styles.blocked,
-        pressed && styles.buttonPressed,
+        (pressed || (leaving && chosen)) && styles.buttonPressed,
       ]}
     >
       {day ? (
@@ -180,13 +375,18 @@ export function SheetButton({
 /** A quiet word to tap inside a sheet, such as Cancel. Sentence case, 44 pt tall. */
 export function SheetAction({ label, onPress }: { label: string; onPress: () => void }) {
   const tone = useTone();
+  const leaving = useContext(LeavingContext);
+  const [chosen, setChosen] = useState(false);
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
-      onPress={onPress}
+      onPress={() => {
+        setChosen(true);
+        onPress();
+      }}
       hitSlop={6}
-      style={({ pressed }) => [styles.action, pressed && styles.pressed]}
+      style={({ pressed }) => [styles.action, (pressed || (leaving && chosen)) && styles.pressed]}
     >
       <EchoText
         variant="bodyM"
@@ -200,13 +400,15 @@ export function SheetAction({ label, onPress }: { label: string; onPress: () => 
 }
 
 const styles = StyleSheet.create({
-  scrim: {
+  stage: {
     flex: 1,
     justifyContent: 'flex-end',
     alignItems: 'center',
     paddingHorizontal: SIDE,
-    backgroundColor: 'rgba(3,11,22,0.5)',
   },
+  dim: { backgroundColor: 'rgba(3,11,22,0.5)' },
+  // Shrinks with the sheet's own maximum height, so a long body scrolls above its footer.
+  presented: { flexShrink: 1 },
   sheet: {
     width: '100%',
     maxWidth: MAX_WIDTH - SIDE * 2,

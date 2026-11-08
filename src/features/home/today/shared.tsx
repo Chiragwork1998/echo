@@ -10,6 +10,7 @@ import { backgroundSources } from '@/design/generated/backgrounds';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 import type { HomeSummary } from '@/features/journal';
+import { Bars } from '@/features/tab-pages/Resolve';
 
 import { homeLabels } from './homeLabels';
 
@@ -89,20 +90,23 @@ export function ArrowGlyph({ color, size = 14 }: { color: string; size?: number 
   );
 }
 
-/** Quiet placeholder while the first read finishes. Same footprint as the card it stands in for. */
+/**
+ * Quiet placeholder while the first read finishes. Same footprint as the card it stands in for. It
+ * is said to a screen reader at once and drawn only if the read takes longer than a quarter of a
+ * second, so a quick answer never flashes it.
+ */
 export function CardSkeleton({ height }: { height: number }) {
   return (
-    <GlassCard radius={tokens.radius.medium}>
-      <View
-        style={[styles.skeleton, { height }]}
-        accessible
-        accessibilityLabel={homeLabels.loading}
-        accessibilityState={{ busy: true }}
-      >
-        <View style={[styles.bar, { width: '38%' }]} />
-        <View style={[styles.bar, { width: '70%', height: 12 }]} />
-      </View>
-    </GlassCard>
+    <View accessible accessibilityLabel={homeLabels.loading} accessibilityState={{ busy: true }}>
+      <Bars>
+        <GlassCard radius={tokens.radius.medium}>
+          <View style={[styles.skeleton, { height }]}>
+            <View style={[styles.bar, { width: '38%' }]} />
+            <View style={[styles.bar, { width: '70%', height: 12 }]} />
+          </View>
+        </GlassCard>
+      </Bars>
+    </View>
   );
 }
 

@@ -1,4 +1,5 @@
-import { fireEvent, screen } from '@testing-library/react-native';
+import { fireEvent, screen, waitFor } from '@testing-library/react-native';
+import { useEffect as mockUseEffect } from 'react';
 import { router } from 'expo-router';
 import { Dimensions } from 'react-native';
 
@@ -23,6 +24,20 @@ jest.mock(
   'react-native-safe-area-context',
   () => jest.requireActual('react-native-safe-area-context/jest/mock').default,
 );
+// Counts how many times a row is built from nothing, to prove a keystroke never rebuilds the list.
+const mockMounts = { rows: 0 };
+jest.mock('./EntryRow', () => {
+  const actual = jest.requireActual('./EntryRow');
+  return {
+    ...actual,
+    EntryRow: (props: object) => {
+      mockUseEffect(() => {
+        mockMounts.rows += 1;
+      }, []);
+      return <actual.EntryRow {...props} />;
+    },
+  };
+});
 jest.mock('@/features/journal', () => {
   const actual = jest.requireActual('@/features/journal');
   return { ...actual, useEntries: jest.fn(actual.useEntries) };
@@ -64,6 +79,7 @@ const unreadable: EntrySummary = {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockMounts.rows = 0;
   mockedEntries.mockImplementation(actualEntries);
   usePreferences.setState({ theme: 'night' });
   const metrics = { width: 393, height: 852, scale: 2, fontScale: 1 };
@@ -205,5 +221,43 @@ describe('EchoesScreen', () => {
     expect(search.props.importantForAutofill).toBe('no');
     expect(search.props.textContentType).toBe('none');
     expect(search.props.autoCorrect).toBe(false);
+  });
+
+  it('does not tear the list down and build it again for a keystroke', async () => {
+    seed(
+      entry('a', '2026-11-05', { title: 'River', body: 'Walking by the water' }),
+      entry('b', '2026-11-04', { title: 'Quiet', body: 'An ordinary day' }),
+    );
+    await render(<EchoesScreen />);
+    await screen.findByTestId('echo-row-b');
+    expect(mockMounts.rows).toBe(2);
+
+    await fireEvent.changeText(screen.getByLabelText(echoesCopy.searchLabel), 'water');
+    // While the search runs the rows already on screen stay, quietly, and are the same rows.
+    expect(
+      screen.getByLabelText(echoesCopy.searching, { includeHiddenElements: true }),
+    ).toBeTruthy();
+    await waitFor(() =>
+      expect(
+        screen.queryByLabelText(echoesCopy.searching, { includeHiddenElements: true }),
+      ).toBeNull(),
+    );
+    expect(screen.queryByTestId('echo-row-b')).toBeNull();
+    expect(screen.getByTestId('echo-row-a')).toBeTruthy();
+    expect(mockMounts.rows).toBe(2);
+  });
+
+  it('keeps saying nothing returned while a longer query waits for its answer, with no skeleton', async () => {
+    seed(entry('a', '2026-11-05', { title: 'River', body: 'Walking by the water' }));
+    await render(<EchoesScreen />);
+    const search = await screen.findByLabelText(echoesCopy.searchLabel);
+
+    await fireEvent.changeText(search, 'zzzz');
+    expect(await screen.findByText(echoesCopy.noMatches)).toBeTruthy();
+
+    await fireEvent.changeText(search, 'zzzzz');
+    expect(screen.getByText(echoesCopy.noMatches)).toBeTruthy();
+    expect(screen.queryByLabelText(echoesCopy.loading, { includeHiddenElements: true })).toBeNull();
+    expect(await screen.findByText(echoesCopy.noMatches)).toBeTruthy();
   });
 });

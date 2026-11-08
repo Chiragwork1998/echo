@@ -86,11 +86,14 @@ export function ReportSheet({ target, onClose, onReported }: Props) {
   const [reason, setReason] = useState<ReportReason | null>(null);
   const [phase, setPhase] = useState<Phase>('choose');
   const [shownFor, setShownFor] = useState<ReportTarget | null>(null);
-  // A new card starts the sheet afresh.
+  // A new card starts the sheet afresh. Closing it (no card) does not: the sheet is still on screen
+  // for the length of its exit, and must go on showing its ending, not grow back into the form.
   if (target !== shownFor) {
     setShownFor(target);
-    setReason(null);
-    setPhase('choose');
+    if (target) {
+      setReason(null);
+      setPhase('choose');
+    }
   }
 
   const send = async () => {

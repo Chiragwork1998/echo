@@ -36,7 +36,10 @@ export function renderDialogHost() {
   return render(<Host />);
 }
 
-/** The open dialog's window, or null. */
+/**
+ * The open dialog's window, or null. A dialog that has been answered stays on screen for the length
+ * of its exit, hidden from everyone and untouchable, and no longer answers to its name.
+ */
 export const openDialog = () => screen.queryByTestId('dialog');
 
 const dialogButtons = () => within(screen.getByTestId('dialog')).getAllByRole('button');

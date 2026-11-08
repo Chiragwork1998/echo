@@ -19,6 +19,7 @@ import { becomeCopy } from '@/features/become/becomeCopy';
 import { useMorning } from '@/features/become/morning';
 import { breatheCopy } from '@/features/breathe/breatheCopy';
 import type { HomeSummary } from '@/features/journal';
+import { Resolve } from '@/features/tab-pages/Resolve';
 
 import { useSessionEntry } from '../dissolve';
 import { dayLabel, entryDisplay, homeLabels, minutesOf } from './homeLabels';
@@ -239,16 +240,20 @@ export function NightHome({ summary }: { summary: HomeSummary }) {
       <View style={{ paddingHorizontal: 4 }}>
         <WeekRhythm rhythm={rhythm} loading={loading} />
       </View>
-      <View style={styles.cardSlot}>
+      <Resolve
+        ready={!loading}
+        skeleton={<CardSkeleton height={CARD_HEIGHT} />}
+        style={styles.cardSlot}
+        each
+      >
         {status === 'error' && <ErrorNotice summary={summary} />}
-        {loading && <CardSkeleton height={CARD_HEIGHT} />}
-        {!loading && hasCard && <EchoCard summary={summary} strong={accessibleLayout} />}
+        {hasCard && <EchoCard summary={summary} strong={accessibleLayout} />}
         {status === 'ready' && !hasCard && (
           <EchoText variant="bodyM" color="textSecondary" align="center" style={styles.empty}>
             {homeLabels.emptyRecent}
           </EchoText>
         )}
-      </View>
+      </Resolve>
     </>
   );
 }

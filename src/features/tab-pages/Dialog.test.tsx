@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 
 import { ThemeProvider } from '@/design/theme';
@@ -135,7 +135,10 @@ describe('the dialog', () => {
     await ask('Record again?', [{ text: 'Cancel', style: 'cancel' }, { text: 'Record again' }]);
     expect(ownWindowOpen()).toBe(true);
     await chooseInDialog('Cancel');
-    expect(ownWindowOpen()).toBe(false);
+    // Answered, it fades away: it stays one of ECHO’s own windows until it has gone.
+    expect(openDialog()).toBeNull();
+    expect(ownWindowOpen()).toBe(true);
+    await waitFor(() => expect(ownWindowOpen()).toBe(false));
   });
 });
 
@@ -246,6 +249,9 @@ describe('more than one dialog', () => {
     await chooseInDialog('Continue');
     expect(screen.getByRole('header', { name: 'This can’t be undone' })).toBeTruthy();
     expect(dialogChoices()).toEqual(['Delete everything', 'Cancel']);
+    // The second question is on the same sheet, never a second one, and the window never closed.
+    expect(screen.getAllByTestId('dialog')).toHaveLength(1);
+    expect(ownWindowOpen()).toBe(true);
     await chooseInDialog('Delete everything');
     expect(run).toHaveBeenCalledTimes(1);
   });
