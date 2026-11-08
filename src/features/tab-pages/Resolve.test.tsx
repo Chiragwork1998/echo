@@ -1,9 +1,12 @@
 import { act, render, screen } from '@testing-library/react-native';
-import { Text } from 'react-native';
+import { useState, type ReactElement } from 'react';
+import { StyleSheet, Text } from 'react-native';
 
+import { ThemeProvider } from '@/design/theme';
 import { useReduceMotion } from '@/design/useReduceMotion';
 import { reanimatedMock } from '@/testing/reanimatedMock';
 
+import { Notice } from './parts';
 import { ArriveInOrder, Bars, Resolve } from './Resolve';
 
 jest.mock('@/design/useReduceMotion', () => ({ useReduceMotion: jest.fn(() => false) }));
@@ -194,5 +197,104 @@ describe('Bars', () => {
     );
     expect(screen.getByText('Bar')).toBeTruthy();
     expect(asked()).toEqual([]);
+  });
+});
+
+describe('Resolve keeps its container’s rhythm', () => {
+  it('gives each wrapper the container’s gap, so siblings in a fragment do not touch', async () => {
+    const view = await render(
+      <Resolve ready={false} skeleton={<Skeleton />} style={{ gap: 24 }}>
+        <Text>Placeholder</Text>
+      </Resolve>,
+    );
+    await advance(100);
+    await view.rerender(
+      <Resolve ready skeleton={<Skeleton />} style={{ gap: 24 }}>
+        <>
+          <Text>One</Text>
+          <Text>Two</Text>
+        </>
+      </Resolve>,
+    );
+    const wrapper = screen.getByText('One').parent;
+    expect(StyleSheet.flatten(wrapper?.props.style)).toMatchObject({ gap: 24 });
+  });
+
+  it('adds no gap of its own when the container has none', async () => {
+    const view = await render(resolve(false));
+    await advance(100);
+    await view.rerender(resolve(true));
+    const wrapper = screen.getByText('Arrived').parent;
+    expect(StyleSheet.flatten(wrapper?.props.style)).not.toHaveProperty('gap');
+  });
+});
+
+describe('Resolve keeps what it holds, by key', () => {
+  it('does not rebuild an item when an optional one before it comes and goes', async () => {
+    let mounts = 0;
+    const Counted = () => {
+      const [id] = useState(() => ++mounts);
+      return <Text>{`Card ${id}`}</Text>;
+    };
+    const page = (error: boolean) => (
+      <Resolve ready skeleton={<Skeleton />} each>
+        {error && <Text key="error">Error</Text>}
+        <Counted key="card" />
+      </Resolve>
+    );
+    const view = await render(page(false));
+    expect(screen.getByText('Card 1')).toBeTruthy();
+    await view.rerender(page(true));
+    await view.rerender(page(false));
+    expect(mounts).toBe(1);
+  });
+});
+
+describe('Resolve and a Notice, which arrives by itself', () => {
+  const themed = (element: ReactElement) => (
+    <ThemeProvider crossfade={false}>{element}</ThemeProvider>
+  );
+  const notice = (ready: boolean) =>
+    themed(
+      <Resolve ready={ready} skeleton={<Skeleton />}>
+        <Notice message="Something went quietly wrong." />
+      </Resolve>,
+    );
+
+  it('arrives once, not twice: the outer arrival is the only one', async () => {
+    const view = await render(notice(false));
+    await advance(100);
+    timing.mockClear();
+    await view.rerender(notice(true));
+    expect(asked()).toEqual([240]);
+  });
+
+  it('still arrives by itself when it appears on its own, outside any Resolve', async () => {
+    timing.mockClear();
+    await render(themed(<Notice message="Something went quietly wrong." />));
+    expect(asked()).toEqual([320]);
+  });
+
+  it('still arrives by itself when it appears long after the page has settled', async () => {
+    const view = await render(
+      themed(
+        <Resolve ready skeleton={<Skeleton />}>
+          <Text>Page</Text>
+        </Resolve>,
+      ),
+    );
+    await advance(2000);
+    timing.mockClear();
+    await view.rerender(
+      themed(
+        <Resolve ready skeleton={<Skeleton />}>
+          <>
+            <Text>Page</Text>
+            <Notice message="Something went quietly wrong." />
+          </>
+        </Resolve>,
+      ),
+    );
+    expect(asked()).toEqual([320]);
   });
 });

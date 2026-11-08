@@ -15,10 +15,16 @@ const REVEAL_RISE = 10;
 export function Reveal({
   delay = 0,
   duration = REVEAL_MS,
+  skip = false,
   children,
-}: PropsWithChildren<{ delay?: number; duration?: number }>) {
+}: PropsWithChildren<{
+  delay?: number;
+  duration?: number;
+  /** Already arriving with something around it: draw it at rest. Read when it appears. */
+  skip?: boolean;
+}>) {
   return (
-    <Rise delay={delay} duration={duration} distance={REVEAL_RISE}>
+    <Rise delay={delay} duration={duration} distance={REVEAL_RISE} animate={!skip}>
       {children}
     </Rise>
   );

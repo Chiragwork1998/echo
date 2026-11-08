@@ -27,7 +27,7 @@ import { tokens } from '@/design/tokens';
 
 import { keepTogether } from './keepTogether';
 import { pageCopy } from './pageCopy';
-import { Bars } from './Resolve';
+import { Bars, useIsArriving } from './Resolve';
 import { Reveal } from './Reveal';
 import { detail as detailText, groupTitle, onPlate, textAction } from './textStyles';
 
@@ -380,8 +380,10 @@ export function Notice({
   actionLabel?: string;
   onAction?: () => void;
 }) {
+  // Inside a page that is itself arriving, the page's arrival is the notice's.
+  const arriving = useIsArriving();
   return (
-    <Reveal duration={tokens.motion.standard}>
+    <Reveal duration={tokens.motion.standard} skip={arriving}>
       <Surface strength="strong">
         <View style={styles.notice} accessibilityLiveRegion="polite">
           <EchoText variant="bodyM" style={[detailText, styles.text]} maxFontSizeMultiplier={1.6}>

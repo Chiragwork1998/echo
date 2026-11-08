@@ -2,6 +2,7 @@ import {
   Children,
   Fragment,
   createContext,
+  isValidElement,
   useContext,
   useEffect,
   useRef,
@@ -40,6 +41,11 @@ const SETTLE_MS = 760;
 
 /** Whether the bars of the skeleton below are showing, when a Resolve above is keeping the time. */
 const BarsContext = createContext<boolean | null>(null);
+/** True while an enclosing Rise is still arriving. */
+const ArrivingContext = createContext(false);
+/** Whether something that arrives by itself would be doubling an arrival that is already under way. */
+export const useIsArriving = () => useContext(ArrivingContext);
+
 /** True while content is arriving from a skeleton that was seen, so rows may arrive one by one. */
 const ArrivalContext = createContext(false);
 
@@ -99,6 +105,9 @@ export function Rise({
   const reduced = useReduceMotion();
   const [moving] = useState(animate);
   const shown = useSharedValue(moving ? 0 : 1);
+  // True while this is arriving, so something inside that arrives by itself (a Notice) does not
+  // arrive a second time on top of it. Over once the arrival has had its time.
+  const [busy, setBusy] = useState(moving);
   useEffect(() => {
     if (!moving) return;
     shown.set(
@@ -111,12 +120,21 @@ export function Rise({
         }),
       ),
     );
+    const over = setTimeout(
+      () => setBusy(false),
+      (reduced ? 0 : delay) + (reduced ? tokens.motion.fast : duration) + 40,
+    );
+    return () => clearTimeout(over);
   }, [delay, duration, moving, reduced, shown]);
   const motion = useAnimatedStyle(() => ({
     opacity: shown.get(),
     transform: [{ translateY: reduced ? 0 : (1 - shown.get()) * distance }],
   }));
-  return <Animated.View style={[style, motion]}>{children}</Animated.View>;
+  return (
+    <ArrivingContext.Provider value={busy}>
+      <Animated.View style={[style, motion]}>{children}</Animated.View>
+    </ArrivingContext.Provider>
+  );
 }
 
 /** True while content arrives from a skeleton the person saw: a row may then wait its turn. */
@@ -227,16 +245,25 @@ export function Resolve({
 
   const arriving = phase === 'arriving';
   const items = each ? Children.toArray(children) : [children];
+  // A wrapper holds what an item returns, which may be several siblings (a fragment). They keep the
+  // container's rhythm, or they would touch.
+  const gap = StyleSheet.flatten(style)?.gap;
+  const keep = gap === undefined ? undefined : { gap };
+  // By the item's own key where it has one, so an optional item coming and going does not rebuild
+  // the ones after it.
+  const keyOf = (item: ReactNode, index: number) =>
+    isValidElement(item) && item.key != null ? item.key : index;
   return (
     <View style={style}>
       {leaving ? <Leaving>{skeleton}</Leaving> : null}
       <ArrivalContext.Provider value={ordered && arriving}>
         {items.map((item, index) =>
           ordered ? (
-            <Fragment key={index}>{item}</Fragment>
+            <Fragment key={keyOf(item, index)}>{item}</Fragment>
           ) : (
             <Rise
-              key={index}
+              key={keyOf(item, index)}
+              style={keep}
               animate={arriving}
               delay={seen ? Math.min(index, CAP - 1) * STEP_MS : 0}
               duration={seen ? ARRIVE_MS : BLOCK_MS}

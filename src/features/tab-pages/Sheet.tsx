@@ -38,7 +38,9 @@ const SIDE = tokens.space[12];
 // 87 percent of the way by 180 ms, so the 520 ms is mostly the last few points coming to rest.
 const SCRIM_IN_MS = 320;
 const SHEET_RISE_MS = 520;
-const SHEET_FADE_IN_MS = 240;
+// Shorter than the rise: while the cloth is still see-through the page's own words show through the
+// sheet's, so the cloth is whole within about a hundred milliseconds and only the travel is slow.
+const SHEET_FADE_IN_MS = 120;
 const RISE = 24;
 // It leaves quicker and lower than it came: set down, then lifted away.
 const SHEET_OUT_MS = 240;
@@ -54,6 +56,21 @@ const REDUCED_UNMOUNT_MS = 160;
 const HANDOFF_MS = 200;
 
 const nothing = () => undefined;
+
+/**
+ * The action that was chosen keeps the look of being pressed while the sheet leaves. A sheet that
+ * comes back during its exit forgets the choice, so it cannot colour the next way out.
+ */
+function useHeldWhileLeaving() {
+  const leaving = useContext(LeavingContext);
+  const [chosen, setChosen] = useState(false);
+  const [was, setWas] = useState(leaving);
+  if (leaving !== was) {
+    setWas(leaving);
+    if (!leaving) setChosen(false);
+  }
+  return { held: leaving && chosen, choose: () => setChosen(true) };
+}
 
 /** True while the sheet is on its way out: its buttons hold the look they were pressed with. */
 const LeavingContext = createContext(false);
@@ -119,6 +136,9 @@ export function Sheet({
   // The window stays up for the length of its exit. A timer ends it, never an animation callback.
   const [mounted, setMounted] = useState(visible);
   if (visible && !mounted) setMounted(true);
+  // With no animation there is no exit to wait for: the window is simply gone, and stays gone if
+  // animation comes back (the lock lets go) before anything has opened it again.
+  if (!visible && !animated && mounted) setMounted(false);
   const present = animated ? mounted : visible;
   const leaving = present && !visible;
 
@@ -194,17 +214,30 @@ export function Sheet({
         withTiming(SINK, { ...options, duration: SHEET_OUT_MS, easing: Easing.out(Easing.cubic) }),
       );
     }
+  }, [animated, dim, fade, reduced, visible, y]);
+
+  // The window ends its own exit. It lives in its own effect so that anything that changes during
+  // the exit (the lock engaging, Reduce Motion) re-arms it rather than leaving a window that is
+  // invisible, full screen, and swallowing touches. A timer ends it, never an animation callback.
+  useEffect(() => {
+    if (visible || !mounted) return;
     const done = setTimeout(
       () => {
-        hide();
         setHandoff(false);
         setMounted(false);
       },
       reduced ? REDUCED_UNMOUNT_MS : UNMOUNT_MS,
     );
-    // A re-open inside the exit clears this, and the entrance carries on from where the exit was.
     return () => clearTimeout(done);
-  }, [animated, dim, fade, reduced, visible, y]);
+  }, [visible, mounted, reduced]);
+
+  // Once the window is gone the next opening starts from nothing.
+  useEffect(() => {
+    if (mounted) return;
+    dim.set(0);
+    fade.set(0);
+    y.set(reduced ? 0 : RISE);
+  }, [dim, fade, mounted, reduced, y]);
 
   const scrim = useAnimatedStyle(() => ({ opacity: dim.get() }));
   const paper = useAnimatedStyle(() => ({
@@ -323,9 +356,7 @@ export function SheetButton({
   hint?: string;
 }) {
   const { name, colors } = useTheme();
-  const leaving = useContext(LeavingContext);
-  // The button that was chosen keeps the look of being pressed while the sheet leaves.
-  const [chosen, setChosen] = useState(false);
+  const { held, choose } = useHeldWhileLeaving();
   const day = name === 'day';
   const blocked = disabled || busy;
   const labelColour = day ? colors.textPrimary : colors.textInk;
@@ -349,13 +380,13 @@ export function SheetButton({
       onPress={() => {
         // A sheet's primary action is the one that confirms: felt once, as it begins.
         cue('commit');
-        setChosen(true);
+        choose();
         onPress();
       }}
       style={({ pressed }) => [
         styles.button,
         blocked && styles.blocked,
-        (pressed || (leaving && chosen)) && styles.buttonPressed,
+        (pressed || held) && styles.buttonPressed,
       ]}
     >
       {day ? (
@@ -377,18 +408,17 @@ export function SheetButton({
 /** A quiet word to tap inside a sheet, such as Cancel. Sentence case, 44 pt tall. */
 export function SheetAction({ label, onPress }: { label: string; onPress: () => void }) {
   const tone = useTone();
-  const leaving = useContext(LeavingContext);
-  const [chosen, setChosen] = useState(false);
+  const { held, choose } = useHeldWhileLeaving();
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
       onPress={() => {
-        setChosen(true);
+        choose();
         onPress();
       }}
       hitSlop={6}
-      style={({ pressed }) => [styles.action, (pressed || (leaving && chosen)) && styles.pressed]}
+      style={({ pressed }) => [styles.action, (pressed || held) && styles.pressed]}
     >
       <EchoText
         variant="bodyM"

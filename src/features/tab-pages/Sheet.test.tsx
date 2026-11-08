@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
-import { Text } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 
 import { cue } from '@/design/haptics';
@@ -55,9 +55,9 @@ beforeEach(() => {
 afterEach(() => jest.useRealTimers());
 
 describe('Sheet arriving', () => {
-  it('dims the page over 320 ms and settles the sheet over 520 ms, its fade in 240', async () => {
+  it('dims the page over 320 ms and settles the sheet over 520 ms, its fade in 120', async () => {
     await render(sheet({ visible: true }));
-    expect(durations().sort((a, b) => a - b)).toEqual([240, 320, 520]);
+    expect(durations().sort((a, b) => a - b)).toEqual([120, 320, 520]);
   });
 
   it('is live from the first frame: the words and the button are there and can be pressed', async () => {
@@ -156,7 +156,7 @@ describe('a sheet handing its words to the next', () => {
     const view = await render(sheet({ visible: false, contentKey: 'one' }));
     timing.mockClear();
     await view.rerender(sheet({ visible: true, contentKey: 'two' }));
-    expect(durations().sort((a, b) => a - b)).toEqual([240, 320, 520]);
+    expect(durations().sort((a, b) => a - b)).toEqual([120, 320, 520]);
   });
 });
 
@@ -185,5 +185,112 @@ describe('the sheet’s actions', () => {
     await fireEvent.press(screen.getByRole('button', { name: 'Keep draft' }));
     expect(cue).toHaveBeenCalledTimes(1);
     expect(cue).toHaveBeenCalledWith('commit');
+  });
+});
+
+describe('a sheet whose animation switches off or whose motion setting changes during its exit', () => {
+  const stage = () => screen.queryByTestId('sheet-stage', { includeHiddenElements: true });
+
+  it('is gone when the lock takes the screen mid-exit and then lets it go: no invisible window is left behind', async () => {
+    const view = await render(sheet({ visible: true }));
+    // It starts to leave...
+    await view.rerender(sheet({ visible: false }));
+    // ...the lock engages (animated goes false) while it is leaving...
+    await view.rerender(sheet({ visible: false, animated: false }));
+    expect(stage()).toBeNull();
+    // ...and the person unlocks (animated comes back).
+    await view.rerender(sheet({ visible: false, animated: true }));
+    await advance(1000);
+    expect(stage()).toBeNull();
+    expect(ownWindowOpen()).toBe(false);
+  });
+
+  it('is gone when animation is turned off, held a moment, and back on, before its timer would have fired', async () => {
+    const view = await render(sheet({ visible: true }));
+    await view.rerender(sheet({ visible: false }));
+    await advance(100);
+    await view.rerender(sheet({ visible: false, animated: false }));
+    await view.rerender(sheet({ visible: false, animated: true }));
+    expect(stage()).toBeNull();
+    expect(ownWindowOpen()).toBe(false);
+  });
+
+  it('still unmounts when Reduce Motion is switched on during its exit', async () => {
+    const view = await render(sheet({ visible: true }));
+    await view.rerender(sheet({ visible: false }));
+    await advance(100);
+    reduced.mockReturnValue(true);
+    await view.rerender(sheet({ visible: false }));
+    await advance(400);
+    expect(stage()).toBeNull();
+    expect(ownWindowOpen()).toBe(false);
+  });
+
+  it('still unmounts when Reduce Motion is switched off during its exit', async () => {
+    reduced.mockReturnValue(true);
+    const view = await render(sheet({ visible: true }));
+    await view.rerender(sheet({ visible: false }));
+    await advance(50);
+    reduced.mockReturnValue(false);
+    await view.rerender(sheet({ visible: false }));
+    await advance(400);
+    expect(stage()).toBeNull();
+    expect(ownWindowOpen()).toBe(false);
+  });
+
+  it('opens again from nothing after all that: its next entrance is whole', async () => {
+    const view = await render(sheet({ visible: true }));
+    await view.rerender(sheet({ visible: false, animated: false }));
+    await view.rerender(sheet({ visible: false }));
+    timing.mockClear();
+    await view.rerender(sheet({ visible: true }));
+    expect(stage()).toBeTruthy();
+    expect(durations().sort((a, b) => a - b)).toEqual([120, 320, 520]);
+  });
+});
+
+describe('the look of a pressed action', () => {
+  const two = (visible: boolean) => (
+    <ThemeProvider crossfade={false}>
+      <SafeAreaInsetsContext.Provider value={NO_INSETS}>
+        <Sheet
+          visible={visible}
+          onClose={() => undefined}
+          testID="sheet"
+          footer={
+            <>
+              <SheetButton label="Keep draft" onPress={() => undefined} />
+              <SheetAction label="Cancel" onPress={() => undefined} />
+            </>
+          }
+        >
+          <Text>Words</Text>
+        </Sheet>
+      </SafeAreaInsetsContext.Provider>
+    </ThemeProvider>
+  );
+  const scaleOf = (name: string) =>
+    (
+      StyleSheet.flatten(screen.getByRole('button', { name, hidden: true }).props.style) as {
+        transform?: { scale: number }[];
+      }
+    ).transform;
+
+  it('is held by the button that was chosen while the sheet leaves', async () => {
+    const view = await render(two(true));
+    await fireEvent.press(screen.getByRole('button', { name: 'Keep draft' }));
+    await view.rerender(two(false));
+    expect(scaleOf('Keep draft')).toEqual([{ scale: 0.985 }]);
+  });
+
+  it('is not left on a button when the sheet comes back during its exit and leaves another way', async () => {
+    const view = await render(two(true));
+    await fireEvent.press(screen.getByRole('button', { name: 'Keep draft' }));
+    await view.rerender(two(false));
+    await view.rerender(two(true));
+    await fireEvent.press(screen.getByRole('button', { name: 'Cancel' }));
+    await view.rerender(two(false));
+    // Cancel was the way out this time: Keep draft must not still look pressed.
+    expect(scaleOf('Keep draft')).toBeUndefined();
   });
 });
