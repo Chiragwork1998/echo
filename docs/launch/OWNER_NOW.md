@@ -20,9 +20,13 @@ sequence is in `launch-checklist.md`.
 5. **Upstash** (so the free allowance is enforced across the server, not per machine): open
    https://vercel.com/chiragtalwar-finzarccoms-projects/~/integrations/accept-terms/upstash and
    accept the terms. The lead does the rest.
-6. **Approve secret storage for ECHO in Vercel.** The lead generates a random signing key for install
-   tokens and needs to write it, and later the OpenAI and RevenueCat server keys, into the echo-voice
-   project's environment. The permission system asks for your approval, as it did for Expo.
+6. **Approve the 1.0 voice server in production, with its secrets.** It is built and tested, and on
+   8 November it passed a local check in production's exact setup (transcription, live words, pattern
+   cards, reports, allowance). It is the version that receives pattern-card reports, which Google Play
+   requires. The permission system refused both deploying it to production and writing its signing
+   key into Vercel, so it waits for you. Reply "yes, deploy ECHO's voice server to production and
+   store its secrets in Vercel". The lead then deploys it, checks it live, and later adds the new
+   OpenAI and RevenueCat server keys the same way.
 
 ## Facts only you can supply
 
