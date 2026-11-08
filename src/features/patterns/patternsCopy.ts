@@ -21,6 +21,8 @@ export const patternsCopy = {
   loadError: 'Your echoes couldn’t be loaded.',
   rhythmTitle: 'Your rhythm',
   intro: 'Counts from your own echoes, worked out on this phone.',
+  /** The foot of the summary, once it also counts breath practices. */
+  introWithBreath: 'Counts from your own echoes and practices, worked out on this phone.',
   weekTitle: 'This week',
   reflections: (count: number) => (count === 1 ? '1 reflection' : `${count} reflections`),
   minutesTotal: (minutes: number) => `${minutes} min of reflection in total`,
@@ -30,6 +32,14 @@ export const patternsCopy = {
   thisWeek: 'This week',
   lastWeek: 'Last week',
   weekOf: (date: string) => `Week of ${date}`,
+  /** Breathe's practices, from the counts of how the person felt after each. */
+  breathTitle: 'Breathing',
+  /** "6 practices this week. Calmer after 4." Calmer is left unsaid when no practice ended calmer. */
+  breathWeek: (practices: number, calmer: number) => {
+    const done = practices === 1 ? '1 practice this week.' : `${practices} practices this week.`;
+    return calmer > 0 ? `${done} Calmer after ${calmer}.` : done;
+  },
+  helpsMost: (name: string) => `${name} helps you most often.`,
   skipped: (count: number) =>
     count === 1
       ? '1 echo can’t be opened, so it isn’t counted here.'
