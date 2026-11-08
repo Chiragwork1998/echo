@@ -7,7 +7,7 @@ import { tokens } from '@/design/tokens';
 import type { EntrySummary } from '@/features/journal';
 import { keepTogether } from '@/features/tab-pages/keepTogether';
 import { Notice, Quiet, Surface, TextAction } from '@/features/tab-pages/parts';
-import { Resolve } from '@/features/tab-pages/Resolve';
+import { ArriveInOrder, Resolve } from '@/features/tab-pages/Resolve';
 import { TabPage } from '@/features/tab-pages/TabPage';
 import { detail, question } from '@/features/tab-pages/textStyles';
 import { HOME_PATH } from '@/state/routing';
@@ -151,13 +151,18 @@ export function EchoesScreen() {
   if (kind && kind !== settled) setSettled(kind);
   return (
     <TabPage title={echoesCopy.title}>
-      {searchable(view) && <SearchField value={query} onChange={setQuery} />}
       <Resolve
         ready={view.kind !== 'loading'}
         skeleton={<EchoesSkeleton />}
         style={styles.body}
         rows
       >
+        {/* Inside the arrival, so the field comes with the first rows and does not pop in ahead of them. */}
+        {searchable(view) && (
+          <ArriveInOrder index={0} step={40} cap={8}>
+            <SearchField value={query} onChange={setQuery} />
+          </ArriveInOrder>
+        )}
         <Body
           view={view}
           waitingRows={shown}
