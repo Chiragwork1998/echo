@@ -1,7 +1,7 @@
 // The reminder dial's time follows the handle (the walk, F2). On a fast drag or a far tap the handle
 // glides to its place over half a second or more, and the time used to be written at once: the
 // number was at 10:05 while the handle was still turning through 6. The number rides the handle.
-import { act, fireEvent, screen, within } from '@testing-library/react-native';
+import { act, fireEvent, screen } from '@testing-library/react-native';
 import { useState } from 'react';
 import { Pressable, Text } from 'react-native';
 
@@ -28,12 +28,11 @@ type Reaction = {
 const mockShared: Shared[] = [];
 const mockReactions = new Set<Reaction>();
 jest.mock('react-native-reanimated', () => {
-  const { useEffect, useRef } = jest.requireActual('react');
+  const { useEffect, useState } = jest.requireActual('react');
   const base = jest.requireActual('@/testing/reanimatedMock').reanimatedMock;
   const useSharedValue = (initial: unknown) => {
-    const ref = useRef(null as Shared | null);
-    if (!ref.current) {
-      const value: Shared = {
+    const [value] = useState(() => {
+      const made: Shared = {
         value: initial,
         get() {
           return this.value;
@@ -42,21 +41,18 @@ jest.mock('react-native-reanimated', () => {
           this.value = next;
         },
       };
-      ref.current = value;
-      mockShared.push(value);
-    }
-    return ref.current;
+      mockShared.push(made);
+      return made;
+    });
+    return value;
   };
   const useAnimatedReaction = (prepare: () => unknown, react: Reaction['react']) => {
-    const ref = useRef(null as Reaction | null);
-    if (!ref.current) ref.current = { prepare, react, was: prepare() };
-    ref.current.prepare = prepare;
-    ref.current.react = react;
+    const [seen] = useState(() => ({ was: prepare() }));
     useEffect(() => {
-      const mine = ref.current as Reaction;
+      const mine: Reaction = { prepare, react, seen };
       mockReactions.add(mine);
       return () => void mockReactions.delete(mine);
-    }, []);
+    }, [prepare, react, seen]);
   };
   // The handle is held where it is: an animation does not move it until the test does.
   const withTiming = jest.fn(() => mockShared[0]?.get());
@@ -90,9 +86,9 @@ const frame = () =>
   act(() => {
     for (const reaction of mockReactions) {
       const now = reaction.prepare();
-      if (now !== reaction.was) {
-        const was = reaction.was;
-        reaction.was = now;
+      if (now !== reaction.seen.was) {
+        const was = reaction.seen.was;
+        reaction.seen.was = now;
         reaction.react(now, was);
       }
     }
