@@ -16,15 +16,28 @@ export function Reveal({
   delay = 0,
   duration = REVEAL_MS,
   skip = false,
+  afterLayout = false,
   children,
 }: PropsWithChildren<{
   delay?: number;
   duration?: number;
+  /**
+   * Begins when it has been laid out, rather than when it was mounted. For a thing that takes a
+   * frame or more to mount, so that the time is not spent from its arrival and it is not seen
+   * already part of the way in.
+   */
+  afterLayout?: boolean;
   /** Already arriving with something around it: draw it at rest. Read when it appears. */
   skip?: boolean;
 }>) {
   return (
-    <Rise delay={delay} duration={duration} distance={REVEAL_RISE} animate={!skip}>
+    <Rise
+      delay={delay}
+      duration={duration}
+      distance={REVEAL_RISE}
+      animate={!skip}
+      afterLayout={afterLayout}
+    >
       {children}
     </Rise>
   );
