@@ -1,10 +1,17 @@
 import { act, screen } from '@testing-library/react-native';
-import { useEffect } from 'react';
+import { useEffect, type ReactElement } from 'react';
 import { AccessibilityInfo, StyleSheet, Text } from 'react-native';
 
 import { backgroundSources } from '@/design/generated/backgrounds';
 import { setPlateFlowStep } from '@/design/plateMotion';
+import {
+  PLATE_LATE_MS,
+  resetPlatesForTests,
+  usePlatesPending,
+  usePosterShown,
+} from '@/design/platePaint';
 import { ThemeProvider } from '@/design/theme';
+import { tokens } from '@/design/tokens';
 import { usePreferences } from '@/state/preferences';
 import { render } from '@/testing/render';
 
@@ -21,6 +28,7 @@ beforeAll(() => {
 });
 
 beforeEach(async () => {
+  resetPlatesForTests();
   jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(false);
   await act(async () => {
     setPlateFlowStep(null);
@@ -231,5 +239,150 @@ describe('EchoBackground with an overlay (the living Night plate, D-009)', () =>
   it('draws the same plates as before when there is no overlay', async () => {
     await render(<EchoBackground screen="home" />);
     expect(layers()).toEqual(['plate']);
+  });
+});
+
+describe('EchoBackground when a screen changes: never a flat colour before the photograph', () => {
+  const HIDDEN = { includeHiddenElements: true };
+  const own = () => screen.getByTestId('plate', HIDDEN);
+  const veil = () => screen.queryByTestId('veil', HIDDEN);
+  const opacityOf = (node: { props: { style?: unknown } }) =>
+    (StyleSheet.flatten(node.props.style as object) as { opacity?: number }).opacity;
+  /** The picture reports that it has been drawn, as expo-image does. */
+  const draw = (node = own()) => act(async () => node.props.onDisplay());
+  const fade = jest.fn();
+  const watchFades = () => {
+    const reanimated = jest.requireMock('react-native-reanimated');
+    jest.spyOn(reanimated, 'withTiming').mockImplementation(((
+      to: number,
+      options: { duration: number },
+    ) => {
+      if (to === 1 && options.duration === tokens.motion.standard) fade();
+      return to;
+    }) as never);
+  };
+  const redraw = (view: Awaited<ReturnType<typeof render>>, element: ReactElement) =>
+    view.rerender(<ThemeProvider crossfade={false}>{element}</ThemeProvider>);
+  const advance = (ms: number) => act(async () => void (await jest.advanceTimersByTimeAsync(ms)));
+
+  /** The screen that was on show, drawn, and then left. */
+  async function leave(screenName: 'intent' | 'home' = 'intent') {
+    const first = await render(<EchoBackground screen={screenName} />);
+    await draw();
+    await first.unmount();
+  }
+
+  beforeEach(() => fade.mockClear());
+
+  it('has nothing to hold the first time a plate is ever drawn', async () => {
+    await render(<EchoBackground screen="intent" />);
+    expect(veil()).toBeNull();
+    expect(opacityOf(own())).toBe(1);
+  });
+
+  it('holds up the plate that was on show, and keeps its own hidden, until its own is drawn', async () => {
+    await leave('intent');
+    await render(<EchoBackground screen="rhythm" />);
+    expect(veil()?.props.source).toBe(backgroundSources.night.intent);
+    expect(own().props.source).toBe(backgroundSources.night.rhythm);
+    expect(opacityOf(own())).toBe(0);
+  });
+
+  it('brings its own up over it, softly, when it was late, and then lets the old one go', async () => {
+    watchFades();
+    await leave('intent');
+    const view = await render(<EchoBackground screen="rhythm" />);
+    await advance(PLATE_LATE_MS + 120);
+    await draw();
+    expect(fade).toHaveBeenCalledTimes(1);
+    await redraw(view, <EchoBackground screen="rhythm" />);
+    expect(opacityOf(own())).toBe(1);
+    // Both are drawn while it comes up, so the photograph beneath is never uncovered.
+    expect(veil()).not.toBeNull();
+    await advance(tokens.motion.standard);
+    expect(veil()).toBeNull();
+  });
+
+  it('keeps it to 180 ms with Reduce Motion', async () => {
+    jest.mocked(AccessibilityInfo.isReduceMotionEnabled).mockResolvedValue(true);
+    await leave('intent');
+    await render(<EchoBackground screen="rhythm" />);
+    await act(async () => undefined);
+    await advance(PLATE_LATE_MS + 120);
+    await draw();
+    await advance(tokens.motion.fast - 1);
+    expect(veil()).not.toBeNull();
+    await advance(1);
+    expect(veil()).toBeNull();
+  });
+
+  it('replaces it at once when its own was already to hand, as a plate always did', async () => {
+    watchFades();
+    await leave('intent');
+    const view = await render(<EchoBackground screen="rhythm" />);
+    await advance(PLATE_LATE_MS - 30);
+    await draw();
+    await redraw(view, <EchoBackground screen="rhythm" />);
+    expect(fade).not.toHaveBeenCalled();
+    expect(opacityOf(own())).toBe(1);
+    expect(veil()).toBeNull();
+  });
+
+  it('holds nothing up for a screen that wears the same plate', async () => {
+    await leave('home');
+    await render(<EchoBackground screen="home" />);
+    expect(veil()).toBeNull();
+    expect(opacityOf(own())).toBe(1);
+  });
+
+  it('holds nothing up from the other theme, which has its own cross-fade', async () => {
+    await leave('intent');
+    await act(async () => usePreferences.setState({ theme: 'day' }));
+    await render(<EchoBackground screen="rhythm" />);
+    expect(veil()).toBeNull();
+    expect(opacityOf(own())).toBe(1);
+  });
+
+  it('lets the old plate go if its own cannot be drawn, rather than keep a photograph that is not its own', async () => {
+    await leave('intent');
+    const view = await render(<EchoBackground screen="rhythm" />);
+    await act(async () => own().props.onError());
+    await advance(tokens.motion.standard);
+    await redraw(view, <EchoBackground screen="rhythm" />);
+    expect(veil()).toBeNull();
+    expect(opacityOf(own())).toBe(1);
+  });
+
+  it('is awaited until it has been drawn, so a launch can hold the splash for it', async () => {
+    function Pending() {
+      return <Text testID="pending">{String(usePlatesPending())}</Text>;
+    }
+    const view = await render(
+      <>
+        <Pending />
+        <EchoBackground screen="intent" />
+      </>,
+    );
+    expect(screen.getByTestId('pending').props.children).toBe('true');
+    await draw();
+    await redraw(
+      view,
+      <>
+        <Pending />
+        <EchoBackground screen="intent" />
+      </>,
+    );
+    expect(screen.getByTestId('pending').props.children).toBe('false');
+  });
+
+  it('tells a loop over it when the still it lies over has been drawn', async () => {
+    function Loop() {
+      return <Text testID="loop">{String(usePosterShown())}</Text>;
+    }
+    const view = await render(<EchoBackground screen="home" overlay={<Loop />} />);
+    expect(screen.getByTestId('loop', HIDDEN).props.children).toBe('false');
+    await draw();
+    await redraw(view, <EchoBackground screen="home" overlay={<Loop />} />);
+    expect(screen.getByTestId('loop', HIDDEN).props.children).toBe('true');
   });
 });

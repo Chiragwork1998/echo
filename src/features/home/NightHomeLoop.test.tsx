@@ -9,6 +9,7 @@ import {
   NIGHT_LOOP_WELCOME_REVEAL_MS,
   plateCoverRect,
 } from '@/design/nightLoop';
+import { PosterShownContext } from '@/design/platePaint';
 import { ThemeProvider } from '@/design/theme';
 import { usePreferences } from '@/state/preferences';
 import { resetVideoPlayers, videoPlayers } from '@/testing/expoVideoMock';
@@ -252,6 +253,79 @@ describe('the still stays until the loop is really there', () => {
     } finally {
       video.useVideoPlayer = made;
     }
+  });
+});
+
+describe('the loop comes up over the still, and never from black', () => {
+  it('fades as one picture, composited off screen, so a video surface is never dimmed on its own', async () => {
+    // A TextureView is opaque. Faded on its own it blends toward black rather than toward what is
+    // behind it, so the sky would dip dark and climb back as the loop appeared. Its fading layer is
+    // drawn off screen and laid over the still as one picture instead.
+    await mount();
+    expect(surface().props.needsOffscreenAlphaCompositing).toBe(true);
+  });
+
+  it('draws no background of its own, so nothing but the loop itself can be seen through the fade', async () => {
+    await mount();
+    for (const node of [surface(), video().parent]) {
+      const style = StyleSheet.flatten(node?.props.style) as Record<string, unknown>;
+      expect(style.backgroundColor).toBeUndefined();
+    }
+  });
+
+  const withStill = (shown: boolean) => (
+    <PosterShownContext.Provider value={shown}>
+      <NightHomeLoop />
+    </PosterShownContext.Provider>
+  );
+  const fades = () => {
+    const reanimated = jest.requireMock('react-native-reanimated');
+    const started: number[] = [];
+    jest.spyOn(reanimated, 'withTiming').mockImplementation(((
+      to: number,
+      options: { duration: number },
+    ) => {
+      if (options.duration === NIGHT_LOOP_REVEAL_MS) started.push(to);
+      return to;
+    }) as never);
+    return started;
+  };
+
+  it('waits for the still beneath it to be drawn before it begins to appear', async () => {
+    const started = fades();
+    const view = await render(withStill(false));
+    await act(async () => undefined);
+    await measure();
+    await act(async () => video().props.onFirstFrameRender());
+    // Its first frame is there, and the still is not: the loop stays invisible, and plays on.
+    expect(started).toEqual([]);
+    expect(opacity()).toBe(0);
+    expect(player()?.playing).toBe(true);
+    await view.rerender(<ThemeProvider crossfade={false}>{withStill(true)}</ThemeProvider>);
+    expect(started).toEqual([1]);
+    await view.rerender(<ThemeProvider crossfade={false}>{withStill(true)}</ThemeProvider>);
+    expect(opacity()).toBe(1);
+  });
+
+  it('begins only once the first frame has come, however early the still is drawn', async () => {
+    const started = fades();
+    await render(withStill(true));
+    await act(async () => undefined);
+    await measure();
+    expect(started).toEqual([]);
+    await act(async () => video().props.onFirstFrameRender());
+    expect(started).toEqual([1]);
+  });
+
+  it('never appears again after the player has failed, whatever else arrives', async () => {
+    const started = fades();
+    const view = await render(withStill(false));
+    await act(async () => undefined);
+    await measure();
+    await act(async () => video().props.onFirstFrameRender());
+    await act(async () => player()?.emit('statusChange', { status: 'error' }));
+    await view.rerender(<ThemeProvider crossfade={false}>{withStill(true)}</ThemeProvider>);
+    expect(started.filter((to) => to === 1)).toEqual([]);
   });
 });
 

@@ -1,5 +1,5 @@
 import { useVideoPlayer, VideoView } from 'expo-video';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import Animated, {
   Easing,
@@ -16,14 +16,22 @@ import {
   NIGHT_LOOP_SOURCE,
   plateCoverRect,
 } from '@/design/nightLoop';
+import { usePosterShown } from '@/design/platePaint';
 
 type Size = { width: number; height: number };
 
 /**
  * The living Night Home plate: a muted, looping, controls-free video laid exactly over the still
- * (see design/nightLoop). It is invisible until its first frame has rendered, so the still is never
- * covered by black or by a half-loaded picture, and it hands back to the still, with no error to
- * show, if the player ever fails. Not focusable, not touchable, hidden from screen readers.
+ * (see design/nightLoop). It is invisible until its first frame has rendered and the still beneath it
+ * has been drawn, so the still is never covered by black or by a half-loaded picture, and it hands
+ * back to the still, with no error to show, if the player ever fails. Not focusable, not touchable,
+ * hidden from screen readers.
+ *
+ * It comes up as one picture. A TextureView is opaque, and Android blends an opaque layer that is
+ * faded on its own toward black, not toward what is behind it: the sky dipped dark and climbed back
+ * as the loop appeared, and the first welcome woke from black. The fading layer is therefore drawn
+ * off screen (needsOffscreenAlphaCompositing) and the finished picture is faded over the still, which
+ * keeps its own pixels at full strength beneath it the whole time.
  *
  * `revealMs` is how long it takes to appear once its first frame has rendered, and `revealAfterMs`
  * is the least time after the surface was made before it may begin. The welcome uses both; every
@@ -45,6 +53,9 @@ export function NightLoopSurface({
   const [frame, setFrame] = useState<Size | null>(null);
   const shown = useSharedValue(0);
   const [madeAt] = useState(() => Date.now());
+  const stillDrawn = usePosterShown();
+  const [firstFrame, setFirstFrame] = useState(false);
+  const failed = useRef(false);
 
   const reveal = useCallback(() => {
     const appear = withTiming(1, {
@@ -57,6 +68,11 @@ export function NightLoopSurface({
     shown.set(wait > 0 ? withDelay(wait, appear) : appear);
   }, [madeAt, revealAfterMs, revealMs, shown]);
 
+  // Appears once both are true: its first frame is on screen, and so is the still it lies over.
+  useEffect(() => {
+    if (firstFrame && stillDrawn && !failed.current) reveal();
+  }, [firstFrame, reveal, stillDrawn]);
+
   // Play and pause follow the caller exactly. Pausing keeps the frame, so resuming continues from
   // where the loop stopped, with no seek and no jump.
   useEffect(() => {
@@ -66,14 +82,15 @@ export function NightLoopSurface({
 
   // A player that fails leaves the still as it was: back to the photograph, no message.
   useEffect(() => {
-    const failed = player.addListener('statusChange', ({ status }) => {
+    const listener = player.addListener('statusChange', ({ status }) => {
       if (status === 'error') {
+        failed.current = true;
         shown.set(
           withTiming(0, { duration: NIGHT_LOOP_REVEAL_MS, reduceMotion: ReduceMotion.Never }),
         );
       }
     });
-    return () => failed.remove();
+    return () => listener.remove();
   }, [player, shown]);
 
   const onLayout = useCallback((event: LayoutChangeEvent) => {
@@ -88,6 +105,8 @@ export function NightLoopSurface({
   return (
     <Animated.View
       style={[styles.root, fade]}
+      // One picture, drawn off screen, then faded: see above.
+      needsOffscreenAlphaCompositing
       onLayout={onLayout}
       pointerEvents="none"
       focusable={false}
@@ -118,7 +137,7 @@ export function NightLoopSurface({
             accessible={false}
             accessibilityElementsHidden
             importantForAccessibility="no-hide-descendants"
-            onFirstFrameRender={reveal}
+            onFirstFrameRender={() => setFirstFrame(true)}
           />
         </View>
       )}
