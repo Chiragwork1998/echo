@@ -13,7 +13,7 @@ import { PrivacyScreen } from './PrivacyScreen';
 
 jest.mock('@/design/haptics');
 jest.mock('@/services/biometric', () => ({ verifyLockAvailable: jest.fn() }));
-jest.mock('expo-router', () => ({ router: { navigate: jest.fn() } }));
+jest.mock('expo-router', () => ({ router: { navigate: jest.fn(), dismissTo: jest.fn() } }));
 jest.mock(
   'react-native-safe-area-context',
   () => jest.requireActual('react-native-safe-area-context/jest/mock').default,
@@ -164,10 +164,11 @@ describe('PrivacyScreen', () => {
     expect(useOnboarding.getState().privacy.privateBackup).toBe(true);
   });
 
-  it('goes back to Rhythm', async () => {
+  it('goes back to Rhythm by returning to it, not by opening it again on top', async () => {
     await render(<PrivacyScreen />);
     await fireEvent.press(screen.getByRole('button', { name: 'Back' }));
-    expect(router.navigate).toHaveBeenCalledWith('/onboarding/rhythm');
+    expect(router.dismissTo).toHaveBeenCalledWith('/onboarding/rhythm');
+    expect(router.navigate).not.toHaveBeenCalled();
   });
 });
 

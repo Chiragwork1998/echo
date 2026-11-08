@@ -93,7 +93,7 @@ export function ThreeChoiceScreen<V extends string>({
       header={
         <OnboardingHeader
           step={step}
-          onBack={back ? () => router.navigate(back as never) : undefined}
+          onBack={back ? () => router.dismissTo(back as never) : undefined}
         />
       }
       footer={

@@ -39,6 +39,9 @@ const BADGE = 16;
 const SELECTED_EDGE = 1.5;
 const LABEL = { fontSize: 11.6, lineHeight: 15 };
 const SPRING = { ...tokens.motion.spring, reduceMotion: ReduceMotion.System };
+// A press tints the card from inside, as a veil of its own ink (cream on Night, ink on Day). The card
+// itself is never made translucent: a frosted blur under a faded ancestor turns see-through.
+const PRESS_VEIL = 0.08;
 
 type CardProps = {
   label: string;
@@ -61,7 +64,13 @@ function PresetCard({ label, icon, selected, stacked, onPress }: CardProps) {
     );
   }, [selected, progress]);
 
+  const press = useSharedValue(0);
+  const feel = (to: number) =>
+    press.set(
+      withTiming(to, { duration: tokens.motion.instant, reduceMotion: ReduceMotion.Never }),
+    );
   const highlight = useAnimatedStyle(() => ({ opacity: progress.get() }));
+  const veil = useAnimatedStyle(() => ({ opacity: PRESS_VEIL * press.get() }));
   const badge = useAnimatedStyle(() => ({
     opacity: progress.get(),
     transform: [{ scale: 0.6 + 0.4 * progress.get() }],
@@ -73,7 +82,9 @@ function PresetCard({ label, icon, selected, stacked, onPress }: CardProps) {
       accessibilityLabel={label}
       accessibilityState={{ selected, checked: selected }}
       onPress={onPress}
-      style={({ pressed }) => [styles.pressable, { opacity: pressed ? 0.86 : 1 }]}
+      onPressIn={() => feel(1)}
+      onPressOut={() => feel(0)}
+      style={styles.pressable}
     >
       <Glass
         radius={tokens.radius.medium}
@@ -90,6 +101,11 @@ function PresetCard({ label, icon, selected, stacked, onPress }: CardProps) {
             { backgroundColor: tone.cardSelected, borderColor: tone.gold },
             highlight,
           ]}
+        />
+        <Animated.View
+          testID="preset-press-veil"
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, { backgroundColor: tone.ink }, veil]}
         />
         <View>
           <Icon name={icon} size={ICON} color={tone.ink} />

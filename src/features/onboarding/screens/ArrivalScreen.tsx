@@ -12,7 +12,7 @@ import { usePlatePoint } from '@/design/usePlatePoint';
 import { backPath, nextPath } from '@/features/onboarding/flow';
 import { ArrivalHeader } from '@/features/onboarding/arrival/ArrivalHeader';
 import { ArrivalHeading } from '@/features/onboarding/arrival/ArrivalHeading';
-import { STONES, hitBox } from '@/features/onboarding/arrival/geometry';
+import { STONES, WATER, hitBox } from '@/features/onboarding/arrival/geometry';
 import { MoodList } from '@/features/onboarding/arrival/MoodList';
 import { MoodStone } from '@/features/onboarding/arrival/MoodStone';
 import { StoneRipple } from '@/features/onboarding/arrival/StoneRipple';
@@ -41,7 +41,14 @@ function Stream({ mood, onChoose }: { mood?: Mood; onChoose: (value: Mood) => vo
       accessibilityLabel={copy.arrival.subtitle}
     >
       {stones.map(({ value, at, rx, ry }) => (
-        <StoneRipple key={value} at={at} rx={rx} ry={ry} active={value === mood} />
+        <StoneRipple
+          key={value}
+          at={at}
+          rx={rx}
+          ry={ry}
+          active={value === mood}
+          water={WATER[value]}
+        />
       ))}
       {stones.map(({ value, at, rx, ry }) => (
         <MoodStone
@@ -66,7 +73,7 @@ export function ArrivalScreen() {
   const choose = useCallback(
     (value: Mood) => {
       if (value === mood) return;
-      cue('tick');
+      cue(WATER[value].haptic);
       update({ mood: value });
     },
     [mood, update],
@@ -85,7 +92,7 @@ export function ArrivalScreen() {
     useCallback(() => {
       const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
         if (!back) return false;
-        router.navigate(back as never);
+        router.dismissTo(back as never);
         return true;
       });
       return () => subscription.remove();

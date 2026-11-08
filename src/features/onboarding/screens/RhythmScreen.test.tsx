@@ -1,11 +1,13 @@
-import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react-native';
 import { router } from 'expo-router';
-import { Dimensions, Platform } from 'react-native';
+import { Dimensions, Platform, StyleSheet } from 'react-native';
+import { withTiming } from 'react-native-reanimated';
 
 import { showToast } from '@/components/Toast';
 import { copy } from '@/content/copy';
 import { cue } from '@/design/haptics';
 import { dialSize } from '@/features/onboarding/rhythm/TimeDial';
+import { nearestAngle } from '@/features/onboarding/rhythm/time';
 import { initialOnboarding, useOnboarding } from '@/state/onboarding';
 import { render } from '@/testing/render';
 
@@ -14,7 +16,7 @@ import { commitReminder } from '@/features/onboarding/rhythm/commitReminder';
 import { RhythmScreen } from './RhythmScreen';
 
 jest.mock('@/design/haptics');
-jest.mock('expo-router', () => ({ router: { navigate: jest.fn() } }));
+jest.mock('expo-router', () => ({ router: { navigate: jest.fn(), dismissTo: jest.fn() } }));
 jest.mock('@/features/onboarding/rhythm/commitReminder', () => ({
   commitReminder: jest.fn(),
 }));
@@ -39,7 +41,9 @@ jest.mock('react-native-reanimated', () => {
         this.value = next;
       },
     }).current;
-  return { ...base, useSharedValue };
+  // The animation is spied on so the tests can tell a handle set at once from one carried round.
+  const withTiming = jest.fn((value: unknown) => value);
+  return { ...base, useSharedValue, withTiming };
 });
 
 // Gesture handler needs native code. The detector passes through, and the hook hands the screen's
@@ -167,6 +171,18 @@ describe('presets', () => {
     expect(preset(EVENING)).not.toBeChecked();
   });
 
+  it('presses with a veil inside the card, and never dims the card that holds the frosted glass', async () => {
+    await render(<RhythmScreen />);
+    for (const label of [MORNING, EVENING, BEFORE_SLEEP]) {
+      expect(within(preset(label)).getByTestId('preset-press-veil')).toBeTruthy();
+      await fireEvent(preset(label), 'pressIn');
+      // A blur under a translucent ancestor turns see-through: the card itself stays at full opacity.
+      const opacity = StyleSheet.flatten(preset(label).props.style)?.opacity;
+      expect(opacity === undefined || opacity === 1).toBe(true);
+      await fireEvent(preset(label), 'pressOut');
+    }
+  });
+
   it('cues a tick for each preset', async () => {
     await render(<RhythmScreen />);
     await fireEvent.press(preset(EVENING));
@@ -220,6 +236,45 @@ describe('the dial', () => {
     await touch('onUpdate', onRing(angleOf(7, 33)));
     expect(time('7:35 AM')).toBeTruthy();
     await lift();
+  });
+
+  describe('the handle', () => {
+    // 21:30 is 142.5 degrees. The handle chases nothing under a finger that is near it.
+    const turns = () => jest.mocked(withTiming).mock.calls;
+
+    it('sits under the finger through a drag, never started on a timing that is restarted each step', async () => {
+      await render(<RhythmScreen />);
+      jest.mocked(withTiming).mockClear();
+      await touch('onBegin', onRing(angleOf(21, 35)));
+      await touch('onUpdate', onRing(angleOf(21, 40)));
+      await touch('onUpdate', onRing(angleOf(21, 45)));
+      await touch('onUpdate', onRing(angleOf(21, 55)));
+      await lift();
+      expect(time('9:55 PM')).toBeTruthy();
+      expect(turns()).toHaveLength(0);
+    });
+
+    it('carries the handle round, as a preset does, to a first touch on the far side of the rim', async () => {
+      await render(<RhythmScreen />);
+      jest.mocked(withTiming).mockClear();
+      await touch('onBegin', onRing(angleOf(8)));
+      expect(time('8:00 AM')).toBeTruthy();
+      expect(turns()).toHaveLength(1);
+      const [target, config] = turns()[0]!;
+      expect(target).toBe(nearestAngle(angleOf(21, 30), angleOf(8)));
+      expect(config).toEqual(expect.objectContaining({ duration: 560 }));
+      // And it never uses the 90 ms chase.
+      expect(turns().some(([, c]) => (c as { duration?: number }).duration === 90)).toBe(false);
+    });
+
+    it('goes back to following the finger directly once it has arrived near it', async () => {
+      await render(<RhythmScreen />);
+      await touch('onBegin', onRing(angleOf(8)));
+      jest.mocked(withTiming).mockClear();
+      await touch('onUpdate', onRing(angleOf(8, 5)));
+      await touch('onUpdate', onRing(angleOf(8, 10)));
+      expect(turns()).toHaveLength(0);
+    });
   });
 
   it('follows a drag over midnight in both directions', async () => {
@@ -371,10 +426,11 @@ describe('Set my rhythm', () => {
     expect(router.navigate).toHaveBeenCalledWith('/onboarding/privacy');
   });
 
-  it('goes back to the previous step', async () => {
+  it('goes back to the previous step by returning to it, not by opening it again on top', async () => {
     await render(<RhythmScreen />);
     await fireEvent.press(screen.getByRole('button', { name: 'Back' }));
-    expect(router.navigate).toHaveBeenCalledWith('/onboarding/voice');
+    expect(router.dismissTo).toHaveBeenCalledWith('/onboarding/voice');
+    expect(router.navigate).not.toHaveBeenCalled();
   });
 });
 

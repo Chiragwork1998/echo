@@ -1,3 +1,4 @@
+import type { Cue } from '@/design/haptics';
 import type { ThemeName } from '@/design/tokens';
 import type { Mood } from '@/state/onboarding';
 
@@ -25,6 +26,65 @@ export const STONES: Record<ThemeName, readonly StoneSpec[]> = {
     { value: 'numb', at: { x: 306.5, y: 646 }, rx: 77, ry: 50 },
   ],
 };
+
+/** How far a standing ring spreads before it is gone, in points, for every stone. */
+export const REACH = 44;
+
+/** The ring that leaves a stone's rim the moment it is chosen. */
+export type Impact = {
+  /** How far it spreads past the rim, in points. */
+  reach: number;
+  /** How long it takes to spread and be gone. */
+  ms: number;
+  /** Its strongest opacity, as a share of the standing rings' strongest. */
+  peak: number;
+  /** Its line weight as it leaves the rim and as it is gone. */
+  stroke: readonly [from: number, to: number];
+};
+
+/**
+ * How the water answers a stone, by mood. Numbers only, so the lead can tune them on a phone: a
+ * lighter word is quicker and shallower, a heavier one reaches further and takes longer, and Numb
+ * is faint but present, so it reads as an answer and never as a fault. The standing rings keep
+ * three paces (4200, 5600 and 7600 ms a cycle) and the glints twinkle in step; Steady and
+ * Unsettled are today's. Only when and how fast things move changes with the mood: any still frame
+ * is the golden's for all of them. `haptic` is the one cue the choice makes.
+ */
+export const WATER: Record<Mood, { impact: Impact; cycle: number; twinkle: number; haptic: Cue }> =
+  {
+    light: {
+      impact: { reach: 40, ms: 700, peak: 1, stroke: [2.2, 0.8] },
+      cycle: 4200,
+      twinkle: 2000,
+      haptic: 'fine',
+    },
+    steady: {
+      impact: { reach: 44, ms: 900, peak: 1, stroke: [2.2, 0.8] },
+      cycle: 5600,
+      twinkle: 2600,
+      haptic: 'tick',
+    },
+    unsettled: {
+      impact: { reach: 46, ms: 900, peak: 1, stroke: [2.2, 0.8] },
+      cycle: 5600,
+      twinkle: 2600,
+      haptic: 'tick',
+    },
+    heavy: {
+      impact: { reach: 58, ms: 1300, peak: 1, stroke: [2.6, 1] },
+      cycle: 7600,
+      twinkle: 3600,
+      haptic: 'settle',
+    },
+    numb: {
+      impact: { reach: 34, ms: 1500, peak: 0.5, stroke: [1.2, 0.6] },
+      cycle: 7600,
+      twinkle: 3600,
+      haptic: 'fine',
+    },
+  };
+
+export type Water = (typeof WATER)[Mood];
 
 /** The river is seen at a low angle, so rings are flatter than they are wide. */
 export const FLATTEN = 0.45;

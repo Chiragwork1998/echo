@@ -12,7 +12,7 @@ import { render } from '@/testing/render';
 import { breakDetail, HORIZON_SCENE, VOICE_SCENE } from './scenes';
 
 jest.mock('@/design/haptics');
-jest.mock('expo-router', () => ({ router: { navigate: jest.fn() } }));
+jest.mock('expo-router', () => ({ router: { navigate: jest.fn(), dismissTo: jest.fn() } }));
 jest.mock(
   'react-native-safe-area-context',
   () => jest.requireActual('react-native-safe-area-context/jest/mock').default,
@@ -142,10 +142,11 @@ describe.each(cases)('$name', ({ Screen, text, field, values, step, back, next, 
     expect(cta()).toBeEnabled();
   });
 
-  it('goes back to the previous step', async () => {
+  it('goes back to the previous step by returning to it, not by opening it again on top', async () => {
     await render(<Screen />);
     await fireEvent.press(screen.getByRole('button', { name: 'Back' }));
-    expect(router.navigate).toHaveBeenCalledWith(back);
+    expect(router.dismissTo).toHaveBeenCalledWith(back);
+    expect(router.navigate).not.toHaveBeenCalled();
   });
 
   it('announces its step of 8', async () => {
