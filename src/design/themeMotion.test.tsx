@@ -49,10 +49,21 @@ describe('the controls when the theme changes', () => {
     expect(view.result.current.colors).toBe(tokens.color.night);
   });
 
+  it('keep their name until the plates are level, and then take the new one', async () => {
+    const view = await mount();
+    await set('day');
+    // A heading that picks cream or ink by name must not turn dark over a sky that is still Night.
+    await wait(290 + 100);
+    expect(view.result.current.name).toBe('night');
+    expect(view.result.current.colors).not.toBe(tokens.color.night);
+    await wait(100);
+    expect(view.result.current.name).toBe('day');
+  });
+
   it('then move their colours over 320 ms, and land exactly on the new tokens', async () => {
     const view = await mount();
     await set('day');
-    await wait(290 + 160);
+    await wait(290 + 200);
     expect(view.result.current.name).toBe('day');
     const mid = parseColor(view.result.current.colors.textInk);
     const from = parseColor(tokens.color.night.textInk);
@@ -68,14 +79,16 @@ describe('the controls when the theme changes', () => {
     expect(view.result.current.colors).toBe(tokens.color.day);
   });
 
-  it('go in 180 ms and no more with Reduce Motion, with no wait before it', async () => {
+  it('go in 180 ms and no more with Reduce Motion, flipping their name at 90', async () => {
     jest.mocked(AccessibilityInfo.isReduceMotionEnabled).mockResolvedValue(true);
     const view = await mount();
     await act(async () => undefined);
     await set('day');
-    await wait(180);
+    await wait(80);
+    expect(view.result.current.name).toBe('night');
+    await wait(30);
     expect(view.result.current.name).toBe('day');
-    await wait(20);
+    await wait(100);
     expect(view.result.current.colors).toBe(tokens.color.day);
   });
 

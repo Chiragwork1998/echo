@@ -18,6 +18,7 @@ import { usePreferences } from '@/state/preferences';
 import { render } from '@/testing/render';
 
 import { homeLabels } from '../today/homeLabels';
+import { useStoneMemory } from '../today/stoneMemory';
 import { HomeScreen } from './HomeScreen';
 
 jest.mock('@/design/haptics');
@@ -111,6 +112,7 @@ const summary = (patch: Partial<HomeSummary>): HomeSummary => ({
 
 beforeEach(() => {
   jest.clearAllMocks();
+  useStoneMemory.getState().reset();
   mockedSummary.mockImplementation(actualSummary);
   usePreferences.setState({ theme: 'night' });
   setWindow();

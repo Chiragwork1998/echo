@@ -1,5 +1,7 @@
 import { LinearGradient } from 'expo-linear-gradient';
+import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
+import Animated, { Easing, useAnimatedStyle } from 'react-native-reanimated';
 
 import { EchoText } from '@/components/EchoText';
 import { OneLineLabel } from '@/components/OneLineLabel';
@@ -10,6 +12,7 @@ import { copy } from '@/content/copy';
 import { goldenCopy } from '@/content/goldenCopy';
 import { cue } from '@/design/haptics';
 import { useLayout } from '@/design/layout';
+import { useReduceMotion } from '@/design/useReduceMotion';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 import { becomeCopy } from '@/features/become/becomeCopy';
@@ -19,6 +22,7 @@ import type { HomeSummary } from '@/features/journal';
 import { Resolve } from '@/features/tab-pages/Resolve';
 
 import { useSessionEntry } from '../dissolve';
+import { FadeLayer } from './FadeLayer';
 import { dayLabel, entryDisplay, homeLabels, minutesOf } from './homeLabels';
 import {
   ArrowGlyph,
@@ -30,6 +34,19 @@ import {
   PlateThumb,
   YOU_PATH,
 } from './shared';
+import {
+  COUNT_IN_LAG_MS,
+  COUNT_IN_MS,
+  COUNT_OUT_MS,
+  LAND_MS,
+  PEBBLE_COOL_MS,
+  PEBBLE_FROM_LIFT,
+  PEBBLE_FROM_SCALE,
+  PEBBLE_IN_MS,
+  REDUCED_MS,
+} from './stoneMotion';
+import { useBeat } from './useBeat';
+import type { StoneView } from './useStoneArrival';
 
 // Measured from the Day golden (868 x 1812, normalised to 393 x 852).
 const AVATAR = 37;
@@ -70,23 +87,160 @@ function Header() {
   );
 }
 
-/** The latest stone is always the bright one. Colours cycle, so a long streak stays calm. */
-function Pebbles({ count }: { count: number }) {
+type Playing = Extract<StoneView, { phase: 'playing' }>;
+
+/** Colour changes evenly: a pebble cooling is slow in the middle, not quick at the start. */
+const COOL = Easing.inOut(Easing.quad);
+
+const pebbleColours = (index: number, last: boolean) => PEBBLES[last ? 3 : index % 3] ?? PEBBLES[0];
+
+function Pebble({ index, last }: { index: number; last: boolean }) {
+  const [light, dark] = pebbleColours(index, last);
+  return (
+    <LinearGradient
+      colors={[light, dark]}
+      start={{ x: 0.25, y: 0.15 }}
+      end={{ x: 0.85, y: 1 }}
+      style={[styles.pebble, last && { boxShadow: tokens.shadow.glow }]}
+    />
+  );
+}
+
+/**
+ * The pebble that has just been earned: it comes in a little small and a little high, and settles,
+ * glow and all. Reduce Motion: it only fades.
+ */
+function EnteringPebble({ index, reduced }: { index: number; reduced: boolean }) {
+  const beat = useBeat(0, reduced ? REDUCED_MS : PEBBLE_IN_MS);
+  const enter = useAnimatedStyle(() => ({
+    opacity: beat.get(),
+    transform: reduced
+      ? []
+      : [
+          { translateY: -PEBBLE_FROM_LIFT * (1 - beat.get()) },
+          { scale: PEBBLE_FROM_SCALE + (1 - PEBBLE_FROM_SCALE) * beat.get() },
+        ],
+  }));
+  return (
+    <Animated.View style={[styles.pebble, enter]} testID="pebble-entering">
+      <Pebble index={index} last />
+    </Animated.View>
+  );
+}
+
+/**
+ * The pebble that was the bright one cools to the colour it keeps: bronze, copper or silver. The
+ * colour it keeps lies whole beneath and the bright one fades away over it, so the pebble is never
+ * see-through on the way, and its glow goes with the bright layer.
+ */
+function CoolingPebble({ index, reduced }: { index: number; reduced: boolean }) {
+  return (
+    <View style={styles.pebble} testID="pebble-cooling">
+      <Pebble index={index} last={false} />
+      <FadeLayer
+        leaving
+        at={0}
+        ms={reduced ? REDUCED_MS : PEBBLE_COOL_MS}
+        from={1}
+        to={0}
+        easing={COOL}
+      >
+        <Pebble index={index} last />
+      </FadeLayer>
+    </View>
+  );
+}
+
+/**
+ * Making room. A row of pebbles is centred, so when one more joins it, those already there move
+ * half a step to the left. They start half a step to the right, which is where they were, and are
+ * carried into their places as the new pebble comes in: the row never jumps.
+ */
+function Carried({ children }: { children: ReactNode }) {
+  const beat = useBeat(0, PEBBLE_IN_MS);
+  const carry = useAnimatedStyle(() => ({ transform: [{ translateX: STONE * (1 - beat.get()) }] }));
+  return (
+    <Animated.View style={carry} testID="pebble-carried">
+      {children}
+    </Animated.View>
+  );
+}
+
+/**
+ * The latest stone is always the bright one. Colours cycle, so a long streak stays calm. When one is
+ * being earned the new pebble comes in, and the one before it cools.
+ *
+ * The room for the new pebble is made without a jump. With motion, the pebbles already there are
+ * carried half a step as it arrives. With Reduce Motion nothing may travel, so the room is held from
+ * the moment Home comes back, an empty place at the end of the row, and the pebble comes into it.
+ */
+function Pebbles({
+  count,
+  playing,
+  waiting,
+}: {
+  count: number;
+  playing: Playing | null;
+  waiting: boolean;
+}) {
+  const reducedNow = useReduceMotion();
+  const before = playing
+    ? playing.before.done > 0 || playing.before.streak > 0
+      ? Math.max(playing.before.done, 1)
+      : 0
+    : count;
+  const entering = playing && playing.kind !== 'digits' && count > before ? count - 1 : -1;
+  const cooling = entering >= 1 && before >= 1 ? entering - 1 : -1;
+  const still = playing?.reduced ?? reducedNow;
   return (
     <View style={styles.pebbles} accessibilityElementsHidden importantForAccessibility="no">
       {Array.from({ length: count }, (_, i) => {
-        const last = i === count - 1;
-        const [light, dark] = PEBBLES[last ? 3 : i % 3] ?? PEBBLES[0];
-        return (
-          <LinearGradient
-            key={i}
-            colors={[light, dark]}
-            start={{ x: 0.25, y: 0.15 }}
-            end={{ x: 0.85, y: 1 }}
-            style={[styles.pebble, last && { boxShadow: tokens.shadow.glow }]}
-          />
+        const pebble =
+          i === entering ? (
+            <EnteringPebble key={i} index={i} reduced={still} />
+          ) : i === cooling ? (
+            <CoolingPebble key={i} index={i} reduced={still} />
+          ) : (
+            <Pebble key={i} index={i} last={i === count - 1} />
+          );
+        return entering >= 0 && i !== entering && !still ? (
+          <Carried key={i}>{pebble}</Carried>
+        ) : (
+          pebble
         );
       })}
+      {waiting && still && <View style={styles.pebble} testID="pebble-room" />}
+    </View>
+  );
+}
+
+/** "N day rhythm", which gives way to the new number when a day is added to it. */
+function RhythmLine({ streak, playing }: { streak: number; playing: Playing | null }) {
+  const line = (days: number) => (
+    <EchoText variant="caption" color="textSecondary" style={styles.rhythm}>
+      {goldenCopy.dayRhythm(days).toUpperCase()}
+    </EchoText>
+  );
+  if (!playing || playing.kind === 'digits' || playing.before.streak === streak) {
+    return line(streak);
+  }
+  const still = playing.reduced;
+  const at = still ? 0 : LAND_MS;
+  return (
+    <View>
+      <FadeLayer
+        at={at + (still ? 0 : COUNT_IN_LAG_MS)}
+        ms={still ? REDUCED_MS : COUNT_IN_MS}
+        from={0}
+        to={1}
+      >
+        {line(streak)}
+      </FadeLayer>
+      {playing.before.streak > 0 && (
+        <FadeLayer leaving at={at} ms={still ? REDUCED_MS : COUNT_OUT_MS} from={1} to={0}>
+          {line(playing.before.streak)}
+        </FadeLayer>
+      )}
     </View>
   );
 }
@@ -94,6 +248,7 @@ function Pebbles({ count }: { count: number }) {
 function BeginCta() {
   const { colors } = useTheme();
   const { begin } = useSessionEntry();
+  const reduced = useReduceMotion();
   return (
     <Pressable
       accessibilityRole="button"
@@ -102,7 +257,7 @@ function BeginCta() {
         cue('commit');
         begin();
       }}
-      style={({ pressed }) => [pressed && styles.ctaPressed]}
+      style={({ pressed }) => [pressed && (reduced ? styles.ctaPressedReduced : styles.ctaPressed)]}
     >
       <LinearGradient
         colors={CREAM_STOPS}
@@ -122,6 +277,7 @@ function BeginCta() {
 /** Breathe first: the same quiet link as Write instead, beside it. */
 function BreatheFirst() {
   const { breathe } = useSessionEntry();
+  const reduced = useReduceMotion();
   return (
     <Pressable
       accessibilityRole="button"
@@ -131,7 +287,10 @@ function BreatheFirst() {
         breathe();
       }}
       hitSlop={{ top: 10, bottom: 10, left: 12, right: 12 }}
-      style={({ pressed }) => [styles.writeInstead, pressed && styles.ctaPressed]}
+      style={({ pressed }) => [
+        styles.writeInstead,
+        pressed && (reduced ? styles.ctaPressedReduced : styles.ctaPressed),
+      ]}
       testID="home-breathe-first"
     >
       <OneLineLabel variant="caption" color="textSecondary" style={styles.writeInsteadLabel}>
@@ -144,6 +303,7 @@ function BreatheFirst() {
 /** Voice is the way in (D-006). Writing is one quiet step away, never a second button. */
 function WriteInstead() {
   const { writeInstead } = useSessionEntry();
+  const reduced = useReduceMotion();
   return (
     <Pressable
       accessibilityRole="button"
@@ -153,7 +313,10 @@ function WriteInstead() {
         writeInstead();
       }}
       hitSlop={{ top: 10, bottom: 10, left: 12, right: 12 }}
-      style={({ pressed }) => [styles.writeInstead, pressed && styles.ctaPressed]}
+      style={({ pressed }) => [
+        styles.writeInstead,
+        pressed && (reduced ? styles.ctaPressedReduced : styles.ctaPressed),
+      ]}
     >
       <OneLineLabel variant="caption" color="textSecondary" style={styles.writeInsteadLabel}>
         {goldenCopy.dayWriteInstead}
@@ -162,10 +325,21 @@ function WriteInstead() {
   );
 }
 
-function TodayCard({ summary, strong }: { summary: HomeSummary; strong: boolean }) {
+function TodayCard({
+  summary,
+  strong,
+  stones,
+}: {
+  summary: HomeSummary;
+  strong: boolean;
+  stones?: StoneView;
+}) {
   const { rhythm } = summary;
   const done = rhythm.week.filter((day) => day.completed).length;
   const showRhythm = done > 0 || rhythm.currentStreak > 0;
+  const playing = stones?.phase === 'playing' ? stones : null;
+  // While a stone is on its way the rhythm has its room, so its arrival moves nothing around it.
+  const room = showRhythm || (stones !== undefined && stones.phase !== 'rest');
   const morning = useMorning();
   return (
     <GlassCard radius={tokens.radius.button} strength={strong ? 'strong' : 'regular'}>
@@ -181,12 +355,26 @@ function TodayCard({ summary, strong }: { summary: HomeSummary; strong: boolean 
           <BreatheFirst />
           <WriteInstead />
         </View>
-        {showRhythm && (
+        {room && (
           <>
-            <Pebbles count={Math.max(done, 1)} />
-            <EchoText variant="caption" color="textSecondary" style={styles.rhythm}>
-              {goldenCopy.dayRhythm(rhythm.currentStreak).toUpperCase()}
-            </EchoText>
+            <Pebbles
+              count={showRhythm ? Math.max(done, 1) : 0}
+              playing={playing}
+              waiting={stones?.phase === 'waiting' && stones.kind !== 'digits'}
+            />
+            {showRhythm ? (
+              <RhythmLine streak={rhythm.currentStreak} playing={playing} />
+            ) : (
+              // Held for the stone that is coming, and said to no one.
+              <EchoText
+                variant="caption"
+                style={[styles.rhythm, styles.rhythmHeld]}
+                accessibilityElementsHidden
+                importantForAccessibility="no"
+              >
+                {goldenCopy.dayRhythm(0).toUpperCase()}
+              </EchoText>
+            )}
           </>
         )}
       </View>
@@ -248,7 +436,7 @@ function RecentCard({ summary, strong }: { summary: HomeSummary; strong: boolean
 }
 
 /** Day: Valley Morning. A calm headline in the sky, one card, and the way back to the path. */
-export function DayHome({ summary }: { summary: HomeSummary }) {
+export function DayHome({ summary, stones }: { summary: HomeSummary; stones?: StoneView }) {
   const { accessibleLayout } = useLayout();
   const { colors } = useTheme();
   const loading = summary.status === 'loading';
@@ -276,7 +464,7 @@ export function DayHome({ summary }: { summary: HomeSummary }) {
       <View style={styles.space} />
 
       <View style={{ marginHorizontal: CARD_INSET }}>
-        <TodayCard summary={summary} strong={accessibleLayout} />
+        <TodayCard summary={summary} strong={accessibleLayout} stones={stones} />
       </View>
 
       <View style={[styles.pathHeading, { paddingHorizontal: CARD_INSET + 3 }]}>
@@ -370,6 +558,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   ctaPressed: { opacity: 0.9, transform: [{ scale: 0.985 }] },
+  // Reduce Motion: pressed is dimmer, and nothing else.
+  ctaPressedReduced: { opacity: 0.9 },
   links: { flexDirection: 'row', justifyContent: 'center', gap: 28, marginTop: 4 },
   writeInstead: { minHeight: 24, alignItems: 'center', justifyContent: 'center' },
   writeInsteadLabel: {
@@ -378,7 +568,13 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
     textDecorationLine: 'underline',
   },
-  pebbles: { marginTop: 10, flexDirection: 'row', justifyContent: 'center', gap: STONE },
+  pebbles: {
+    marginTop: 10,
+    minHeight: STONE,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: STONE,
+  },
   pebble: { width: STONE, height: STONE, borderRadius: STONE / 2 },
   rhythm: {
     marginTop: 3,
@@ -388,6 +584,7 @@ const styles = StyleSheet.create({
     letterSpacing: 2.2,
     opacity: 0.85,
   },
+  rhythmHeld: { opacity: 0 },
   pathHeading: {
     marginTop: 12,
     marginBottom: 6,

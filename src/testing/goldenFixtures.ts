@@ -8,4 +8,6 @@ export const goldenFixtures: Record<string, Partial<OnboardingState>> = {
   rhythm: { reminder: { time: '21:30', enabled: true, preset: 'before_sleep' } },
   privacy: { privacy: { biometricLock: true, privateBackup: true } },
   arrival: { mood: 'unsettled' },
+  // Home's first look after onboarding, for the welcome. The harness's date is held, not real.
+  welcome: { completedAt: Date.now() },
 };

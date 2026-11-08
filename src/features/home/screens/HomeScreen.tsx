@@ -1,16 +1,18 @@
 import { StatusBar } from 'expo-status-bar';
 import { ScrollView, StyleSheet, View } from 'react-native';
-import Animated from 'react-native-reanimated';
+import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useLayout } from '@/design/layout';
 import { useTheme } from '@/design/theme';
+import { useThemeSwap } from '@/design/useThemeSwap';
 import { useHomeSummary } from '@/features/journal';
 
 import { useHomeDissolve, useHomeVeil, useWhileHere } from '../dissolve';
 import { useTabBarSpace } from '../tabs/HomeTabBar';
 import { DayHome } from '../today/DayHome';
 import { NightFloor, NightHome } from '../today/NightHome';
+import { useStoneArrival } from '../today/useStoneArrival';
 
 // The goldens place the header just inside the status-bar inset (docs/SPEC_CONFLICTS.md, C-03).
 const HEADER_OFFSET_FROM_SAFE_TOP = -5;
@@ -25,7 +27,8 @@ const ABOVE_TAB_BAR = { night: 18, day: 8 } as const;
  */
 export function HomeScreen() {
   const { name } = useTheme();
-  const summary = useHomeSummary();
+  // Home as the person last saw it until the moment a stone is set, and what to play then.
+  const { summary, stones } = useStoneArrival(useHomeSummary());
   const insets = useSafeAreaInsets();
   const { width, gutter } = useLayout();
   const tabBarSpace = useTabBarSpace();
@@ -34,6 +37,10 @@ export function HomeScreen() {
   // never moves. The floor shade is part of the dissolve: the session's plate has none.
   const { phase } = useHomeDissolve();
   const veil = useHomeVeil();
+  // Night and Day are two compositions: when the theme changes the one in view fades out, the other
+  // takes its place while nothing is showing, and comes in over the new sky.
+  const swap = useThemeSwap();
+  const dip = useAnimatedStyle(() => ({ opacity: swap.get() }));
   const dissolved = phase !== 'idle';
   const here = useWhileHere();
 
@@ -50,25 +57,31 @@ export function HomeScreen() {
         accessibilityElementsHidden={dissolved}
         importantForAccessibility={dissolved ? 'no-hide-descendants' : 'auto'}
       >
-        {night && <NightFloor />}
-        {/* Scrolls only when the content is taller than the screen. The tab bar is not inside it. */}
-        <ScrollView
-          testID="home-scroll"
-          style={styles.fill}
-          contentContainerStyle={[
-            styles.scroll,
-            {
-              paddingTop: Math.max(insets.top + HEADER_OFFSET_FROM_SAFE_TOP, 8),
-              paddingBottom: tabBarSpace + ABOVE_TAB_BAR[name],
-            },
-          ]}
-          alwaysBounceVertical={false}
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={[styles.column, { width, paddingHorizontal: gutter }]}>
-            {night ? <NightHome summary={summary} /> : <DayHome summary={summary} />}
-          </View>
-        </ScrollView>
+        <Animated.View testID="home-swap" style={[styles.fill, dip]}>
+          {night && <NightFloor />}
+          {/* Scrolls only when the content is taller than the screen. The tab bar is not inside it. */}
+          <ScrollView
+            testID="home-scroll"
+            style={styles.fill}
+            contentContainerStyle={[
+              styles.scroll,
+              {
+                paddingTop: Math.max(insets.top + HEADER_OFFSET_FROM_SAFE_TOP, 8),
+                paddingBottom: tabBarSpace + ABOVE_TAB_BAR[name],
+              },
+            ]}
+            alwaysBounceVertical={false}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={[styles.column, { width, paddingHorizontal: gutter }]}>
+              {night ? (
+                <NightHome summary={summary} stones={stones} />
+              ) : (
+                <DayHome summary={summary} stones={stones} />
+              )}
+            </View>
+          </ScrollView>
+        </Animated.View>
       </Animated.View>
     </View>
   );

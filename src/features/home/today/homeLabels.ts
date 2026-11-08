@@ -19,6 +19,8 @@ export const homeLabels = {
   // Spoken only.
   weekRhythm: 'This week’s rhythm',
   completed: 'completed',
+  // Said once when today's cairn is built before the person's eyes. Spoken only.
+  cairnBuilt: 'Today’s cairn is built',
   openEntry: 'Open',
   loading: 'Loading',
   localTime: 'Local time',

@@ -1,9 +1,15 @@
 import { usePathname } from 'expo-router';
 import { Component, useEffect, useState, type ComponentType, type ReactNode } from 'react';
-import { AccessibilityInfo, AppState, Platform } from 'react-native';
+import { AccessibilityInfo, Platform } from 'react-native';
 
-import { NIGHT_LOOP_COVER_GRACE_MS } from '@/design/nightLoop';
+import {
+  NIGHT_LOOP_COVER_GRACE_MS,
+  NIGHT_LOOP_WELCOME_DELAY_MS,
+  NIGHT_LOOP_WELCOME_REVEAL_MS,
+} from '@/design/nightLoop';
 import { useTheme } from '@/design/theme';
+import { tokens } from '@/design/tokens';
+import { useAppForeground } from '@/design/useAppForeground';
 
 /**
  * The routes under /home on which the plate is what the person is looking at: Home, the daily
@@ -17,7 +23,7 @@ export const LOOP_PATHS: readonly string[] = [
   '/home/rehearse',
 ];
 
-type SurfaceProps = { playing: boolean };
+type SurfaceProps = { playing: boolean; revealMs?: number; revealAfterMs?: number };
 
 // expo-video is native code. A build made before it was added cannot load it, and then the still
 // simply stays: requiring the surface here, rather than importing it, turns that into a null.
@@ -65,19 +71,6 @@ export function useMotionAllowed(): boolean {
   return allowed;
 }
 
-// AppState.currentState is null until the system first answers, so only a clear "away" counts.
-const isAway = (state: unknown) => state === 'background' || state === 'inactive';
-
-/** True while the app is in the foreground. Inactive counts as away: the app switcher is open. */
-export function useAppForeground(): boolean {
-  const [active, setActive] = useState(!isAway(AppState.currentState));
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', (next) => setActive(!isAway(next)));
-    return () => subscription.remove();
-  }, []);
-  return active;
-}
-
 /** True now, and for `graceMs` after `on` turns false. */
 function useLingering(on: boolean, graceMs: number): boolean {
   const [away, setAway] = useState(!on);
@@ -94,12 +87,19 @@ function useLingering(on: boolean, graceMs: number): boolean {
  * The Night Home plate, alive (D-009). Laid by app/home/_layout.tsx over the Night still, which
  * stays beneath as the poster and as the whole of the plate when this draws nothing.
  *
- * It draws nothing, and makes no player, in Day, with Reduce Motion on, on web, or where expo-video
- * is missing. It plays only while the plate can be seen: it pauses the moment the app leaves the
+ * It draws nothing, and makes no player, in Day (once Night has faded out), with Reduce Motion on, on
+ * web, or where expo-video is missing. It plays only while the plate can be seen: it pauses the moment the app leaves the
  * foreground or the lock closes over it, and a moment after another screen has covered it. It plays
  * again at once, from the frame it stopped on.
  */
-export function NightHomeLoop({ suspended = false }: { suspended?: boolean }) {
+export function NightHomeLoop({
+  suspended = false,
+  welcome = false,
+}: {
+  suspended?: boolean;
+  /** Home's first look ever: the river wakes slowly (design/nightLoop). */
+  welcome?: boolean;
+}) {
   const { target } = useTheme();
   const motion = useMotionAllowed();
   const foreground = useAppForeground();
@@ -107,10 +107,22 @@ export function NightHomeLoop({ suspended = false }: { suspended?: boolean }) {
   // Pausing waits for a covering screen to finish fading in. Playing does not wait.
   const visible = useLingering(LOOP_PATHS.includes(pathname), NIGHT_LOOP_COVER_GRACE_MS);
 
-  if (!Surface || target !== 'night' || !motion) return null;
+  // The Night plate fades out over 900 ms when the theme moves to Day, and the loop is part of it:
+  // it plays on through the fade, and is not swapped for the still the moment the change begins.
+  const night = useLingering(target === 'night', tokens.motion.atmosphere);
+
+  if (!Surface || !night || !motion) return null;
   return (
     <Quiet>
-      <Surface playing={visible && foreground && !suspended} />
+      <Surface
+        playing={visible && foreground && !suspended}
+        {...(welcome
+          ? {
+              revealMs: NIGHT_LOOP_WELCOME_REVEAL_MS,
+              revealAfterMs: NIGHT_LOOP_WELCOME_DELAY_MS,
+            }
+          : {})}
+      />
     </Quiet>
   );
 }

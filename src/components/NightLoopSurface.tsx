@@ -6,6 +6,7 @@ import Animated, {
   ReduceMotion,
   useAnimatedStyle,
   useSharedValue,
+  withDelay,
   withTiming,
 } from 'react-native-reanimated';
 
@@ -24,25 +25,37 @@ type Size = { width: number; height: number };
  * covered by black or by a half-loaded picture, and it hands back to the still, with no error to
  * show, if the player ever fails. Not focusable, not touchable, hidden from screen readers.
  *
+ * `revealMs` is how long it takes to appear once its first frame has rendered, and `revealAfterMs`
+ * is the least time after the surface was made before it may begin. The welcome uses both; every
+ * other time the loop appears in 700 ms, as soon as it can.
+ *
  * This file imports expo-video directly. Reach it through NightHomeLoop, which keeps a build without
  * the native module on the still, and which decides when a player should exist at all.
  */
-export function NightLoopSurface({ playing }: { playing: boolean }) {
+export function NightLoopSurface({
+  playing,
+  revealMs = NIGHT_LOOP_REVEAL_MS,
+  revealAfterMs = 0,
+}: {
+  playing: boolean;
+  revealMs?: number;
+  revealAfterMs?: number;
+}) {
   const player = useVideoPlayer(NIGHT_LOOP_SOURCE, configureNightLoopPlayer);
   const [frame, setFrame] = useState<Size | null>(null);
   const shown = useSharedValue(0);
+  const [madeAt] = useState(() => Date.now());
 
-  const reveal = useCallback(
-    () =>
-      shown.set(
-        withTiming(1, {
-          duration: NIGHT_LOOP_REVEAL_MS,
-          easing: Easing.inOut(Easing.cubic),
-          reduceMotion: ReduceMotion.Never,
-        }),
-      ),
-    [shown],
-  );
+  const reveal = useCallback(() => {
+    const appear = withTiming(1, {
+      duration: revealMs,
+      easing: Easing.inOut(Easing.cubic),
+      reduceMotion: ReduceMotion.Never,
+    });
+    // A first frame that is late has already waited: only what is left of the delay is waited.
+    const wait = Math.max(0, revealAfterMs - (Date.now() - madeAt));
+    shown.set(wait > 0 ? withDelay(wait, appear) : appear);
+  }, [madeAt, revealAfterMs, revealMs, shown]);
 
   // Play and pause follow the caller exactly. Pausing keeps the frame, so resuming continues from
   // where the loop stopped, with no seek and no jump.

@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
+  cancelAnimation,
   Easing,
   ReduceMotion,
   useAnimatedStyle,
@@ -41,6 +42,8 @@ const BEGIN_SIZE = 25;
 const BEGIN_LIFT = 5; // the word sits a little above centre, as in the golden
 const PRESS_SCALE = 0.968;
 const PRESS_SINK = 2.5;
+/** Reduce Motion: pressed is only dimmer, never lower or smaller. */
+const PRESS_DIM = 0.14;
 const HALO_REST = 0.5;
 const HALO_PEAK = 0.9;
 const BREATH_MS = 5200;
@@ -270,6 +273,8 @@ export function LimestoneStone({ title, arcCaption, accessibilityLabel, onPress 
 
   const caption = useMemo(() => arcCaption.toUpperCase(), [arcCaption]);
 
+  // The halo breathes for as long as the stone is there and motion is allowed, and stops at once
+  // when either ends: nothing keeps driving a view that is gone or no longer meant to move.
   useEffect(() => {
     if (reduced) return;
     breath.set(
@@ -279,21 +284,32 @@ export function LimestoneStone({ title, arcCaption, accessibilityLabel, onPress 
         true,
       ),
     );
+    return () => {
+      cancelAnimation(breath);
+      breath.set(HALO_REST);
+    };
   }, [breath, reduced]);
 
+  // Pressed, the stone settles into its shadow. With Reduce Motion it only dims: opacity, no sink.
   const body = useAnimatedStyle(() => ({
+    opacity: reduced ? 1 - PRESS_DIM * press.get() : 1,
     transform: [
-      { translateY: PRESS_SINK * press.get() },
-      { scale: 1 - (1 - PRESS_SCALE) * press.get() },
+      { translateY: reduced ? 0 : PRESS_SINK * press.get() },
+      { scale: reduced ? 1 : 1 - (1 - PRESS_SCALE) * press.get() },
     ],
   }));
   const halo = useAnimatedStyle(() => ({ opacity: breath.get() * (1 - 0.4 * press.get()) }));
 
   const pressTo = (to: number) =>
     press.set(
-      to === 1
-        ? withTiming(1, { duration: tokens.motion.instant, reduceMotion: ReduceMotion.System })
-        : withSpring(0, { ...tokens.motion.spring, reduceMotion: ReduceMotion.System }),
+      reduced
+        ? withTiming(to, {
+            duration: to === 1 ? tokens.motion.instant : tokens.motion.fast,
+            reduceMotion: ReduceMotion.Never,
+          })
+        : to === 1
+          ? withTiming(1, { duration: tokens.motion.instant, reduceMotion: ReduceMotion.System })
+          : withSpring(0, { ...tokens.motion.spring, reduceMotion: ReduceMotion.System }),
     );
 
   return (
@@ -329,7 +345,7 @@ export function LimestoneStone({ title, arcCaption, accessibilityLabel, onPress 
         </Svg>
       </Animated.View>
 
-      <Animated.View pointerEvents="none" style={[styles.canvas, body]}>
+      <Animated.View pointerEvents="none" style={[styles.canvas, body]} testID="home-stone-body">
         <StoneArt arc={ARC} caption={caption} />
         <View style={styles.title}>
           <EchoText

@@ -4,7 +4,15 @@ import { Pressable, Text } from 'react-native';
 
 import { render } from '@/testing/render';
 
-import { DISSOLVE_MS, HomeDissolveProvider, useHomeDissolve, useSessionEntry } from './dissolve';
+import {
+  ARRIVAL_AFTER_IDLE_MS,
+  DISSOLVE_MS,
+  HomeDissolveProvider,
+  REDUCED_FADE_MS,
+  RETURN_MS,
+  useHomeDissolve,
+  useSessionEntry,
+} from './dissolve';
 
 jest.mock('expo-router', () => ({
   router: { push: jest.fn(), navigate: jest.fn() },
@@ -27,6 +35,9 @@ function Probe() {
       <Pressable testID="continue" onPress={() => continueDraft('d1')} />
       <Pressable testID="opened" onPress={control.sessionOpened} />
       <Pressable testID="closed" onPress={control.sessionClosed} />
+      {/* Home partly gone, as it is a moment after the session gives it back. */}
+      <Pressable testID="partly-gone" onPress={() => control.progress.set(0.64)} />
+      <Pressable testID="nearly-gone" onPress={() => control.progress.set(0.99)} />
     </>
   );
 }
@@ -114,6 +125,34 @@ describe('the dissolve into the daily session', () => {
     await fireEvent.press(screen.getByTestId('begin'));
     await tick(DISSOLVE_MS + 2500);
     expect(phase()).toBe('idle');
+  });
+});
+
+describe('pressing Begin while Home is still coming back', () => {
+  it('dissolves what is left of Home, not the whole of it again', async () => {
+    await open();
+    await fireEvent.press(screen.getByTestId('partly-gone'));
+    await fireEvent.press(screen.getByTestId('begin'));
+    const left = Math.round(DISSOLVE_MS * 0.36);
+    await tick(left - 1);
+    expect(router.push).not.toHaveBeenCalled();
+    await tick(1);
+    expect(router.push).toHaveBeenCalledTimes(1);
+  });
+
+  it('never takes less than the Reduce Motion fade, even with almost nothing left to do', async () => {
+    await open();
+    await fireEvent.press(screen.getByTestId('nearly-gone'));
+    await fireEvent.press(screen.getByTestId('begin'));
+    await tick(REDUCED_FADE_MS - 1);
+    expect(router.push).not.toHaveBeenCalled();
+    await tick(1);
+    expect(router.push).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits for Home to be whole before anything is set on it', () => {
+    expect(ARRIVAL_AFTER_IDLE_MS).toBe(920);
+    expect(ARRIVAL_AFTER_IDLE_MS).toBeGreaterThan(RETURN_MS);
   });
 });
 

@@ -31,6 +31,12 @@ export const REDUCED_FADE_MS = 160;
 /** Coming back, Home's UI rises over the still photograph. */
 export const RETURN_MS = 800;
 const RETURN_DELAY_MS = 120;
+/**
+ * Home is whole again this long after the phase goes back to idle. Anything that wants to be seen
+ * on Home, a stone being set above all, waits for it: nothing lands under a Home that is still
+ * fading in.
+ */
+export const ARRIVAL_AFTER_IDLE_MS = RETURN_DELAY_MS + RETURN_MS;
 /** The status bar goes once the UI is mostly gone, so nothing shifts under a visible layout. */
 const STATUS_BAR_AT = 0.5;
 /** If the session never appears, Home gives itself back rather than staying empty. */
@@ -124,7 +130,11 @@ export function HomeDissolveProvider({ children }: PropsWithChildren) {
   const dissolve = useCallback(
     (href: Href) => {
       if (phaseRef.current !== 'idle') return;
-      const duration = reducedRef.current ? REDUCED_FADE_MS : DISSOLVE_MS;
+      // Home takes touches as soon as it starts to come back, so Begin can be pressed while it is
+      // still partly gone. It dissolves what is left of it, not the whole of it again, or it would
+      // crawl the last of the way. From a resting Home nothing is gone, and this is the full time.
+      const full = reducedRef.current ? REDUCED_FADE_MS : DISSOLVE_MS;
+      const duration = Math.max(REDUCED_FADE_MS, Math.round(full * (1 - progress.get())));
       setPhase('leaving');
       progress.set(
         withTiming(1, {

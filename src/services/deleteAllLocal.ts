@@ -1,4 +1,5 @@
 import { notifyJournalChanged } from '@/features/journal/api';
+import { useStoneMemory } from '@/features/home/today/stoneMemory';
 import { sqlJournalFor } from '@/features/journal/runtime';
 import { bootApp } from '@/state/gate';
 import { resetOnboarding } from '@/state/onboarding';
@@ -32,6 +33,8 @@ export async function deleteAllLocal(): Promise<DeleteAllResult> {
   }
   resetOnboarding();
   resetPreferences();
+  // The cairns Home remembers seeing belong to the journal that is gone.
+  useStoneMemory.getState().reset();
   notifyJournalChanged();
   await bootApp();
   return { ok: true };

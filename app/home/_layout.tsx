@@ -1,4 +1,5 @@
 import { DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+import { useState } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 
 import { EchoBackground } from '@/components/EchoBackground';
@@ -10,6 +11,7 @@ import { useReduceMotion } from '@/design/useReduceMotion';
 import { HomeDissolveProvider } from '@/features/home/dissolve';
 import { NightHomeLoop } from '@/features/home/NightHomeLoop';
 import { SESSION_ROUTE } from '@/features/home/sessionRoute';
+import { readWelcomeCandidate } from '@/features/home/today/useStoneArrival';
 import { HomeTabBar } from '@/features/home/tabs/HomeTabBar';
 import { useGate } from '@/state/gate';
 
@@ -42,6 +44,8 @@ export default function HomeLayout() {
   const reduced = useReduceMotion();
   // The lock panel is opaque and sits above everything: nothing should play behind it.
   const locked = useGate((state) => state.lock.kind === 'locked');
+  // Home's first look after onboarding wakes the river slowly. Decided as Home first appears.
+  const [welcome] = useState(readWelcomeCandidate);
   const stack = (
     <Stack
       screenOptions={({ route }) => ({
@@ -78,7 +82,12 @@ export default function HomeLayout() {
     <HomeDissolveProvider>
       <View style={styles.root}>
         <BlurSurface
-          backdrop={<EchoBackground screen="home" overlay={<NightHomeLoop suspended={locked} />} />}
+          backdrop={
+            <EchoBackground
+              screen="home"
+              overlay={<NightHomeLoop suspended={locked} welcome={welcome} />}
+            />
+          }
         >
           {Platform.OS === 'web' ? (
             <ThemeProvider value={CLEAR_NAVIGATOR}>{stack}</ThemeProvider>

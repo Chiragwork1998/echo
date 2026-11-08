@@ -87,6 +87,29 @@ function archiveSeed(): MemorySeed {
 function qaSeed(): MemorySeed {
   const fixture = qa.fixture;
   if (fixture === 'echoes') return archiveSeed();
+  // The moments a stone is set in: Monday to Wednesday kept and today still to come, and the day of
+  // the first echo with nothing before it. Every word is made up for the harness.
+  if (fixture === 'stones' || fixture === 'welcome') {
+    const day = qaClock.localDay(QA_MOMENT);
+    const at = QA_MOMENT.getTime();
+    const kept = (id: string, offset: number): Entry => ({
+      ...emptyContent(),
+      id,
+      status: 'committed',
+      body: 'A made up line for the harness.',
+      durationSeconds: 5 * 60,
+      createdAt: at + offset,
+      updatedAt: at + offset,
+      committedAt: at + offset,
+      localDay: addDays(day, offset),
+    });
+    return {
+      entries:
+        fixture === 'welcome'
+          ? [kept('qa-w0', 0)]
+          : [kept('qa-s1', -3), kept('qa-s2', -2), kept('qa-s3', -1)],
+    };
+  }
   if (fixture !== 'home' && fixture !== 'completion' && fixture !== 'patterns') return {};
   const today = qaClock.localDay(QA_MOMENT);
   const at = QA_MOMENT.getTime();
@@ -135,9 +158,31 @@ function qaSeed(): MemorySeed {
 
 let journal: Journal | null = null;
 
+// Harness only, and compiled out of real bundles: keeps an entry for today, as Reflect does, so
+// that a recording can watch Home notice it. The words are made up. Installed when the journal is
+// first made, never as the module loads.
+function installQaKeep(): void {
+  if (!qa.enabled || typeof window === 'undefined') return;
+  (window as { __echoQaKeep?: () => Promise<void> }).__echoQaKeep = async () => {
+    const { commitEntry, newDraftId, saveDraft } = await import('./api');
+    const id = await newDraftId();
+    if (!id.ok) return;
+    const content = {
+      ...emptyContent(),
+      body: 'A made up line for the harness.',
+      durationSeconds: 300,
+    };
+    await saveDraft(id.value, content);
+    await commitEntry(id.value, content);
+  };
+}
+
 /** Web holds everything in memory for one page load. Nothing is written anywhere. */
 export async function getJournal(): Promise<Journal> {
-  journal ??= createMemoryJournal(qaSeed(), qa.enabled ? qaClock : deviceClock);
+  if (!journal) {
+    journal = createMemoryJournal(qaSeed(), qa.enabled ? qaClock : deviceClock);
+    installQaKeep();
+  }
   if (qa.lag) await new Promise((resolve) => setTimeout(resolve, qa.lag));
   return journal;
 }

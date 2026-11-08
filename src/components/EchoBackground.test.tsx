@@ -1,4 +1,5 @@
 import { act, screen } from '@testing-library/react-native';
+import { useEffect } from 'react';
 import { AccessibilityInfo, StyleSheet, Text } from 'react-native';
 
 import { backgroundSources } from '@/design/generated/backgrounds';
@@ -31,10 +32,10 @@ afterEach(() => jest.restoreAllMocks());
 
 const plates = () => screen.getAllByTestId('plate', { includeHiddenElements: true });
 const sources = () => plates().map((plate) => plate.props.source);
-/** The scale the plate is drawn at, from the layer that carries it. */
+/** The scale the plates are drawn at, from the layer that carries them all. */
 const scaleOf = () => {
-  const layer = plates()[0]?.parent;
-  const transform = StyleSheet.flatten(layer?.props.style as object) as {
+  const layer = screen.getByTestId('drift', { includeHiddenElements: true });
+  const transform = StyleSheet.flatten(layer.props.style as object) as {
     transform?: { scale: number }[];
   };
   return transform.transform?.[0]?.scale;
@@ -93,7 +94,7 @@ describe('EchoBackground in the journey', () => {
 
   it('hides the plate from screen readers', async () => {
     await render(<EchoBackground screen="intent" />);
-    const root = plates()[0]?.parent?.parent;
+    const root = screen.getByTestId('drift', { includeHiddenElements: true }).parent;
     expect(root?.props.accessibilityElementsHidden).toBe(true);
     expect(root?.props.importantForAccessibility).toBe('no-hide-descendants');
   });
@@ -139,12 +140,33 @@ describe('EchoBackground when the theme changes', () => {
       await jest.advanceTimersByTimeAsync(300);
     });
     await act(async () => usePreferences.setState({ theme: 'night' }));
-    expect(plates().length).toBeGreaterThanOrEqual(1);
-    expect(sources()[0]).toBe(backgroundSources.night.intent);
+    // Both plates stay while it is going back, and Night is the one that is left.
+    expect(sources()).toEqual([backgroundSources.day.intent, backgroundSources.night.intent]);
     await act(async () => {
-      await jest.advanceTimersByTimeAsync(900);
+      await jest.advanceTimersByTimeAsync(899);
+    });
+    expect(plates()).toHaveLength(2);
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(1);
     });
     expect(sources()).toEqual([backgroundSources.night.intent]);
+  });
+
+  it('carries both plates with one value, so a change reversed half way goes back from where it was', async () => {
+    const reanimated = jest.requireMock('react-native-reanimated');
+    const targets: number[] = [];
+    jest.spyOn(reanimated, 'withTiming').mockImplementation(((to: number) => {
+      targets.push(to);
+      return to;
+    }) as never);
+    await render(<EchoBackground screen="intent" />);
+    await act(async () => usePreferences.setState({ theme: 'day' }));
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(300);
+    });
+    await act(async () => usePreferences.setState({ theme: 'night' }));
+    // Night's own amount, going to Day and then back; there is no second plate started at full.
+    expect(targets.filter((to) => to === 0 || to === 1).slice(-3)).toEqual([1, 0, 1]);
   });
 });
 
@@ -155,19 +177,55 @@ describe('EchoBackground with an overlay (the living Night plate, D-009)', () =>
       .map((node) => node.props.testID as string);
   const overlay = <Text testID="overlay">loop</Text>;
 
-  it('lays it over the plate of the current theme', async () => {
+  it('lays it over the Night plate', async () => {
     await render(<EchoBackground screen="home" overlay={overlay} />);
     expect(layers()).toEqual(['plate', 'overlay']);
   });
 
-  it('keeps it beneath a plate that is leaving, so the old theme still covers it as it fades', async () => {
+  it('keeps it with the Night plate as that fades out, so the loop fades with the sky it is part of', async () => {
     await render(<EchoBackground screen="home" overlay={overlay} />);
     await act(async () => usePreferences.setState({ theme: 'day' }));
-    expect(layers()).toEqual(['plate', 'overlay', 'plate']);
+    // Day beneath; Night above it, and the loop in the same fading group as the Night plate.
+    expect(layers()).toEqual(['plate', 'plate', 'overlay']);
+    const night = screen.getByTestId('overlay', { includeHiddenElements: true }).parent;
+    expect(screen.getAllByTestId('plate', { includeHiddenElements: true })[1]?.parent).toBe(night);
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(900);
+    });
+    expect(layers()).toEqual(['plate']);
+  });
+
+  it('draws the loop in Day only for as long as Night is still fading in', async () => {
+    await act(async () => usePreferences.setState({ theme: 'day' }));
+    await render(<EchoBackground screen="home" overlay={overlay} />);
+    expect(layers()).toEqual(['plate']);
+    await act(async () => usePreferences.setState({ theme: 'night' }));
+    expect(layers()).toEqual(['plate', 'plate', 'overlay']);
     await act(async () => {
       await jest.advanceTimersByTimeAsync(900);
     });
     expect(layers()).toEqual(['plate', 'overlay']);
+  });
+
+  it('never makes the loop again when the change is reversed inside the fade', async () => {
+    const log: string[] = [];
+    function Probe() {
+      useEffect(() => {
+        log.push('mount');
+        return () => void log.push('unmount');
+      }, []);
+      return <Text testID="overlay">loop</Text>;
+    }
+    await render(<EchoBackground screen="home" overlay={<Probe />} />);
+    await act(async () => usePreferences.setState({ theme: 'day' }));
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(300);
+    });
+    await act(async () => usePreferences.setState({ theme: 'night' }));
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(900);
+    });
+    expect(log).toEqual(['mount']);
   });
 
   it('draws the same plates as before when there is no overlay', async () => {
