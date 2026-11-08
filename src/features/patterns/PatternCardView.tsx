@@ -1,15 +1,17 @@
 import { router } from 'expo-router';
-import { useEffect, type PropsWithChildren } from 'react';
+import { useEffect, useState, type PropsWithChildren } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
   ReduceMotion,
   useAnimatedStyle,
   useSharedValue,
+  withDelay,
   withTiming,
 } from 'react-native-reanimated';
 
 import { EchoText } from '@/components/EchoText';
+import { useLayout } from '@/design/layout';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 import { useReduceMotion } from '@/design/useReduceMotion';
@@ -27,6 +29,7 @@ import {
 } from '@/features/tab-pages/textStyles';
 import type { PatternCard } from '@/services/patterns';
 
+import { PlayingCard } from './cards/PlayingCard';
 import { patternsCopy } from './patternsCopy';
 
 const { cards: words } = patternsCopy;
@@ -35,28 +38,33 @@ const PAGE = tokens.space[24];
 const REVEAL_MS = 560;
 const FADE_MS = 240;
 const REVEAL_RISE = 10;
+/** The reading of a card just turned waits for the turn to pass its middle. */
+const TURN_SETTLE_MS = 420;
 const EASE = Easing.bezier(0.22, 1, 0.36, 1);
 /** Where an opening quotation mark hangs, so the quoted words line up with the prose. */
 const HANG = 9;
 // A reading of the person's own words wears the faint warmth Completion's reflection card has.
 const WARMTH = { night: 'rgba(250,196,100,0.05)', day: 'rgba(240,215,170,0.07)' } as const;
 
-/** The card's name, set large in Cormorant: the size of a page title, as on Completion. */
-const NAME = { fontFamily: 'CormorantGaramond_400Regular', fontSize: 32, lineHeight: 37 };
+/** A playing card held at a comfortable size: never wider than this, on any phone. */
+const CARD_MAX = 340;
 
 /** One gentle rise and fade as a card arrives. Under Reduce Motion, the fade alone. */
-function Reveal({ children }: PropsWithChildren) {
+function Reveal({ children, delay = 0 }: PropsWithChildren<{ delay?: number }>) {
   const reduced = useReduceMotion();
   const shown = useSharedValue(0);
   useEffect(() => {
     shown.set(
-      withTiming(1, {
-        duration: reduced ? FADE_MS : REVEAL_MS,
-        easing: EASE,
-        reduceMotion: ReduceMotion.Never,
-      }),
+      withDelay(
+        reduced ? 0 : delay,
+        withTiming(1, {
+          duration: reduced ? FADE_MS : REVEAL_MS,
+          easing: EASE,
+          reduceMotion: ReduceMotion.Never,
+        }),
+      ),
     );
-  }, [reduced, shown]);
+  }, [delay, reduced, shown]);
   const style = useAnimatedStyle(() => ({
     opacity: shown.value,
     transform: [{ translateY: reduced ? 0 : (1 - shown.value) * REVEAL_RISE }],
@@ -84,6 +92,11 @@ type Props = {
   onReport?: () => void;
   /** This card was reported in this sitting, so it says so instead of offering it again. */
   reported?: boolean;
+  /**
+   * Made by a reading in this sitting: it arrives face down, and its reading shows once the person
+   * turns it over. Cards already seen arrive face up.
+   */
+  fresh?: boolean;
 };
 
 /**
@@ -91,147 +104,187 @@ type Props = {
  * words set as quotations with their days, a way of seeing it with its credit, a practice, and a
  * question to sit with. No ornament: the type carries it. It is still. Nothing tilts or shimmers.
  */
-export function PatternCardView({ card, index, total, onReport, reported = false }: Props) {
+export function PatternCardView({
+  card,
+  index,
+  total,
+  onReport,
+  reported = false,
+  fresh = false,
+}: Props) {
   const { name, colors } = useTheme();
+  const { width, gutter } = useLayout();
   const credit = words.ideaFrom(card.lens.source);
-  return (
-    <Reveal>
-      <Surface strength="strong" radius={tokens.radius.card} tint={WARMTH[name]}>
-        <View style={styles.page}>
-          <EchoText
-            variant="displayM"
-            accessibilityRole="header"
-            accessibilityLabel={words.cardLabel(card.name, index, total)}
-            maxFontSizeMultiplier={1.4}
-            style={NAME}
-          >
-            {keepTogether(card.name)}
-          </EchoText>
+  // Turned over once, a card stays read; turning it again only shows its back for a moment's look.
+  const [revealed, setRevealed] = useState(!fresh);
+  const [showingBack, setShowingBack] = useState(false);
+  const faceUp = revealed && !showingBack;
+  const turn = () => {
+    if (!revealed) setRevealed(true);
+    else setShowingBack((back) => !back);
+  };
+  const label = words.cardLabel(card.name, index, total);
+  const reading = (
+    <Surface strength="strong" radius={tokens.radius.card} tint={WARMTH[name]}>
+      <View style={styles.page}>
+        <EchoText variant="bodyM" style={[prose, styles.noticed]} maxFontSizeMultiplier={1.6}>
+          {keepTogether(card.noticed)}
+        </EchoText>
 
-          <EchoText variant="bodyM" style={[prose, styles.noticed]} maxFontSizeMultiplier={1.6}>
-            {keepTogether(card.noticed)}
-          </EchoText>
-
-          <Part
-            spoken={`${words.inYourWords}. ${card.evidence
-              .map((item) => `${item.quote}, ${dateLabel(item.date)}`)
-              .join('. ')}`}
-          >
-            <View style={styles.quotes}>
-              {card.evidence.map((item) => (
-                <View key={`${item.date}-${item.quote}`} style={styles.quote}>
-                  <View>
-                    <EchoText
-                      variant="bodyL"
-                      style={[quoted, styles.mark]}
-                      maxFontSizeMultiplier={1.6}
-                    >
-                      {'“'}
-                    </EchoText>
-                    <EchoText variant="bodyL" style={quoted} maxFontSizeMultiplier={1.6}>
-                      {`${keepTogether(item.quote)}”`}
-                    </EchoText>
-                  </View>
+        <Part
+          spoken={`${words.inYourWords}. ${card.evidence
+            .map((item) => `${item.quote}, ${dateLabel(item.date)}`)
+            .join('. ')}`}
+        >
+          <View style={styles.quotes}>
+            {card.evidence.map((item) => (
+              <View key={`${item.date}-${item.quote}`} style={styles.quote}>
+                <View>
                   <EchoText
-                    variant="caption"
-                    color="textSecondary"
-                    style={supporting}
+                    variant="bodyL"
+                    style={[quoted, styles.mark]}
                     maxFontSizeMultiplier={1.6}
                   >
-                    {dateLabel(item.date)}
+                    {'“'}
+                  </EchoText>
+                  <EchoText variant="bodyL" style={quoted} maxFontSizeMultiplier={1.6}>
+                    {`${keepTogether(item.quote)}”`}
                   </EchoText>
                 </View>
-              ))}
-            </View>
-          </Part>
-
-          <Part spoken={`${words.aWayToSeeIt}. ${card.lens.text} ${credit}`}>
-            <EchoText variant="bodyM" style={prose} maxFontSizeMultiplier={1.6}>
-              {keepTogether(card.lens.text)}
-            </EchoText>
-            <EchoText
-              variant="caption"
-              color="textSecondary"
-              style={supporting}
-              maxFontSizeMultiplier={1.6}
-            >
-              {credit}
-            </EchoText>
-          </Part>
-
-          {/* The practice is one block, so a way into it (Breathe) can sit at its end. */}
-          <View style={styles.part}>
-            <View accessible accessibilityLabel={`${words.tryThis}. ${card.practice}`}>
-              <EchoText variant="bodyM" style={prose} maxFontSizeMultiplier={1.6}>
-                <Text style={runIn}>{`${words.tryThis}. `}</Text>
-                {keepTogether(card.practice)}
-              </EchoText>
-            </View>
-            {aboutBreath(card.practice) && (
-              <Pressable
-                accessibilityRole="link"
-                accessibilityLabel={breatheCopy.cardLink}
-                onPress={() => router.navigate('/home/breathe' as never)}
-                hitSlop={10}
-                style={({ pressed }) => [styles.breathe, pressed && styles.pressed]}
-                testID="pattern-card-breathe"
-              >
-                <EchoText
-                  variant="bodyM"
-                  style={[detail, styles.breatheText, { color: colors.accentWarm }]}
-                >
-                  {breatheCopy.cardLink}
-                </EchoText>
-              </Pressable>
-            )}
-          </View>
-
-          <Rule inset={0} />
-
-          <View accessible accessibilityLabel={`${words.askYourself}. ${card.question}`}>
-            <EchoText variant="bodyL" style={question} maxFontSizeMultiplier={1.5}>
-              {keepTogether(card.question)}
-            </EchoText>
-          </View>
-
-          <View style={styles.foot}>
-            <EchoText
-              variant="caption"
-              color="textSecondary"
-              style={supporting}
-              maxFontSizeMultiplier={1.6}
-            >
-              {words.reflectionNote}
-            </EchoText>
-            {onReport && !reported ? (
-              <TextAction
-                label={patternsCopy.report.action}
-                spoken={patternsCopy.report.actionSpoken(card.name)}
-                onPress={onReport}
-                tone="textSecondary"
-                style={styles.report}
-              />
-            ) : null}
-            {reported ? (
-              <View style={styles.reported}>
                 <EchoText
                   variant="caption"
                   color="textSecondary"
                   style={supporting}
-                  accessibilityLiveRegion="polite"
+                  maxFontSizeMultiplier={1.6}
                 >
-                  {patternsCopy.report.reported}
+                  {dateLabel(item.date)}
                 </EchoText>
               </View>
-            ) : null}
+            ))}
           </View>
+        </Part>
+
+        <Part spoken={`${words.aWayToSeeIt}. ${card.lens.text} ${credit}`}>
+          <EchoText variant="bodyM" style={prose} maxFontSizeMultiplier={1.6}>
+            {keepTogether(card.lens.text)}
+          </EchoText>
+          <EchoText
+            variant="caption"
+            color="textSecondary"
+            style={supporting}
+            maxFontSizeMultiplier={1.6}
+          >
+            {credit}
+          </EchoText>
+        </Part>
+
+        {/* The practice is one block, so a way into it (Breathe) can sit at its end. */}
+        <View style={styles.part}>
+          <View accessible accessibilityLabel={`${words.tryThis}. ${card.practice}`}>
+            <EchoText variant="bodyM" style={prose} maxFontSizeMultiplier={1.6}>
+              <Text style={runIn}>{`${words.tryThis}. `}</Text>
+              {keepTogether(card.practice)}
+            </EchoText>
+          </View>
+          {aboutBreath(card.practice) && (
+            <Pressable
+              accessibilityRole="link"
+              accessibilityLabel={breatheCopy.cardLink}
+              onPress={() => router.navigate('/home/breathe' as never)}
+              hitSlop={10}
+              style={({ pressed }) => [styles.breathe, pressed && styles.pressed]}
+              testID="pattern-card-breathe"
+            >
+              <EchoText
+                variant="bodyM"
+                style={[detail, styles.breatheText, { color: colors.accentWarm }]}
+              >
+                {breatheCopy.cardLink}
+              </EchoText>
+            </Pressable>
+          )}
         </View>
-      </Surface>
+
+        <Rule inset={0} />
+
+        <View accessible accessibilityLabel={`${words.askYourself}. ${card.question}`}>
+          <EchoText variant="bodyL" style={question} maxFontSizeMultiplier={1.5}>
+            {keepTogether(card.question)}
+          </EchoText>
+        </View>
+
+        <View style={styles.foot}>
+          <EchoText
+            variant="caption"
+            color="textSecondary"
+            style={supporting}
+            maxFontSizeMultiplier={1.6}
+          >
+            {words.reflectionNote}
+          </EchoText>
+          {onReport && !reported ? (
+            <TextAction
+              label={patternsCopy.report.action}
+              spoken={patternsCopy.report.actionSpoken(card.name)}
+              onPress={onReport}
+              tone="textSecondary"
+              style={styles.report}
+            />
+          ) : null}
+          {reported ? (
+            <View style={styles.reported}>
+              <EchoText
+                variant="caption"
+                color="textSecondary"
+                style={supporting}
+                accessibilityLiveRegion="polite"
+              >
+                {patternsCopy.report.reported}
+              </EchoText>
+            </View>
+          ) : null}
+        </View>
+      </View>
+    </Surface>
+  );
+  return (
+    <Reveal>
+      <View style={styles.stack}>
+        <PlayingCard
+          card={card}
+          number={index}
+          faceUp={faceUp}
+          onTurn={turn}
+          width={Math.min(width - gutter * 2, CARD_MAX)}
+          spoken={faceUp ? label : words.faceDown(index, total)}
+          role={faceUp ? 'header' : 'button'}
+          hint={words.turnOver}
+        />
+        {revealed ? (
+          // A card turned over here lets its reading rise in after it; one already seen just shows it.
+          fresh ? (
+            <Reveal delay={TURN_SETTLE_MS}>{reading}</Reveal>
+          ) : (
+            reading
+          )
+        ) : (
+          <EchoText
+            variant="bodyM"
+            color="textSecondary"
+            style={[detail, styles.hint]}
+            maxFontSizeMultiplier={1.6}
+          >
+            {words.turnHint}
+          </EchoText>
+        )}
+      </View>
     </Reveal>
   );
 }
 
 const styles = StyleSheet.create({
+  stack: { gap: tokens.space[20] },
+  hint: { textAlign: 'center' },
   page: {
     gap: tokens.space[24],
     paddingHorizontal: PAGE,

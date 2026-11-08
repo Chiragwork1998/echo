@@ -81,6 +81,10 @@ export const patternsCopy = {
     noEntries: 'Your entries couldn’t be opened just now. Try again in a moment.',
     cardLabel: (name: string, index: number, total: number) =>
       `Pattern card ${index} of ${total}: ${name}`,
+    /** Under a new card lying face down. */
+    turnHint: 'Tap the card to turn it over.',
+    turnOver: 'Turn it over.',
+    faceDown: (index: number, total: number) => `Pattern card ${index} of ${total}, face down.`,
   },
   /**
    * Reporting a card (docs/PRODUCT_V1.md, See: Google Play's AI content policy). A report carries the

@@ -117,7 +117,8 @@ const MARKS = (() => {
   });
 })();
 
-function Grain({ look }: { look: PaperLook }) {
+/** The paper's fibre and fleck. Pattern cards are made of the book's paper too. */
+export function Grain({ look }: { look: PaperLook }) {
   return (
     <Svg pointerEvents="none" style={StyleSheet.absoluteFill} width="100%" height="100%">
       <Defs>

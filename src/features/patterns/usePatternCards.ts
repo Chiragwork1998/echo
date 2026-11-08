@@ -7,6 +7,7 @@ import { markReadingUsed, usePlusStore } from '@/services/plus/store';
 import { usePreferences } from '@/state/preferences';
 
 import { gatherEntries } from './gatherEntries';
+import { qaFreshAt } from './qaReading';
 import { clearReading, loadReading, saveReading, type SavedReading } from './readingStore';
 
 /** The wording of the consent. Change the words, change this, and everyone is asked again. */
@@ -22,6 +23,8 @@ export type CardsNotice =
 export type PatternCards = {
   /** The last reading kept on this phone. null until loaded, and when there is none. */
   saved: SavedReading | null;
+  /** When a reading was made in this sitting, its time: its cards arrive face down, to be turned. */
+  freshAt: number | null;
   loaded: boolean;
   /** Asking for agreement, never skippable: reading waits on a yes. */
   asking: boolean;
@@ -50,6 +53,7 @@ export type PatternCards = {
 export function usePatternCards(entries: readonly EntrySummary[]): PatternCards {
   const agreed = usePreferences((state) => state.patternsConsent === CONSENT_VERSION);
   const [saved, setSaved] = useState<SavedReading | null>(null);
+  const [freshAt, setFreshAt] = useState<number | null>(qaFreshAt);
   const [loaded, setLoaded] = useState(false);
   const [asking, setAsking] = useState(false);
   const [reading, setReading] = useState(false);
@@ -97,6 +101,7 @@ export function usePatternCards(entries: readonly EntrySummary[]): PatternCards 
           ...(result.model ? { model: result.model } : {}),
         };
         setSaved(fresh);
+        setFreshAt(fresh.readAt);
         markReadingUsed();
         const kept = await saveReading(fresh);
         if (alive.current && !kept.ok) setNotice({ kind: 'not_kept' });
@@ -145,6 +150,7 @@ export function usePatternCards(entries: readonly EntrySummary[]): PatternCards 
 
   return {
     saved,
+    freshAt,
     loaded,
     asking,
     reading,

@@ -181,6 +181,7 @@ export function PatternCardsSection({ entries }: { entries: readonly EntrySummar
                 card={card}
                 index={index + 1}
                 total={saved.cards.length}
+                fresh={cards.freshAt === saved.readAt}
                 reported={reported.has(key)}
                 onReport={() =>
                   setReporting({
