@@ -1,7 +1,8 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
+import { EchoModal } from '@/components/EchoModal';
 import { EchoText } from '@/components/EchoText';
 import { PrimaryCTA } from '@/components/PrimaryCTA';
 import { parseColor } from '@/design/mixColor';
@@ -53,7 +54,7 @@ export function VoiceConsentSheet({ visible, kind = 'voice', onAllow, onKeep, on
   const { title, intro, facts, allow, keep, note } =
     kind === 'live' ? sessionCopy.liveConsent : sessionCopy.consent;
   return (
-    <Modal transparent animationType="fade" visible={visible} onRequestClose={onClose}>
+    <EchoModal transparent animationType="fade" visible={visible} onRequestClose={onClose}>
       <View style={styles.scrim}>
         <View
           accessibilityViewIsModal
@@ -138,7 +139,7 @@ export function VoiceConsentSheet({ visible, kind = 'voice', onAllow, onKeep, on
           </View>
         </View>
       </View>
-    </Modal>
+    </EchoModal>
   );
 }
 

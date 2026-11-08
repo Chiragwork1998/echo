@@ -1,8 +1,9 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import type { PropsWithChildren, ReactNode } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { EchoModal } from '@/components/EchoModal';
 import { EchoText } from '@/components/EchoText';
 import { parseColor } from '@/design/mixColor';
 import { useTheme } from '@/design/theme';
@@ -21,6 +22,9 @@ type Props = PropsWithChildren<{
   onClose: () => void;
   /** Always in view beneath the part that scrolls: the sheet's actions. */
   footer?: ReactNode;
+  /** False to go at once instead of fading, as when the lock takes the screen: nothing fades over it. */
+  animated?: boolean;
+  /** Names the sheet's window, where Back arrives. The dimmed page around it is `${testID}-outside`. */
   testID?: string;
 }>;
 
@@ -29,16 +33,23 @@ type Props = PropsWithChildren<{
  * midnight with cream by Night, a fine edge and no shadow. It fades in and out, which is all Reduce
  * Motion would leave of it anyway. The person never loses their place beneath it.
  */
-export function Sheet({ visible, onClose, footer, children, testID }: Props) {
+export function Sheet({ visible, onClose, footer, animated = true, children, testID }: Props) {
   const tone = useTone();
   const { bottom } = useSafeAreaInsets();
   // The consent sheet's cloth, made whole: nothing of the page should read through a sheet.
   const rgb = parseColor(tone.sheet);
   const cloth = rgb ? `rgb(${rgb[0]},${rgb[1]},${rgb[2]})` : tone.sheet;
   return (
-    <Modal transparent animationType="fade" visible={visible} onRequestClose={onClose}>
+    <EchoModal
+      transparent
+      animationType={animated ? 'fade' : 'none'}
+      visible={visible}
+      onRequestClose={onClose}
+      testID={testID}
+    >
       <View style={styles.scrim}>
         <Pressable
+          testID={testID && `${testID}-outside`}
           style={StyleSheet.absoluteFill}
           onPress={onClose}
           accessible={false}
@@ -47,7 +58,6 @@ export function Sheet({ visible, onClose, footer, children, testID }: Props) {
         <View
           accessibilityViewIsModal
           onAccessibilityEscape={onClose}
-          testID={testID}
           style={[
             styles.sheet,
             {
@@ -68,7 +78,7 @@ export function Sheet({ visible, onClose, footer, children, testID }: Props) {
           {footer ? <View style={styles.footer}>{footer}</View> : null}
         </View>
       </View>
-    </Modal>
+    </EchoModal>
   );
 }
 

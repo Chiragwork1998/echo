@@ -3,7 +3,7 @@ import { router, Stack, usePathname } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState, type PropsWithChildren } from 'react';
-import { Alert, AppState, Platform, StyleSheet, View } from 'react-native';
+import { AppState, Platform, StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaInsetsContext, SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -17,6 +17,7 @@ import { setPlateFlowStep } from '@/design/plateMotion';
 import { ThemeProvider, useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 import { useReduceMotion } from '@/design/useReduceMotion';
+import { DialogHost, showDialog } from '@/features/tab-pages/Dialog';
 import { deleteAllLocal } from '@/services/deleteAllLocal';
 import { loadScreenCapture } from '@/services/nativeModules';
 import { startPlus } from '@/services/plus/engine';
@@ -33,6 +34,7 @@ import {
 } from '@/state/gate';
 import { gateCopy } from '@/state/gateCopy';
 import { completeOnboarding, setOnboardingStep, useOnboarding } from '@/state/onboarding';
+import { ownWindowOpen } from '@/state/ownWindows';
 import { decideRoute, stepForPath } from '@/state/routing';
 import { goldenFixtures } from '@/testing/goldenFixtures';
 import { qa } from '@/testing/qa';
@@ -142,7 +144,7 @@ function GatePanel(props: PropsWithChildren<{ title: string; body: string }>) {
 
 function confirmStartOver() {
   const { confirmTitle, confirmBody, confirmCancel, confirmErase } = gateCopy.keyLost;
-  Alert.alert(confirmTitle, confirmBody, [
+  showDialog(confirmTitle, confirmBody, [
     { text: confirmCancel, style: 'cancel' },
     { text: confirmErase, style: 'destructive', onPress: () => void deleteAllLocal() },
   ]);
@@ -221,8 +223,12 @@ function useAppCovered(): boolean {
         handleAppState(next);
         setCovered(next !== 'active');
       }),
-      // Android only. Fires as recents opens, ahead of the pause that 'change' reports.
-      AppState.addEventListener('blur', () => setCovered(true)),
+      // Android only. Fires as recents opens, ahead of the pause that 'change' reports. It fires
+      // too as each of ECHO's own sheets and dialogs takes the window's focus, and those are no
+      // reason to hide the page they sit over.
+      AppState.addEventListener('blur', () => {
+        if (!ownWindowOpen()) setCovered(true);
+      }),
       AppState.addEventListener('focus', () => setCovered(AppState.currentState !== 'active')),
     ];
     return () => subscriptions.forEach((subscription) => subscription.remove());
@@ -287,6 +293,9 @@ function Content({ status, onSettled }: { status: GateStatus; onSettled: () => v
             <ToastHost />
           </>
         ) : null}
+        {/* Beside the toast, but outside the navigator's branch: Start over asks from the key-lost
+            panel. Its window would sit above the lock, so the lock holds it until unlocked. */}
+        <DialogHost held={lock.kind === 'locked'} />
       </View>
       {status.kind === 'key_lost' ? <KeyLostPanel /> : null}
       {status.kind === 'storage_error' ? <StoragePanel reason={status.reason} /> : null}

@@ -1,9 +1,11 @@
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { useCallback, useState, type ReactNode } from 'react';
-import { Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
 
+import { EchoModal } from '@/components/EchoModal';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
+import { openOwnWindow } from '@/state/ownWindows';
 
 import { wrapMinutes } from './time';
 import { useTone } from './tone';
@@ -31,11 +33,18 @@ export function useTimePicker({ minutes, is24Hour, onChange }: Options): {
 
   const open = useCallback(() => {
     if (Platform.OS === 'android') {
+      // The system's dialog is still a window ECHO opened, so its focus must not cover the page.
+      const closed = openOwnWindow();
       DateTimePickerAndroid.open({
         value: toDate(minutes),
         mode: 'time',
         is24Hour,
-        onValueChange: (_event, date) => onChange(fromDate(date)),
+        onValueChange: (_event, date) => {
+          closed();
+          onChange(fromDate(date));
+        },
+        onDismiss: closed,
+        onError: closed,
       });
     } else if (Platform.OS === 'ios') {
       setVisible(true);
@@ -46,7 +55,7 @@ export function useTimePicker({ minutes, is24Hour, onChange }: Options): {
 
   const sheet =
     Platform.OS === 'ios' ? (
-      <Modal transparent animationType="fade" visible={visible} onRequestClose={close}>
+      <EchoModal transparent animationType="fade" visible={visible} onRequestClose={close}>
         <Pressable style={styles.scrim} onPress={close} accessible={false}>
           <View
             accessibilityViewIsModal
@@ -64,7 +73,7 @@ export function useTimePicker({ minutes, is24Hour, onChange }: Options): {
             />
           </View>
         </Pressable>
-      </Modal>
+      </EchoModal>
     ) : null;
 
   return { open, sheet };
