@@ -182,6 +182,30 @@ describe('Home, Night', () => {
     });
   });
 
+  // After ECHO closed mid-take, the rescued recording waits in this draft, and the card is the way
+  // back to it. It opens spoken, as Begin does, where "Turn my voice into words" is offered.
+  it('continues a draft whose recording has no words yet where that recording is offered', async () => {
+    const rescued = { id: 'a1', extension: '.aac', durationSeconds: null, recovered: true };
+    seed(...WEEK, { ...DRAFT, title: '', body: '', mode: 'voice', audio: rescued });
+    await render(<HomeScreen />);
+    await fireEvent.press(await screen.findByRole('button', { name: /Voice echo/ }));
+    expect(router.push).toHaveBeenCalledWith({
+      pathname: '/home/session',
+      params: { draftId: 'draft-1', mode: 'voice' },
+    });
+  });
+
+  it('continues a draft whose recording is already words in it as any other draft', async () => {
+    const heard = { id: 'a1', extension: '.aac', durationSeconds: 40, recovered: false };
+    seed(...WEEK, { ...DRAFT, mode: 'voice', audio: heard, transcribedAudioId: 'a1' });
+    await render(<HomeScreen />);
+    await fireEvent.press(await screen.findByRole('button', { name: /I keep returning to/ }));
+    expect(router.push).toHaveBeenCalledWith({
+      pathname: '/home/session',
+      params: { draftId: 'draft-1' },
+    });
+  });
+
   it('links the avatar to You', async () => {
     await render(<HomeScreen />);
     await fireEvent.press(button(copy.home.tabs[3]));

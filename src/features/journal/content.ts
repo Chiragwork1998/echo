@@ -39,6 +39,13 @@ export function canReflect(content: EntryContent, audio?: Entry['audio']): boole
   return audio.recovered || (audio.durationSeconds ?? 0) >= MIN_AUDIO_SECONDS;
 }
 
+/**
+ * The entry holds a recording whose words are not in its body: none of it has become words yet, as
+ * when it was rescued after ECHO closed mid-take or recorded offline.
+ */
+export const recordingAwaitsWords = (entry: Pick<Entry, 'audio' | 'transcribedAudioId'>) =>
+  entry.audio !== undefined && entry.transcribedAudioId !== entry.audio.id;
+
 export const minutesLeft = (durationSeconds: number) =>
   Math.ceil(Math.max(0, SESSION_SECONDS - durationSeconds) / 60);
 

@@ -10,7 +10,7 @@ import {
   searchEntries,
   useJournalRevision,
 } from './api';
-import { minutesLeft, toSummary } from './content';
+import { minutesLeft, recordingAwaitsWords, toSummary } from './content';
 import { deviceClock } from './localDay';
 import { deriveRhythm, type Rhythm } from './rhythm';
 import type { Entry, EntrySummary, JournalError, JournalResult, SearchResults } from './types';
@@ -81,7 +81,11 @@ export function useRhythm(): AsyncData<Rhythm> {
   return data;
 }
 
-export type ContinueDraft = EntrySummary & { minutesLeft: number };
+export type ContinueDraft = EntrySummary & {
+  minutesLeft: number;
+  /** It holds a recording that has not become words yet, so it opens where that is offered. */
+  untranscribed: boolean;
+};
 
 export type HomeSummary = {
   status: 'loading' | 'ready' | 'error';
@@ -105,7 +109,11 @@ export function useHomeSummary(): HomeSummary {
     const summary = toSummary(draft.value);
     return {
       ok: true,
-      value: { ...summary, minutesLeft: minutesLeft(summary.durationSeconds) },
+      value: {
+        ...summary,
+        minutesLeft: minutesLeft(summary.durationSeconds),
+        untranscribed: recordingAwaitsWords(draft.value),
+      },
     };
   }, []);
   const continueDraft = useJournalData(load);
