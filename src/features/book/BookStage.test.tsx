@@ -11,6 +11,7 @@ import { ThemeProvider } from '@/design/theme';
 import { render } from '@/testing/render';
 
 import { BookStage } from './BookStage';
+import type { ClosingState } from './useBookClosing';
 import { FULL, SHORT } from './ritual';
 import { VOLUMES } from './volumes';
 
@@ -212,5 +213,101 @@ describe('the light on the cloth', () => {
     expect(drawn('book-cloth-light')).toBeNull();
     await redraw({ start: true, entrance: 'rise' });
     expect(drawn('book-cloth-light')).toBeTruthy();
+  });
+});
+
+describe('the book shutting', () => {
+  const shutting = (patch: Partial<ClosingState> = {}): ClosingState => ({
+    ritual: FULL,
+    hurry: false,
+    contact: false,
+    sinking: false,
+    reduced: false,
+    ...patch,
+  });
+
+  it('has its cover ready, unseen, from the moment the entry is being kept, and not before', async () => {
+    await render(book({ start: true }));
+    await tick(FULL.rise + FULL.cover + 100);
+    // Open: the board has gone, and the hinge with it.
+    expect(drawn('book-hinge')).toBeNull();
+    await redraw({ start: true, preparing: true });
+    expect(drawn('book-hinge')).toBeTruthy();
+    // It is the open book's cover, which is not seen: the board is let go of as the book opens.
+    expect(StyleSheet.flatten(drawn('book-hinge')!.props.style).opacity).toBe(0);
+  });
+
+  it('gives its page to the closing as an open one, and takes no touches while it shuts', async () => {
+    const seen: boolean[] = [];
+    const watch = (closing: ClosingState | null) => (
+      <ThemeProvider crossfade={false}>
+        <BookStage
+          entrance="rise"
+          start
+          riseFrom={600}
+          ritual={FULL}
+          hurry={false}
+          volume={VOLUMES[0]!}
+          surface="vellum"
+          width={355}
+          height={416}
+          closing={closing}
+        >
+          {(open) => {
+            seen.push(open);
+            return null;
+          }}
+        </BookStage>
+      </ThemeProvider>
+    );
+    await render(watch(null));
+    await tick(FULL.rise + FULL.cover + 100);
+    seen.length = 0;
+    await screen.rerender(watch(shutting()));
+    expect(seen.at(-1)).toBe(true);
+    expect(
+      screen.getByTestId('book-stage', { includeHiddenElements: true }).props.pointerEvents,
+    ).toBe('none');
+  });
+
+  it('lets a light catch the board\u2019s top edge as it lands', async () => {
+    await render(book({ start: true, closing: shutting() }));
+    expect(drawn('book-edge-light')).toBeTruthy();
+  });
+
+  it('sinks a little, settles a little smaller, and is gone', async () => {
+    await render(book({ start: true }));
+    await tick(FULL.rise + FULL.cover + 100);
+    expect(style().transform).toEqual([{ translateY: 0 }]);
+    await redraw({ start: true, closing: shutting({ sinking: true }) });
+    expect(style().opacity).toBe(0);
+    expect(style().transform).toEqual([{ translateY: 26 }, { scale: 0.985 }]);
+  });
+
+  it('sinks when it is told to, and not before', async () => {
+    await render(book({ start: true }));
+    await tick(FULL.rise + FULL.cover + 100);
+    await redraw({ start: true, closing: shutting({ sinking: false }) });
+    expect(style().opacity).toBe(1);
+    expect(style().transform).toEqual([{ translateY: 0 }]);
+  });
+
+  it('under Reduce Motion fades where it is: no cover, no light, nothing that moves', async () => {
+    mockReduced = true;
+    await render(book({ start: true }));
+    await redraw({ start: true, closing: shutting({ reduced: true, sinking: true }) });
+    expect(style().opacity).toBe(0);
+    expect(style().transform).toBeUndefined();
+    expect(drawn('book-hinge')).toBeNull();
+    expect(drawn('book-edge-light')).toBeNull();
+  });
+
+  it('is not felt by the stage itself: the one cue is the closing\u2019s, where the cover lands', async () => {
+    await render(book({ start: true }));
+    await tick(FULL.rise + FULL.cover + 100);
+    jest.mocked(cue).mockClear();
+    await redraw({ start: true, closing: shutting({ contact: true, sinking: true }) });
+    await tick(3000);
+    expect(cue).not.toHaveBeenCalled();
   });
 });

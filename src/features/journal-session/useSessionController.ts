@@ -47,6 +47,25 @@ const TARGETS = {
 } as const;
 const go = (path: string | undefined) => path && router.navigate(path as never);
 /**
+ * The most the closing of the book may hold the next screen back. It plays for a second or two, and a
+ * question on the cover waits for an answer for 45 seconds at the most; anything past this is a
+ * closing that has been lost, and the entry is already safe.
+ */
+const CLOSING_CAP_MS = 60_000;
+/** Resolves when the closing is over or the cap is reached, whichever is first. */
+async function closed(closing: (() => Promise<void>) | null) {
+  if (!closing) return;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const cap = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, CLOSING_CAP_MS);
+  });
+  try {
+    await Promise.race([closing().catch(() => undefined), cap]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+/**
  * Leaves for the screen this one opened from. The daily session is pushed over Home in the same
  * stack, and `navigate` pushes a second Home over it instead of closing it. The session then stays
  * mounted behind a Home that is still dissolved, and the person sees only the photograph.
@@ -143,6 +162,15 @@ export function useSessionController({ variant, initialMode, draftId, become }: 
   const [permission, setPermission] = useState<'none' | 'explain' | 'denied'>('none');
   const [problem, setProblem] = useState<string | null>(null);
   const reflecting = useRef(false);
+  // What plays between the entry being kept and the next screen: the book shutting. The page that
+  // draws the book registers it, and a page without a book registers nothing, so it goes at once.
+  const leaving = useRef<(() => Promise<void>) | null>(null);
+  const onLeave = useCallback((play: () => Promise<void>) => {
+    leaving.current = play;
+    return () => {
+      if (leaving.current === play) leaving.current = null;
+    };
+  }, []);
 
   // A person told the microphone is off goes to Settings, allows it, and comes back. The note must
   // not still say it is off over a page that does nothing when touched, so coming back to the
@@ -382,9 +410,11 @@ export function useSessionController({ variant, initialMode, draftId, become }: 
     try {
       const result = await draft.commit({ durationSeconds: elapsed });
       // Only once the entry is durable. A failure leaves the draft whole, and Reflect ready to retry.
-      // A morning entry rehearses on the way to Completion.
-      if (result.ok) go(daily ? routeAfterReflect(result.value) : target.next);
-      else if (result.error.code === 'not_draft') go(target.next);
+      // A morning entry rehearses on the way to Completion. The book shuts first, if there is one.
+      if (result.ok) {
+        await closed(leaving.current);
+        go(daily ? routeAfterReflect(result.value) : target.next);
+      } else if (result.error.code === 'not_draft') go(target.next);
       else if (result.error.code === 'not_found') goBack(variant);
     } finally {
       reflecting.current = false;
@@ -474,6 +504,8 @@ export function useSessionController({ variant, initialMode, draftId, become }: 
     else setProblem(sessionCopy.errors.save);
   };
   const back = () => {
+    // Once the entry is being kept and the book is shutting, there is nothing to leave: it is saved.
+    if (reflecting.current) return;
     if (!hasWork) {
       void draft.discard();
       goBack(variant);
@@ -607,6 +639,7 @@ export function useSessionController({ variant, initialMode, draftId, become }: 
     openSettings: () => void openAppSettings(),
     reflect,
     back,
+    onLeave,
   };
 }
 

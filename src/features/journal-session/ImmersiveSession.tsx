@@ -1,7 +1,7 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState, type ComponentRef } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Keyboard, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import Animated, {
   Easing,
   ReduceMotion,
@@ -21,9 +21,10 @@ import { tokens } from '@/design/tokens';
 import { BookPage, useBookFrame } from '@/features/book/BookPage';
 import { controlsBottom, keyboardRise, restingDrop } from '@/features/book/bookPlace';
 import { PaperProvider, usePaperLook, type Surface } from '@/features/book/paper';
-import { volumePin } from '@/features/book/qaPins';
-import { ritualFor } from '@/features/book/ritual';
+import { opensPin, volumePin } from '@/features/book/qaPins';
+import { CLOSE_REDUCED_MS, PART_MS, ritualFor } from '@/features/book/ritual';
 import { Shelf, ShelfBackdrop, useShelfOffset } from '@/features/book/Shelf';
+import { useBookClosing } from '@/features/book/useBookClosing';
 import { volumeById, volumeIndex, VOLUMES } from '@/features/book/volumes';
 import { useRhythm } from '@/features/journal';
 import { usePreferences } from '@/state/preferences';
@@ -88,17 +89,26 @@ export function ImmersiveSession({
   const here = useWhileHere();
   // The ritual of opening plays in full for the first few sessions and then shortens (D-008). What
   // applies is what it was when this session began, so it never changes under the person's eyes.
-  const [ritual] = useState(() => ritualFor(usePreferences.getState().bookOpens));
+  const [ritual] = useState(() => ritualFor(opensPin() ?? usePreferences.getState().bookOpens));
   const countOpen = usePreferences((state) => state.countBookOpen);
   // A tap anywhere before the page is open says enough: it comes at once, and softly.
   const [tapped, setTapped] = useState(false);
   const stilled = useStillness(reduced, ritual.stillness);
   const settled = stilled || tapped;
+  // The book shutting, once the entry is kept: it plays the ritual it opened with.
+  const { closing, begin: shut, hurry: hurryClosing } = useBookClosing(ritual, reduced);
+  const parting = closing !== null;
+  // From the moment the entry begins to be kept until the screen goes, unless keeping it fails: the
+  // book makes its cover ready and holds the count it was opened with. The draft says it is done
+  // before the closing has begun, so its own state would let both go for a moment in between.
+  const [keeping, setKeeping] = useState(false);
   const frame = useSkyFrame(plate, insets.top);
   const inputRef = useRef<ComponentRef<typeof TextInput>>(null);
   const [focused, setFocused] = useState(false);
 
   const { draft, mode, speakView, ready, canReflect, failure, retryable } = session;
+  if (draft.commitState === 'committing' && !keeping) setKeeping(true);
+  if (draft.commitState === 'error' && keeping) setKeeping(false);
   // Spoken words on their way are a quiet line above the controls, not a card over the sky.
   const notice = session.notice ?? session.quietLine;
   const writing = mode === 'write';
@@ -161,6 +171,34 @@ export function ImmersiveSession({
   };
   const bookInView = book && !shelf;
   const pageOpen = !book || opened;
+
+  // Once the entry is kept, the book shuts before the next screen comes (the session asks for it
+  // when it is ready to go). The keys go first, so the book settles back to its place as it closes
+  // (D-010). A screen reader is not made to wait for the book to close either.
+  const { onLeave } = session;
+  useEffect(() => {
+    if (!bookInView || !pageOpen) return;
+    return onLeave(() => {
+      // The closing first: letting the keys go blurs the page, and on web that draws at once.
+      const closed = shut();
+      Keyboard.dismiss();
+      if (screenReader) hurryClosing();
+      return closed;
+    });
+  }, [bookInView, hurryClosing, onLeave, pageOpen, screenReader, shut]);
+
+  // The quiet things leave as the closing begins, and the notes on the page with them.
+  const away = useSharedValue(0);
+  useEffect(() => {
+    away.set(
+      withTiming(parting ? 1 : 0, {
+        duration: reduced ? CLOSE_REDUCED_MS : PART_MS,
+        easing: Easing.out(Easing.quad),
+        reduceMotion: ReduceMotion.Never,
+      }),
+    );
+  }, [away, parting, reduced]);
+  const leaving = useAnimatedStyle(() => ({ opacity: 1 - away.get() }));
   // A note about the voice, or about a draft that will not open, is words on a page. Said before the
   // cover has opened it sits on the closed book or the bare scenery, over bright river and lit
   // windows. So it waits for the page. A book that cannot open must not swallow it: after a grace the
@@ -230,6 +268,8 @@ export function ImmersiveSession({
   // Anywhere on the scenery. Writing: the keyboard comes, and the caret lands. Speaking: tap to
   // start, tap to pause.
   const touchScenery = () => {
+    // While the book is shutting, any touch says enough: what is left finishes at once.
+    if (parting) return hurryClosing();
     // Before the book is open, any touch skips the rest of the ritual.
     if (book && (!settled || !pageOpen)) return setTapped(true);
     if (!ready || failure !== null) return;
@@ -332,6 +372,8 @@ export function ImmersiveSession({
             // A screen reader is not made to wait for the book either.
             hurry={tapped || screenReader}
             echoes={echoes}
+            preparing={keeping}
+            closing={closing}
             concealed={hidden}
             dimmed={noteDrawn}
             arrival={session.arrival}
@@ -346,9 +388,12 @@ export function ImmersiveSession({
             label={session.prompt}
             placeholder={onboarding ? copy.firstEcho.placeholder : undefined}
             lead={onboarding ? { lines: 2, text: copy.firstEcho.title } : undefined}
-            editable={ready && writing}
-            interactive={writing}
+            // Once the entry is kept the page is only a picture: a touch on it is a touch on the
+            // scenery, which says enough to the closing, and nothing typed would go anywhere.
+            editable={ready && writing && !parting}
+            interactive={writing && !parting}
             onChangeText={(body) => {
+              if (parting) return;
               session.change(body);
               quiet.typed();
             }}
@@ -366,7 +411,7 @@ export function ImmersiveSession({
               !writing && (
                 <Beacon
                   kind="light"
-                  visible={open && ready && !voiceNote && failure === null}
+                  visible={open && ready && !voiceNote && failure === null && !parting}
                   live={recording || busy || session.listening}
                   x={bookFrame.width / 2}
                   y={
@@ -392,47 +437,49 @@ export function ImmersiveSession({
       )}
 
       {noteDrawn && (
-        <Arrive
-          testID="session-note"
-          delay={120}
-          ms={350}
-          pointerEvents="box-none"
-          style={[
-            styles.centre,
-            book
-              ? {
-                  top: bookFrame.top,
-                  height: bookFrame.height,
-                  left: bookFrame.left,
-                  right: bookFrame.left,
-                }
-              : { top: frame.top, height: frame.height },
-          ]}
-        >
-          <PaperProvider look={look}>
-            {failure !== null ? (
-              <FailedDraft
-                message={failure}
-                retry={session.failedCode !== 'unreadable'}
-                onRetry={() => void draft.reload()}
-              />
-            ) : (
-              <VoiceNote
-                view={speakView}
-                onAllow={() => void session.allowMicrophone()}
-                onSettings={session.openSettings}
-                onWrite={() => {
-                  refocus.current = true;
-                  session.writeInstead();
-                }}
-                onRetry={session.retryTranscription}
-                onPlus={session.getPlus}
-                line={session.speakLine}
-                detail={session.speakDetail}
-              />
-            )}
-          </PaperProvider>
-        </Arrive>
+        <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, leaving]}>
+          <Arrive
+            testID="session-note"
+            delay={120}
+            ms={350}
+            pointerEvents="box-none"
+            style={[
+              styles.centre,
+              book
+                ? {
+                    top: bookFrame.top,
+                    height: bookFrame.height,
+                    left: bookFrame.left,
+                    right: bookFrame.left,
+                  }
+                : { top: frame.top, height: frame.height },
+            ]}
+          >
+            <PaperProvider look={look}>
+              {failure !== null ? (
+                <FailedDraft
+                  message={failure}
+                  retry={session.failedCode !== 'unreadable'}
+                  onRetry={() => void draft.reload()}
+                />
+              ) : (
+                <VoiceNote
+                  view={speakView}
+                  onAllow={() => void session.allowMicrophone()}
+                  onSettings={session.openSettings}
+                  onWrite={() => {
+                    refocus.current = true;
+                    session.writeInstead();
+                  }}
+                  onRetry={session.retryTranscription}
+                  onPlus={session.getPlus}
+                  line={session.speakLine}
+                  detail={session.speakDetail}
+                />
+              )}
+            </PaperProvider>
+          </Arrive>
+        </Animated.View>
       )}
 
       {onboarding && book && (
@@ -466,30 +513,32 @@ export function ImmersiveSession({
       <Wash
         kind="ground"
         quiet
-        visible={(quiet.visible && pageOpen && !shelf) || notice !== null}
+        visible={!parting && ((quiet.visible && pageOpen && !shelf) || notice !== null)}
         style={[styles.ground, span]}
       />
 
       <Animated.View pointerEvents="box-none" style={[styles.bottom, lift]}>
         {notice !== null && (
           // A line that appears because the state changed comes up, while its shade does.
-          <Arrive>
-            <View style={styles.notice} accessibilityLiveRegion="polite">
-              <View style={[styles.dot, { backgroundColor: colors.accentWarm }]} />
-              <EchoText
-                variant="bodyL"
-                serif
-                accessibilityRole="alert"
-                maxFontSizeMultiplier={1.5}
-                style={[styles.noticeText, { color: ink.text }, ink.shadow]}
-              >
-                {notice}
-              </EchoText>
-            </View>
-          </Arrive>
+          <Animated.View style={leaving}>
+            <Arrive>
+              <View style={styles.notice} accessibilityLiveRegion="polite">
+                <View style={[styles.dot, { backgroundColor: colors.accentWarm }]} />
+                <EchoText
+                  variant="bodyL"
+                  serif
+                  accessibilityRole="alert"
+                  maxFontSizeMultiplier={1.5}
+                  style={[styles.noticeText, { color: ink.text }, ink.shadow]}
+                >
+                  {notice}
+                </EchoText>
+              </View>
+            </Arrive>
+          </Animated.View>
         )}
         <QuietControls
-          visible={quiet.visible && pageOpen && !shelf}
+          visible={quiet.visible && pageOpen && !shelf && !parting}
           middle={recording ? 'stop' : writing ? 'speak' : 'write'}
           middleDisabled={busy || !ready}
           canReflect={canReflect}

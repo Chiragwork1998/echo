@@ -1,12 +1,15 @@
 import {
+  LEAF_PITCH,
   RIFFLE_MAX,
   clothLightAlpha,
+  closingLeafOpacity,
   clothLightAt,
   coverAngle,
   coverEdge,
   frontOpacity,
   frontShade,
   hingeOpacity,
+  leafGeometry,
   leafOpacity,
   leafProgress,
   leafShade,
@@ -205,5 +208,58 @@ describe('the light that crosses the cloth as the book comes to rest', () => {
     expect(clothLightAt(0.45)).toBeCloseTo(-0.7);
     expect(clothLightAt(1)).toBeCloseTo(0.7);
     expect(clothLightAt(0)).toBeCloseTo(-0.7);
+  });
+});
+
+describe('the block of earlier leaves at the spine', () => {
+  it('is 3 pt thick in a book with nothing in it, and thickens more slowly as it fills', () => {
+    expect(leafGeometry(0, 20).left).toBeCloseTo(3, 5);
+    expect(leafGeometry(7, 40).left).toBeCloseTo(5.12, 1);
+    expect(leafGeometry(30, 40).left).toBeCloseTo(9.79, 1);
+    expect(leafGeometry(100, 40).left).toBeCloseTo(14.25, 1);
+    let before = leafGeometry(0, 99).left;
+    for (const n of [1, 5, 20, 60, 120, 400]) {
+      const now = leafGeometry(n, 99).left;
+      expect(now).toBeGreaterThan(before);
+      before = now;
+    }
+    const early = leafGeometry(1, 99).left - leafGeometry(0, 99).left;
+    const late = leafGeometry(41, 99).left - leafGeometry(40, 99).left;
+    expect(late).toBeLessThan(early);
+  });
+
+  it('never reaches the edge of the screen: it stops 6 pt short of the room it has', () => {
+    expect(leafGeometry(1000, 20).left).toBe(14);
+    expect(leafGeometry(100, 20).left).toBe(14);
+    expect(leafGeometry(1000, 24).left).toBeCloseTo(15, 0);
+    expect(leafGeometry(1000, 24).left).toBeLessThanOrEqual(18);
+    expect(leafGeometry(1000, 28).left).toBeLessThanOrEqual(22);
+  });
+
+  it('is drawn with a hairline for every point and a half of it', () => {
+    expect(leafGeometry(0, 20).leaves).toBe(2);
+    expect(leafGeometry(100, 20).leaves).toBe(9);
+    expect(leafGeometry(100, 20).leaves * LEAF_PITCH).toBeLessThanOrEqual(14);
+  });
+
+  it('is a count and nothing else: deleting an echo makes it thinner', () => {
+    expect(leafGeometry(29, 40).left).toBeLessThan(leafGeometry(30, 40).left);
+    expect(leafGeometry(-3, 20).left).toBeCloseTo(3, 5);
+    expect(leafGeometry(Number.NaN, 20).left).toBeCloseTo(3, 5);
+  });
+
+  it('is nothing where there is no room', () => {
+    expect(leafGeometry(50, 2).left).toBe(0);
+    expect(leafGeometry(50, 2).leaves).toBe(0);
+  });
+});
+
+describe('the last leaf', () => {
+  it('is there until its last stretch, and then it goes, so no sliver is left at the edge', () => {
+    expect(closingLeafOpacity(0)).toBe(1);
+    expect(closingLeafOpacity(0.78)).toBe(1);
+    expect(closingLeafOpacity(0.9)).toBeGreaterThan(0);
+    expect(closingLeafOpacity(0.9)).toBeLessThan(1);
+    expect(closingLeafOpacity(1)).toBe(0);
   });
 });

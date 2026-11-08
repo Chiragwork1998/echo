@@ -7,6 +7,7 @@ import { BookStage, type Entrance } from './BookStage';
 import { ROW_CLEARANCE } from './bookPlace';
 import { Pages } from './Pages';
 import type { Ritual } from './ritual';
+import type { ClosingState } from './useBookClosing';
 import { PaperProvider, usePaperLook, type Surface } from './paper';
 import type { Volume } from './volumes';
 
@@ -51,6 +52,10 @@ type Props = {
   hurry: boolean;
   /** How many echoes the book holds: a count, so that a book with more in it riffles a few leaves. */
   echoes?: number;
+  /** The entry is being kept: the cover is made ready, unseen, for the closing. */
+  preparing?: boolean;
+  /** The book is shutting (./useBookClosing). */
+  closing?: ClosingState | null;
   onOpened?: () => void;
   inputRef: RefObject<ComponentRef<typeof TextInput> | null>;
   value: string;
@@ -87,6 +92,8 @@ export function BookPage(props: Props) {
     ritual,
     hurry,
     echoes,
+    preparing,
+    closing = null,
     onOpened,
     children,
     ...page
@@ -111,6 +118,8 @@ export function BookPage(props: Props) {
         ritual={ritual}
         hurry={hurry}
         echoes={echoes}
+        preparing={preparing}
+        closing={closing}
         onOpened={onOpened}
       >
         {(open) => (
@@ -121,6 +130,8 @@ export function BookPage(props: Props) {
               height={frame.height}
               look={look}
               volume={volume}
+              closing={closing}
+              stack={{ echoes: echoes ?? 0, room: frame.left, keeping: preparing }}
               hidden={!open}
               editable={page.editable && open}
               interactive={page.interactive && open}

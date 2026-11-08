@@ -145,3 +145,27 @@ export function clothLightAt(a: number): number {
   'worklet';
   return -0.7 + 1.4 * clamp01((a - 0.45) / 0.55);
 }
+
+/** How far the book sinks as it goes, in points, and how much it shrinks as it does. */
+export const SINK = { drop: 26, scale: 0.015 } as const;
+
+/** The leaf that has been turned goes as it lands: its last stretch fades, so no sliver is left. */
+export function closingLeafOpacity(shut: number): number {
+  'worklet';
+  return 1 - smoothstep(0.78, 1, shut);
+}
+
+/** The pitch of the hairline leaves of the left stack, in points. */
+export const LEAF_PITCH = 1.5;
+
+/**
+ * The block of earlier leaves at the spine: how wide it is, in points, for this many echoes in the
+ * book and this much room to the left of the page, and how many hairline leaves it is drawn with.
+ * It thickens quickly at first and then more slowly, and never reaches the edge of the screen. A
+ * count and nothing more: deleting an echo makes it honestly thinner.
+ */
+export function leafGeometry(echoes: number, gutter: number) {
+  const n = Number.isFinite(echoes) && echoes > 0 ? echoes : 0;
+  const left = Math.max(0, Math.min(gutter - 6, 3 + 12 * (1 - Math.exp(-n / 36))));
+  return { left, leaves: Math.max(0, Math.floor(left / LEAF_PITCH)) };
+}

@@ -8,11 +8,13 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withDelay,
+  withSequence,
   withTiming,
   type SharedValue,
+  type WithTimingConfig,
 } from 'react-native-reanimated';
 
-import { clamp01 } from '@/design/ease';
+import { EASE, clamp01 } from '@/design/ease';
 import { cue } from '@/design/haptics';
 import { mixColor } from '@/design/mixColor';
 import { tokens } from '@/design/tokens';
@@ -23,7 +25,7 @@ import { LeafRiffle } from './LeafRiffle';
 import { usePaperLook, type Surface } from './paper';
 import { coverPin, risePin } from './qaPins';
 import { Ribbon } from './Ribbon';
-import { HURRY_MS, type Ritual } from './ritual';
+import { CLOSE_REDUCED_MS, HURRY_MS, type Ritual } from './ritual';
 import {
   clothLightAlpha,
   clothLightAt,
@@ -39,7 +41,9 @@ import {
   riffleLeaves,
   riseOpacity,
   shadowOpacity,
+  SINK,
 } from './standing';
+import type { ClosingState } from './useBookClosing';
 import { VOLUMES, type Volume } from './volumes';
 
 // The original timings: the book comes forward and its cloth cover swings in 1100 ms, hinged at the
@@ -62,6 +66,15 @@ const PAGE_RADIUS = 3;
 const CAST_WIDTH = 0.45;
 /** The cloth's lining is the cloth, in shadow. */
 const LINING_DARKER = 0.22;
+/** The light along the board's top edge as it lands is this bright at its brightest. */
+const GLINT = 0.35;
+/**
+ * The board coming back: it lifts gently from lying open, rises edge-on as the last leaf goes, and
+ * comes down to land softly. The decelerating EASE would start it at full speed, so the board, which
+ * leaves the screen as it comes to rest, would appear in two frames; the opening's in-and-out curve
+ * would leave the page bare for a beat between the leaf and the cover.
+ */
+const SHUT = Easing.bezier(0.3, 0, 0.2, 1);
 
 export type Entrance = 'rise' | 'forward';
 
@@ -81,6 +94,10 @@ type Props = {
   hurry: boolean;
   /** How many echoes the book holds. A count only: a book with more in it lets a few leaves riffle. */
   echoes?: number;
+  /** The entry is being kept: the cover is built now, unseen, so that the closing does not have to. */
+  preparing?: boolean;
+  /** The book is shutting: the cover returns, rests, and the book sinks (./useBookClosing). */
+  closing?: ClosingState | null;
   onOpened?: () => void;
   /** The page, which is there from the first moment, and is told when the cover has opened. */
   children: (open: boolean) => ReactNode;
@@ -103,6 +120,8 @@ export function BookStage({
   ritual,
   hurry,
   echoes = 0,
+  preparing = false,
+  closing = null,
   onOpened,
   children,
 }: Props) {
@@ -113,8 +132,11 @@ export function BookStage({
   const [opened, setOpened] = useState(false);
   // The harness can hold the opening at a moment, to look at it (./qaPins). Never set in a real app.
   const [pin] = useState(() => ({ cover: coverPin(), rise: risePin() }));
-  const phase = !start ? 'waiting' : opened ? 'open' : 'closed';
+  const phase = !start ? 'waiting' : closing ? 'closing' : opened ? 'open' : 'closed';
   const closed = phase === 'closed' && !reduced;
+  // The cover is there, unseen, from the moment the entry is being kept: building two pictures on
+  // the frame the closing starts would be the one hitch in it.
+  const covering = !reduced && (phase === 'closed' || phase === 'closing' || (preparing && opened));
   const report = useRef(onOpened);
   useEffect(() => {
     report.current = onOpened;
@@ -172,23 +194,82 @@ export function BookStage({
     };
   }, [start, opened, hurry, reduced, entrance, ritual, arrive, cover, still, pin]);
 
+  // The closing: the cover comes back down about the spine, lands softly, and the book sinks as the
+  // next screen comes. Like the opening, every layer is a function of how far the cover has swung.
+  const sink = useSharedValue(0);
+  const glint = useSharedValue(0);
+  const tuck = useSharedValue(0);
+  const shutting = closing !== null;
+  const shutHurry = closing?.hurry ?? false;
+  const shutReduced = closing?.reduced ?? false;
+  const shutRitual = closing?.ritual;
+  useEffect(() => {
+    if (!shutting || shutReduced || !shutRitual) return;
+    const { close } = shutRitual;
+    const timing = (duration: number, easing: WithTimingConfig['easing'] = EASE) => ({
+      duration,
+      easing,
+      reduceMotion: ReduceMotion.Never,
+    });
+    if (shutHurry) {
+      cancelAnimation(cover);
+      cancelAnimation(glint);
+      cancelAnimation(tuck);
+      glint.set(0);
+      cover.set(withTiming(0, timing(HURRY_MS)));
+      tuck.set(withTiming(1, timing(HURRY_MS)));
+      return;
+    }
+    const landing = close.coverAt + close.cover;
+    cover.set(withDelay(close.coverAt, withTiming(0, timing(close.cover, SHUT))));
+    // The light along the board's edge comes and goes in the last of its time; the ribbon's tail is
+    // drawn up as the pages are pressed.
+    glint.set(
+      withDelay(
+        landing - close.glint,
+        withSequence(
+          withTiming(1, timing(close.glint * 0.4, Easing.out(Easing.quad))),
+          withTiming(0, timing(close.glint * 0.6, Easing.inOut(Easing.quad))),
+        ),
+      ),
+    );
+    tuck.set(withDelay(landing - close.tuck, withTiming(1, timing(close.tuck))));
+  }, [shutting, shutHurry, shutReduced, shutRitual, cover, glint, tuck]);
+  const sinking = closing?.sinking ?? false;
+  useEffect(() => {
+    if (!sinking || !shutRitual) return;
+    const duration = shutReduced ? CLOSE_REDUCED_MS : shutHurry ? HURRY_MS : shutRitual.close.sink;
+    sink.set(
+      withTiming(1, {
+        duration,
+        easing: shutReduced ? Easing.out(Easing.quad) : EASE,
+        reduceMotion: ReduceMotion.Never,
+      }),
+    );
+  }, [sinking, shutHurry, shutReduced, shutRitual, sink]);
+
   const motion = useAnimatedStyle(() => {
     const t = arrive.get();
+    // The book going: it sinks a little, settles a little smaller, and is gone.
+    const gone = sink.get();
     // Reduce Motion: the book fades in where it rests. Nothing travels and nothing scales.
-    if (reduced) return { opacity: t };
+    if (reduced) return { opacity: t * (1 - gone) };
     const inPlace = still.get();
+    const settle = 1 - SINK.scale * gone;
     if (entrance === 'rise') {
+      const travel = { translateY: (1 - t) * riseFrom * (1 - inPlace) + SINK.drop * gone };
       return {
-        opacity: riseOpacity(t, inPlace),
-        transform: [{ translateY: (1 - t) * riseFrom * (1 - inPlace) }],
+        opacity: riseOpacity(t, inPlace) * (1 - gone),
+        // It is only sinking that scales it.
+        transform: gone > 0 ? [travel, { scale: settle }] : [travel],
       };
     }
     const travel = 1 - inPlace;
     return {
-      opacity: riseOpacity(t, inPlace, FORWARD_VISIBLE),
+      opacity: riseOpacity(t, inPlace, FORWARD_VISIBLE) * (1 - gone),
       transform: [
-        { translateY: (1 - t) * FORWARD_LIFT * travel },
-        { scale: 1 - (1 - FORWARD_FROM) * (1 - t) * travel },
+        { translateY: (1 - t) * FORWARD_LIFT * travel + SINK.drop * gone },
+        { scale: (1 - (1 - FORWARD_FROM) * (1 - t) * travel) * settle },
       ],
     };
   }, [entrance, riseFrom, reduced]);
@@ -223,6 +304,7 @@ export function BookStage({
     };
   }, [width]);
   const sheen = useAnimatedStyle(() => ({ opacity: pageSheen(cover.get()) }));
+  const edgeLight = useAnimatedStyle(() => ({ opacity: GLINT * glint.get() }));
 
   const index = VOLUMES.indexOf(volume);
   const cloth = volume.cloth;
@@ -268,11 +350,11 @@ export function BookStage({
         pointerEvents="none"
         style={[styles.edge, styles.edgeNear, { backgroundColor: look.leaves[0] }]}
       />
-      {children(phase === 'open')}
+      {children(phase === 'open' || phase === 'closing')}
       {/* A few leaves lift from the spine in the wake of the cover. */}
       {closed && <LeafRiffle active count={leaves} cover={cover} look={look} />}
       {/* What the cover does to the page as it leaves it: its shadow, and the light it uncovers. */}
-      {closed && (
+      {covering && (
         <View pointerEvents="none" style={styles.pageClip}>
           <Animated.View
             pointerEvents="none"
@@ -304,12 +386,13 @@ export function BookStage({
         <Ribbon
           arrive={reduced ? undefined : arrive}
           cover={reduced ? undefined : cover}
+          tuck={shutting && !reduced ? tuck : undefined}
           foil={volume.foil}
           opacity={look.ribbonOpacity}
           testID="book-ribbon"
         />
       </View>
-      {closed && (
+      {covering && (
         <Animated.View
           pointerEvents="none"
           renderToHardwareTextureAndroid
@@ -320,6 +403,12 @@ export function BookStage({
             <BookCover height={height} index={index} volume={volume} width={width}>
               {entrance === 'rise' && <ClothLight arrive={arrive} height={height} width={width} />}
               <Animated.View pointerEvents="none" style={[styles.dark, frontDark]} />
+              {/* The board's top edge catches the light as it lands. */}
+              <Animated.View
+                pointerEvents="none"
+                testID="book-edge-light"
+                style={[styles.edgeLight, edgeLight]}
+              />
             </BookCover>
           </Animated.View>
           {/* The inside of the board, which the cloth gives way to once the board is edge-on. */}
@@ -424,6 +513,14 @@ const styles = StyleSheet.create({
   cast: { position: 'absolute', top: 0, bottom: 0, left: 0 },
   sheen: { position: 'absolute', top: 0, left: 0, right: 0, height: '38%' },
   light: { position: 'absolute' },
+  edgeLight: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 1.5,
+    backgroundColor: 'rgb(255,246,226)',
+  },
   dark: { ...StyleSheet.absoluteFill, backgroundColor: '#000000' },
   lining: {
     position: 'absolute',

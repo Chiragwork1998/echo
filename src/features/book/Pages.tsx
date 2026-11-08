@@ -36,8 +36,12 @@ import { useReduceMotion } from '@/design/useReduceMotion';
 import { bookCopy } from './bookCopy';
 import { ArrivalFade } from '@/features/journal-session/ArrivalFade';
 
+import { LeftStack } from './LeftStack';
 import { linesOf, measuredText, pageCount, pageOfLine } from './pagination';
 import { Sheet, type PaperLook } from './paper';
+import { HURRY_MS } from './ritual';
+import { closingLeafOpacity, leafGeometry } from './standing';
+import type { ClosingState } from './useBookClosing';
 import type { Volume } from './volumes';
 
 // The leaf turns as the original did: 760 ms, in and out, hinged at the spine with a deep
@@ -124,6 +128,13 @@ type Props = {
   dimmed?: boolean;
   /** Counts the times spoken words have landed, so they settle in rather than jump. */
   arrival?: number;
+  /** The book is shutting: the page is left by its last leaf, with the words that are on it. */
+  closing?: ClosingState | null;
+  /**
+   * The echoes the book holds, and the room between the page and the edge of the screen: the block of
+   * earlier leaves at the spine is drawn from them. Left out, there is none.
+   */
+  stack?: { echoes: number; room: number; keeping?: boolean };
   children?: ReactNode;
 };
 
@@ -160,6 +171,8 @@ export function Pages({
   concealed = false,
   dimmed = false,
   arrival = 0,
+  closing = null,
+  stack,
   children,
 }: Props) {
   const { name } = useTheme();
@@ -186,7 +199,9 @@ export function Pages({
   const [turn, setTurn] = useState<{ from: number; to: number } | null>(null);
   const flip = useSharedValue(0);
   const dim = useSharedValue(1);
-  const shownAt = concealed ? 0 : dimmed ? PAGE_DIMMED : 1;
+  // Shutting the book takes the words from the page beneath the leaf that carries them away.
+  const shutting = closing !== null;
+  const shownAt = concealed || shutting ? 0 : dimmed ? PAGE_DIMMED : 1;
   const veil = useSharedValue(shownAt);
   useEffect(() => {
     // Hiding, dimming and showing all keep their short fade under Reduce Motion, so that the words
@@ -200,6 +215,8 @@ export function Pages({
     );
   }, [concealed, reduced, shownAt, veil]);
   const veiled = useAnimatedStyle(() => ({ opacity: veil.get() }));
+  // The pager goes with the words when the book is shut.
+  const pagerFade = useAnimatedStyle(() => ({ opacity: shutting ? veil.get() : 1 }), [shutting]);
 
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   useEffect(() => {
@@ -296,10 +313,46 @@ export function Pages({
   );
   /* eslint-enable react-hooks/refs */
 
+  // The last leaf: the page being left turns over about the spine and takes its words with it, on a
+  // path of its own, so that nothing the page does on its own (following the caret) can meet it.
+  const shut = useSharedValue(0);
+  const leafOn = closing !== null && !closing.reduced;
+  const leafHurry = closing?.hurry ?? false;
+  const leafMs = closing?.ritual.close.leaf ?? 0;
+  const [leafOf, setLeafOf] = useState<number | null>(null);
+  const [leafGone, setLeafGone] = useState(false);
+  if (leafOn && leafOf === null) setLeafOf(turn ? turn.to : shown);
+  if (!leafOn && leafOf !== null) {
+    setLeafOf(null);
+    setLeafGone(false);
+  }
+  useEffect(() => {
+    if (!leafOn) return;
+    const duration = leafHurry ? HURRY_MS : leafMs;
+    shut.set(
+      withTiming(1, {
+        duration,
+        easing: leafHurry ? Easing.out(Easing.cubic) : Easing.inOut(Easing.cubic),
+        reduceMotion: ReduceMotion.Never,
+      }),
+    );
+    const timer = setTimeout(() => setLeafGone(true), duration);
+    return () => clearTimeout(timer);
+  }, [leafOn, leafHurry, leafMs, shut]);
+  const shutAngle = useAnimatedStyle(() => ({
+    transform: [{ perspective: PERSPECTIVE }, { rotateY: `${-180 * shut.get()}deg` }],
+  }));
+  const shutBack = useAnimatedStyle(() => ({ opacity: shut.get() < 0.5 ? 0 : 1 }));
+  const shutShade = useAnimatedStyle(() => ({
+    opacity: interpolate(shut.get(), [0, 0.5, 1], [0.18, 0.1, 0]) * look.shade,
+  }));
+  const shutFade = useAnimatedStyle(() => ({ opacity: closingLeafOpacity(shut.get()) }));
+
   const forward = turn !== null && turn.to > turn.from;
   const base = turn ? turn.to : shown;
   const leaf = turn ? (forward ? turn.from : turn.to) : null;
   const turned = Math.min(turn ? Math.min(turn.from, turn.to) : shown, look.leaves.length);
+  const block = stack ? leafGeometry(stack.echoes, stack.room) : { left: 0, leaves: 0 };
 
   const angle = useAnimatedStyle(() => {
     const t = flip.get();
@@ -342,19 +395,31 @@ export function Pages({
     return { opacity: interpolate(t, [0.9, 1], [1, 0], 'clamp') };
   });
 
-  const face = (index: number) => (
-    <Face look={look} metrics={metrics} page={index} text={value} lead={lead} volume={volume} />
+  // A leaf carries the page's words, unless the words are hidden: then it is simply blank.
+  const face = (index: number, blank = false) => (
+    <Face
+      look={look}
+      metrics={metrics}
+      page={index}
+      text={blank ? '' : value}
+      lead={lead}
+      volume={volume}
+    />
   );
 
   return (
     <View style={{ width, height }} {...swipe.panHandlers} testID="book-page">
-      {turned > 0 && (
+      {(turned > 0 || block.left > 0) && (
         <>
           <View
             pointerEvents="none"
             style={[
               styles.spine,
-              { left: -4 - 3 * turned, width: 4 + 3 * turned, backgroundColor: volume.cloth },
+              {
+                left: -4 - block.left - 3 * turned,
+                width: 4 + block.left + 3 * turned,
+                backgroundColor: volume.cloth,
+              },
             ]}
           />
           {look.leaves
@@ -363,11 +428,23 @@ export function Pages({
               <View
                 key={i}
                 pointerEvents="none"
-                style={[styles.turnedLeaf, { left: -3 * (i + 1), backgroundColor: colour }]}
+                style={[
+                  styles.turnedLeaf,
+                  { left: -block.left - 3 * (i + 1), backgroundColor: colour },
+                ]}
               />
             ))
             .reverse()}
         </>
+      )}
+      {stack && (
+        <LeftStack
+          echoes={stack.echoes}
+          room={stack.room}
+          look={look}
+          keeping={stack.keeping}
+          closing={closing}
+        />
       )}
       <Sheet look={look}>
         <Pressable
@@ -498,15 +575,46 @@ export function Pages({
         </>
       )}
 
+      {leafOn && leafOf !== null && !leafGone && (
+        <Animated.View
+          pointerEvents="none"
+          testID="book-closing-leaf"
+          style={[StyleSheet.absoluteFill, shutFade]}
+        >
+          <Animated.View
+            pointerEvents="none"
+            style={[StyleSheet.absoluteFill, styles.shade, shutShade]}
+          />
+          <Animated.View
+            pointerEvents="none"
+            testID="book-closing-turn"
+            style={[StyleSheet.absoluteFill, styles.hinge, shutAngle]}
+          >
+            <Sheet look={look}>{face(leafOf, concealed)}</Sheet>
+          </Animated.View>
+          <Animated.View
+            pointerEvents="none"
+            style={[StyleSheet.absoluteFill, styles.hinge, styles.leafBack, shutAngle, shutBack]}
+          >
+            <Sheet look={look} />
+          </Animated.View>
+        </Animated.View>
+      )}
+
       {!concealed && (
-        <Pager
-          look={look}
-          metrics={metrics}
-          page={shown}
-          count={count}
-          busy={turn !== null}
-          onTurn={(by) => turnByHand(shown + by)}
-        />
+        <Animated.View
+          pointerEvents={shutting ? 'none' : 'box-none'}
+          style={[StyleSheet.absoluteFill, pagerFade]}
+        >
+          <Pager
+            look={look}
+            metrics={metrics}
+            page={shown}
+            count={count}
+            busy={turn !== null || shutting}
+            onTurn={(by) => turnByHand(shown + by)}
+          />
+        </Animated.View>
       )}
       {children}
     </View>

@@ -5,12 +5,12 @@ import Animated, {
   ReduceMotion,
   useAnimatedStyle,
   useSharedValue,
+  withDelay,
   withTiming,
 } from 'react-native-reanimated';
 
 import { EchoText } from '@/components/EchoText';
 import { GlassCard } from '@/components/GlassCard';
-import { Icon } from '@/components/Icon';
 import { copy } from '@/content/copy';
 import { useLayout } from '@/design/layout';
 import { useTheme } from '@/design/theme';
@@ -19,6 +19,7 @@ import { tokens } from '@/design/tokens';
 import type { ReflectionCardState } from './cardState';
 import { LIGHT_SANS, LIGHT_SERIF } from './fonts';
 import { Seal } from './Seal';
+import { SealedLock } from './SealedLock';
 import { bindLastWords, completionText } from './text';
 
 // Measured from the golden, which draws the card with a tighter corner than the spec's 22 pt radius
@@ -46,19 +47,35 @@ const RULE_HEIGHT = 0.6;
 const RULE_OPACITY = 0.3;
 const LOCK_SIZE = 16;
 const ACTION_GAP = 28;
+// The lock closes, and the line beside it comes up, a beat after the mark is made.
+const LOCK_AFTER = 900;
+const SAVED_AFTER = 940;
+const SAVED_MS = 320;
 
-/** Fades its content in over 180 ms. Reduce Motion makes this instant through the system setting. */
-function Reveal({ visible = true, children }: { visible?: boolean; children: ReactNode }) {
+/**
+ * Fades its content in over 180 ms, or over `ms` after `delay`. Reduce Motion makes this instant
+ * through the system setting.
+ */
+function Reveal({
+  visible = true,
+  ms = tokens.motion.fast,
+  delay = 0,
+  children,
+}: {
+  visible?: boolean;
+  ms?: number;
+  delay?: number;
+  children: ReactNode;
+}) {
   const shown = useSharedValue(0);
   useEffect(() => {
-    shown.set(
-      withTiming(visible ? 1 : 0, {
-        duration: tokens.motion.fast,
-        easing: Easing.out(Easing.quad),
-        reduceMotion: ReduceMotion.System,
-      }),
-    );
-  }, [shown, visible]);
+    const fade = withTiming(visible ? 1 : 0, {
+      duration: ms,
+      easing: Easing.out(Easing.quad),
+      reduceMotion: ReduceMotion.System,
+    });
+    shown.set(visible && delay > 0 ? withDelay(delay, fade) : fade);
+  }, [delay, ms, shown, visible]);
   const style = useAnimatedStyle(() => ({ opacity: shown.get() }));
   return <Animated.View style={style}>{children}</Animated.View>;
 }
@@ -88,13 +105,23 @@ type Props = {
   savedVisible: boolean;
   onRetry: () => void;
   onContinue: () => void;
+  /** When the mark begins to be made, from mount (see Seal). */
+  startAt?: number;
 };
 
 /**
  * Today's echo. Offline is a first-class state, not a failure: with no reflection provider it is
  * the private saved-entry card, and it is complete as it stands.
  */
-export function ReflectionCard({ state, text, saved, savedVisible, onRetry, onContinue }: Props) {
+export function ReflectionCard({
+  state,
+  text,
+  saved,
+  savedVisible,
+  onRetry,
+  onContinue,
+  startAt = tokens.motion.standard,
+}: Props) {
   const { colors, name } = useTheme();
   const { accessibleLayout } = useLayout();
   const body =
@@ -110,7 +137,7 @@ export function ReflectionCard({ state, text, saved, savedVisible, onRetry, onCo
       )}
       <View style={styles.content}>
         <View style={styles.header}>
-          <Seal listening={state === 'loading'} />
+          <Seal listening={state === 'loading'} startAt={startAt} />
           <View style={[styles.divider, { backgroundColor: colors.textPrimary }]} />
           <EchoText variant="bodyL" serif accessibilityRole="header" style={styles.title}>
             {copy.completion.cardTitle}
@@ -143,9 +170,13 @@ export function ReflectionCard({ state, text, saved, savedVisible, onRetry, onCo
             { backgroundColor: colors.textPrimary, marginTop: body ? BAND.afterBody : BAND.toBody },
           ]}
         />
-        <Reveal visible={savedVisible}>
+        <Reveal visible={savedVisible} ms={SAVED_MS} delay={startAt + SAVED_AFTER}>
           <View style={styles.footer}>
-            <Icon name="lock" size={LOCK_SIZE} color={colors.textSecondary} />
+            <SealedLock
+              size={LOCK_SIZE}
+              color={colors.textSecondary}
+              startAt={startAt + LOCK_AFTER}
+            />
             <EchoText variant="bodyM" color="textSecondary" style={SAVED}>
               {saved}
             </EchoText>

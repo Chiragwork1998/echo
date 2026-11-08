@@ -5,9 +5,11 @@ import { PrimaryCTA } from '@/components/PrimaryCTA';
 import { ScreenShell } from '@/components/ScreenShell';
 import { copy } from '@/content/copy';
 import { useLayout } from '@/design/layout';
+import { tokens } from '@/design/tokens';
 import { onboardingSteps } from '@/features/onboarding/flow';
 
 import type { CardView } from './cardState';
+import { CardArrival } from './CardArrival';
 import { CompletionHeader } from './CompletionHeader';
 import { CompletionHeading } from './CompletionHeading';
 import { ReflectionCard } from './ReflectionCard';
@@ -19,6 +21,12 @@ const STEP = onboardingSteps.indexOf('completion') + 1;
 const CARD_ABOVE_CTA = 17;
 const CARD_BELOW_HEADING = 28;
 const ERROR_GAP = 12;
+// The card's mark is made a beat after the screen has begun to settle. Onboarding arrives over a plate
+// that dissolves for 650 ms, so it waits that much longer.
+const MARK_AFTER = {
+  onboarding: tokens.motion.standard + 300,
+  daily: tokens.motion.standard,
+} as const;
 // This sits on the photograph, not on glass.
 const SHADOW = {
   textShadowColor: 'rgba(3,11,22,0.7)',
@@ -53,14 +61,17 @@ export function CompletionLayout({
 }: Props) {
   const { accessibleLayout, landscape } = useLayout();
   const card = (
-    <ReflectionCard
-      state={view.state}
-      text={view.text}
-      saved={saved}
-      savedVisible={savedVisible}
-      onRetry={onRetry}
-      onContinue={onEnter}
-    />
+    <CardArrival>
+      <ReflectionCard
+        state={view.state}
+        text={view.text}
+        saved={saved}
+        savedVisible={savedVisible}
+        onRetry={onRetry}
+        onContinue={onEnter}
+        startAt={MARK_AFTER[mode]}
+      />
+    </CardArrival>
   );
 
   return (

@@ -4,7 +4,7 @@ import Animated, {
   Easing,
   ReduceMotion,
   cancelAnimation,
-  interpolate,
+  useAnimatedProps,
   useAnimatedStyle,
   useSharedValue,
   withDelay,
@@ -14,46 +14,91 @@ import Animated, {
 } from 'react-native-reanimated';
 import Svg, { Circle } from 'react-native-svg';
 
+import { clamp01, EASE } from '@/design/ease';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 import { useReduceMotion } from '@/design/useReduceMotion';
 
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+
 // Measured from the golden: a thin ring around a solid dot.
 const SIZE = 20;
-const RING = { radius: 9, stroke: 1.1 };
-const DOT_RADIUS = 3.9;
-// The check: the ring and dot arrive over 180 ms, a beat after the screen has settled.
-const ARRIVE_DELAY = tokens.motion.standard;
+export const RING = { radius: 9, stroke: 1.1 };
+export const DOT_RADIUS = 3.9;
+const CIRCUMFERENCE = 2 * Math.PI * RING.radius;
+// The mark is made as the entry is held. From a start at M: the ring is drawn clockwise from twelve
+// o'clock over 520 ms beginning 260 after M, then the dot lands over 320 beginning 680 after M.
+const RING_FROM = 260;
+const RING_MS = 520;
+const DOT_FROM = 680;
+const DOT_MS = 320;
+/** The ring's stroke is not seen until this much of it is drawn, so a round cap never sits alone. */
+const RING_SEEN = 0.05;
+/** The dot is fully there by this share of its landing: 120 ms of 320. */
+const DOT_SEEN = 0.375;
 // Listening: the dot breathes, 1.2 s in and 1.2 s out, on a soft halo.
 const BREATH = 1200;
 const BREATH_REST = 1;
-const DOT_SCALE = { from: 0.35, low: 0.78 };
+// How far the dot dims and shrinks at the bottom of its breath.
+const DOT_BREATH = { opacity: 0.45, scale: 0.78 };
 const HALO_GROW = 0.5;
 
-type Props = { listening: boolean };
+/**
+ * The ring when this much of it is drawn (0 to 1). The dash is drawn by its offset: the whole circle
+ * is one dash, slid off the start of the path. Its stroke is not seen until some of it is drawn.
+ */
+export function ringStroke(drawn: number) {
+  'worklet';
+  return {
+    strokeDashoffset: CIRCUMFERENCE * (1 - drawn),
+    strokeOpacity: clamp01(drawn / RING_SEEN),
+  };
+}
+
+type Props = {
+  listening: boolean;
+  /**
+   * When the mark begins to be made, from mount, in ms. The screen has settled by then: a beat after
+   * the screen's own fade, and later still where a plate is dissolving beneath it.
+   */
+  startAt?: number;
+};
 
 /**
- * The card's mark. Still once the entry is held. While a reflection is being waited for it breathes
- * instead. Reduce Motion keeps it still and only fades it in, with no scale.
+ * The card's mark. Drawn as the entry is held: the ring is inked clockwise from the top, and the dot
+ * lands inside it. Still once it is made. While a reflection is being waited for the dot breathes
+ * instead. Reduce Motion: drawn at rest, at once.
  */
-export function Seal({ listening }: Props) {
+export function Seal({ listening, startAt = tokens.motion.standard }: Props) {
   const { colors } = useTheme();
   const reduced = useReduceMotion();
-  const arrive = useSharedValue(0);
+  const ring = useSharedValue(reduced ? 1 : 0);
+  const dot = useSharedValue(reduced ? 1 : 0);
   const breath = useSharedValue(BREATH_REST);
 
   useEffect(() => {
-    arrive.set(
+    if (reduced) {
+      ring.set(1);
+      dot.set(1);
+      return;
+    }
+    ring.set(
       withDelay(
-        ARRIVE_DELAY,
+        startAt + RING_FROM,
+        withTiming(1, { duration: RING_MS, easing: EASE, reduceMotion: ReduceMotion.Never }),
+      ),
+    );
+    dot.set(
+      withDelay(
+        startAt + DOT_FROM,
         withTiming(1, {
-          duration: tokens.motion.fast,
+          duration: DOT_MS,
           easing: Easing.out(Easing.cubic),
-          reduceMotion: ReduceMotion.System,
+          reduceMotion: ReduceMotion.Never,
         }),
       ),
     );
-  }, [arrive]);
+  }, [dot, reduced, ring, startAt]);
 
   useEffect(() => {
     if (!listening || reduced) {
@@ -66,19 +111,20 @@ export function Seal({ listening }: Props) {
     return () => cancelAnimation(breath);
   }, [breath, listening, reduced]);
 
-  const ring = useAnimatedStyle(() => ({
-    opacity: arrive.get(),
-    transform: reduced ? [] : [{ scale: interpolate(arrive.get(), [0, 1], [0.9, 1]) }],
-  }));
-  const dot = useAnimatedStyle(() => {
-    const settle = reduced ? 1 : interpolate(arrive.get(), [0, 1], [DOT_SCALE.from, 1]);
+  const ringProps = useAnimatedProps(() => ringStroke(ring.get()));
+  const dotStyle = useAnimatedStyle(() => {
+    const landed = dot.get();
+    const b = breath.get();
     return {
-      opacity: arrive.get() * interpolate(breath.get(), [0, 1], [0.45, 1]),
-      transform: [{ scale: settle * interpolate(breath.get(), [0, 1], [DOT_SCALE.low, 1]) }],
+      opacity: clamp01(landed / DOT_SEEN) * (DOT_BREATH.opacity + (1 - DOT_BREATH.opacity) * b),
+      // Never exactly nothing: a transform of zero cannot be inverted on every platform.
+      transform: [
+        { scale: Math.max(landed, 0.001) * (DOT_BREATH.scale + (1 - DOT_BREATH.scale) * b) },
+      ],
     };
   });
   const halo = useAnimatedStyle(() => ({
-    opacity: listening ? breath.get() : 0,
+    opacity: listening ? breath.get() * dot.get() : 0,
     transform: reduced ? [] : [{ scale: 1 + HALO_GROW * breath.get() }],
   }));
 
@@ -90,19 +136,24 @@ export function Seal({ listening }: Props) {
       accessibilityElementsHidden
     >
       <Animated.View style={[styles.halo, { backgroundColor: colors.accentWarm }, halo]} />
-      <Animated.View style={[styles.layer, ring]}>
+      <View style={styles.layer}>
         <Svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`}>
-          <Circle
+          <AnimatedCircle
+            testID="seal-ring"
             cx={SIZE / 2}
             cy={SIZE / 2}
             r={RING.radius}
             stroke={colors.textPrimary}
             strokeWidth={RING.stroke}
             fill="none"
+            strokeDasharray={[CIRCUMFERENCE, CIRCUMFERENCE]}
+            // Twelve o'clock, clockwise. A fixed turn of the drawing, never animated.
+            transform={`rotate(-90 ${SIZE / 2} ${SIZE / 2})`}
+            animatedProps={ringProps}
           />
         </Svg>
-      </Animated.View>
-      <Animated.View style={[styles.layer, dot]}>
+      </View>
+      <Animated.View testID="seal-dot" style={[styles.layer, dotStyle]}>
         <Svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`}>
           <Circle cx={SIZE / 2} cy={SIZE / 2} r={DOT_RADIUS} fill={colors.textPrimary} />
         </Svg>

@@ -12,8 +12,10 @@ import { savedLine } from './text';
 // A reflection that is still coming is named only once it has taken this long. Resolving at once,
 // as it does with no provider, then never flashes a loading line.
 const WAIT_BEFORE_NAMING = 450;
-// A closing that settled this recently has already given the haptic for arriving here.
+// A closing that settled this recently has already given the haptic for arriving here. Under Reduce
+// Motion the book is not shut and it is a commit that was given, as the screen was left.
 const SETTLED_RECENTLY_MS = 3000;
+const COMMITTED_RECENTLY_MS = 1500;
 
 /** True once `active` has held for `ms`. */
 function useWaited(active: boolean, ms: number) {
@@ -48,12 +50,16 @@ export function CompletionView({ mode, onEnter }: Props) {
   const busy = useRef(false);
 
   // Once, on arrival. A commit: this is the moment the practice is held, not a button press. Not
-  // when the closing has just settled, so that the two never buzz one after the other.
+  // when the closing has just settled, so that the two never buzz one after the other. A cold start
+  // straight onto this screen has had no closing, and does buzz.
   const buzzed = useRef(false);
   useEffect(() => {
     if (buzzed.current) return;
     buzzed.current = true;
-    if (!cuedWithin('settle', SETTLED_RECENTLY_MS)) cue('commit');
+    if (cuedWithin('settle', SETTLED_RECENTLY_MS) || cuedWithin('commit', COMMITTED_RECENTLY_MS)) {
+      return;
+    }
+    cue('commit');
   }, []);
 
   const enter = useCallback(async () => {

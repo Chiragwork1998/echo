@@ -17,6 +17,8 @@ import { useReduceMotion } from '@/design/useReduceMotion';
 import { CARET, LIGHT, useSkyInk } from './sky';
 
 const APPEAR_MS = 1100;
+/** It leaves quickly: when the book shuts, or a note comes, it is not left to fade for a second. */
+const LEAVE_MS = 220;
 const CARET_BEAT_MS = 1050;
 const LIGHT_BEAT_MS = 2300;
 /** The light takes up its breath over this long, and lets it go over that. */
@@ -67,7 +69,7 @@ export function Beacon({ kind, visible, live = false, x, y }: Props) {
   useEffect(() => {
     presence.set(
       withTiming(visible ? 1 : 0, {
-        duration: reduced ? 120 : APPEAR_MS,
+        duration: reduced ? 120 : visible ? APPEAR_MS : LEAVE_MS,
         easing: Easing.out(Easing.quad),
         reduceMotion: ReduceMotion.Never,
       }),

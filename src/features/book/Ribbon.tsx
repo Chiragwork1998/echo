@@ -31,6 +31,8 @@ type Props = {
   opacity?: number;
   /** The cover's swing (0 to 1). While it runs the tail comes down. Left out, the tail is as given by `tucked`. */
   cover?: SharedValue<number>;
+  /** Drives the tail directly (0 hanging, 1 tucked in): the book shutting draws it up at its own time. */
+  tuck?: SharedValue<number>;
   /** The book's arrival (0 to 1). While it runs the ribbon trails, and hangs straight again at rest. */
   arrive?: SharedValue<number>;
   testID?: string;
@@ -46,6 +48,7 @@ export function Ribbon({
   width = RIBBON.width,
   opacity = 1,
   cover,
+  tuck,
   arrive,
   testID,
 }: Props) {
@@ -57,7 +60,11 @@ export function Ribbon({
     transform: [{ rotateZ: `${arrive ? ribbonSway(arrive.get()) : 0}deg` }],
   }));
   const slide = useAnimatedStyle(() => ({
-    transform: [{ translateY: -TUCK * scale * (cover ? ribbonTuck(cover.get()) : resting) }],
+    transform: [
+      {
+        translateY: -TUCK * scale * (tuck ? tuck.get() : cover ? ribbonTuck(cover.get()) : resting),
+      },
+    ],
   }));
 
   return (
