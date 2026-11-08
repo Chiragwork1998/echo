@@ -4,6 +4,7 @@ import { Image, Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
   ReduceMotion,
+  type SharedValue,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -18,6 +19,7 @@ import { useReduceMotion } from '@/design/useReduceMotion';
 import { Grain, usePaperLook } from '@/features/book/paper';
 import type { PatternCard } from '@/services/patterns';
 
+import { CardBack, FOIL, GildedEdge } from './CardBack';
 import { hash, SCENES, sceneFor } from './scenes';
 
 /** A playing card: 2.5 by 3.5 inches. */
@@ -40,14 +42,18 @@ const FADE_MS = tokens.motion.fast;
  * spends nine tenths of the turn in its first tenth, and a card snapped over reads as a cut.
  */
 const EASE = Easing.bezier(0.45, 0, 0.2, 1);
-/** Far enough that the turn reads as a card in the hand, near enough to feel its depth. */
-const PERSPECTIVE = 1400;
-/** The card lifts a little as it turns, and settles. */
-const LIFT = 0.035;
-/** The inner gold line, this far inside the card's edge. */
-const INSET = 12;
-/** Ripples on the back: the echo, going out from the cairn. */
-const RINGS = [34, 47, 62, 79, 98, 119, 142, 167, 194, 223, 254];
+/** Near enough that the far edge visibly recedes: a card held at reading distance. */
+const PERSPECTIVE = 1000;
+/** As it turns the card lifts toward you, tips back a little, and settles. */
+const LIFT = 0.05;
+const RISE = 10;
+const TIP = 4;
+/** The side turning away from the light falls into shade, this dark when edge on. */
+const SHADE = 0.55;
+/** A gilded edge is seen only within this much of edge on (|cos| of the turn). */
+const EDGE_SEEN = 0.2;
+/** The band of light that crosses the card as it turns. */
+const SHEEN = 'rgba(255,246,226,';
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
 const NUMERALS: [number, string][] = [
@@ -104,11 +110,6 @@ export function constellation(seed: string, size: number) {
   }));
 }
 
-/** The fine gold line just inside the card's edge, over the scene and the plate alike. */
-function InnerLine() {
-  return <View pointerEvents="none" style={styles.inner} />;
-}
-
 function Constellation({ seed, size }: { seed: string; size: number }) {
   const stars = useMemo(() => constellation(seed, size), [seed, size]);
   return (
@@ -162,7 +163,7 @@ function Face({ card, number, width }: { card: PatternCard; number: number; widt
   const foot = [span, 'ECHO'].filter(Boolean).join('  ·  ');
   const window = width - WINDOW_INSET * 2;
   return (
-    <View style={[styles.face, styles.paper, { backgroundColor: paper.fill }]}>
+    <View style={[styles.face, { backgroundColor: paper.fill }]}>
       <Grain look={paper} />
       <LinearGradient
         pointerEvents="none"
@@ -220,58 +221,38 @@ function Face({ card, number, width }: { card: PatternCard; number: number; widt
           {foot}
         </EchoText>
       </View>
+      <GildedEdge width={width} height={width * CARD_RATIO} radius={RADIUS} id="pc-face-edge" />
     </View>
   );
 }
 
-/** The back every card shares: navy, gold, and the echo rippling out from a cairn. */
-function Back({ width }: { width: number }) {
-  const height = width * CARD_RATIO;
-  const field = { width: width - INSET * 2, height: height - INSET * 2 };
-  const cx = field.width / 2;
-  const cy = field.height / 2;
-  return (
-    <View style={styles.face}>
-      <LinearGradient
-        colors={['#14294A', '#0B1A33', '#060E1D']}
-        locations={[0, 0.55, 1]}
-        style={StyleSheet.absoluteFill}
-      />
-      <View pointerEvents="none" style={styles.field}>
-        <Svg width={field.width} height={field.height}>
-          <Defs>
-            <RadialGradient id="echo-card-glow" cx="50%" cy="50%" rx="50%" ry="50%">
-              <Stop offset="0" stopColor={GOLD} stopOpacity={0.22} />
-              <Stop offset="0.6" stopColor={GOLD} stopOpacity={0.05} />
-              <Stop offset="1" stopColor={GOLD} stopOpacity={0} />
-            </RadialGradient>
-          </Defs>
-          <Rect x={0} y={0} width={field.width} height={field.height} fill="url(#echo-card-glow)" />
-          {RINGS.map((r, i) => (
-            <Circle
-              key={r}
-              cx={cx}
-              cy={cy}
-              r={r}
-              fill="none"
-              stroke={GOLD}
-              strokeWidth={0.8}
-              strokeOpacity={Math.max(0.05, 0.42 - i * 0.036)}
-            />
-          ))}
-        </Svg>
-      </View>
-      <View pointerEvents="none" style={styles.emblem}>
-        <Icon name="cairn-filled" size={30} color={GOLD} />
-      </View>
-      <View pointerEvents="none" style={styles.markRow}>
-        <EchoText variant="caption" style={styles.mark} maxFontSizeMultiplier={1}>
-          ECHO
-        </EchoText>
-      </View>
-      <InnerLine />
-    </View>
-  );
+/** One side of the card as it turns: it rotates away about the long axis, lifts and tips back. */
+function useSideStyle(turned: SharedValue<number>, reduced: boolean, from: 0 | 180) {
+  return useAnimatedStyle(() => {
+    const t = turned.value;
+    if (reduced) return { opacity: from === 0 ? 1 - t : t, transform: [] };
+    const up = Math.sin(t * Math.PI);
+    return {
+      opacity: 1,
+      transform: [
+        { perspective: PERSPECTIVE },
+        { translateY: -RISE * up },
+        { rotateX: `${TIP * up}deg` },
+        { rotateY: `${from + t * 180}deg` },
+        { scale: 1 + LIFT * up },
+      ],
+    };
+  });
+}
+
+/** The side turning from the light falls into shade, darkest edge on. */
+function useShadeStyle(turned: SharedValue<number>, reduced: boolean, back: boolean) {
+  return useAnimatedStyle(() => {
+    const t = turned.value;
+    if (reduced) return { opacity: 0 };
+    const away = back ? Math.min(t, 0.5) : Math.min(1 - t, 0.5);
+    return { opacity: SHADE * (1 - Math.cos(away * Math.PI)) };
+  });
 }
 
 type Props = {
@@ -319,25 +300,48 @@ export function PlayingCard({
     );
   }, [faceUp, reduced, turned]);
 
-  const backStyle = useAnimatedStyle(() => {
+  const height = width * CARD_RATIO;
+
+  // One turn, seen as a physical card: the side that is up rotates away about its long axis while
+  // the card lifts toward the eye and tips back a little; the side turning from the light shades
+  // over; a band of light crosses it; at the middle its gilded edge shows; its shadow beneath
+  // spreads as it lifts and narrows as it turns edge on.
+  const backStyle = useSideStyle(turned, reduced, 0);
+  const faceStyle = useSideStyle(turned, reduced, 180);
+  const backShade = useShadeStyle(turned, reduced, true);
+  const faceShade = useShadeStyle(turned, reduced, false);
+
+  const sheenStyle = useAnimatedStyle(() => {
     const t = turned.value;
-    if (reduced) return { opacity: 1 - t };
-    const lift = 1 + Math.sin(t * Math.PI) * LIFT;
+    if (reduced) return { opacity: 0 };
     return {
-      opacity: 1,
-      transform: [{ perspective: PERSPECTIVE }, { rotateY: `${t * 180}deg` }, { scale: lift }],
+      opacity: Math.sin(t * Math.PI),
+      transform: [{ translateX: -width * 1.15 + t * width * 2.3 }, { rotate: '16deg' }],
     };
   });
-  const faceStyle = useAnimatedStyle(() => {
+
+  const edgeStyle = useAnimatedStyle(() => {
     const t = turned.value;
-    if (reduced) return { opacity: t };
-    const lift = 1 + Math.sin(t * Math.PI) * LIFT;
+    if (reduced) return { opacity: 0 };
+    const facing = Math.abs(Math.cos(t * Math.PI));
+    const seen = facing >= EDGE_SEEN ? 0 : 1 - facing / EDGE_SEEN;
+    const up = Math.sin(t * Math.PI);
     return {
-      opacity: 1,
+      opacity: seen,
+      transform: [{ translateY: -RISE * up }, { scaleY: 1 + LIFT * up }],
+    };
+  });
+
+  const shadowStyle = useAnimatedStyle(() => {
+    const t = turned.value;
+    const up = reduced ? 0 : Math.sin(t * Math.PI);
+    const facing = reduced ? 1 : Math.abs(Math.cos(t * Math.PI));
+    return {
+      opacity: 0.62 - 0.24 * up,
       transform: [
-        { perspective: PERSPECTIVE },
-        { rotateY: `${180 + t * 180}deg` },
-        { scale: lift },
+        { translateY: 14 + 16 * up },
+        { scaleX: Math.max(0.16, facing) * (1 + 0.06 * up) },
+        { scaleY: 1 + 0.05 * up },
       ],
     };
   });
@@ -347,20 +351,71 @@ export function PlayingCard({
     onTurn();
   };
 
+  const sheen = (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        styles.sheen,
+        { width: width * 0.62, height: height * 1.5, top: -height * 0.25 },
+        sheenStyle,
+      ]}
+    >
+      <LinearGradient
+        colors={[`${SHEEN}0)`, `${SHEEN}0.22)`, `${SHEEN}0.32)`, `${SHEEN}0.22)`, `${SHEEN}0)`]}
+        locations={[0, 0.38, 0.5, 0.62, 1]}
+        start={{ x: 0, y: 0.5 }}
+        end={{ x: 1, y: 0.5 }}
+        style={StyleSheet.absoluteFill}
+      />
+    </Animated.View>
+  );
+
   return (
     <Pressable
       accessibilityRole={role}
       accessibilityLabel={spoken}
       accessibilityHint={hint}
       onPress={turn}
-      style={[styles.card, { width, height: width * CARD_RATIO }]}
+      style={[styles.card, { width, height }]}
       testID="playing-card"
     >
+      <Animated.View pointerEvents="none" style={[styles.shadow, shadowStyle]}>
+        <Svg width={width * 1.2} height={height * 1.12}>
+          <Defs>
+            <RadialGradient id="pc-shadow" cx="50%" cy="50%" rx="50%" ry="50%">
+              <Stop offset={0} stopColor="#01050C" stopOpacity={0.75} />
+              <Stop offset={0.62} stopColor="#01050C" stopOpacity={0.32} />
+              <Stop offset={1} stopColor="#01050C" stopOpacity={0} />
+            </RadialGradient>
+          </Defs>
+          <Rect x={0} y={0} width={width * 1.2} height={height * 1.12} fill="url(#pc-shadow)" />
+        </Svg>
+      </Animated.View>
       <Animated.View style={[styles.side, backStyle]} testID="playing-card-back">
-        <Back width={width} />
+        <View style={styles.face}>
+          <CardBack width={width} height={height} radius={RADIUS} />
+          <GildedEdge width={width} height={height} radius={RADIUS} id="pc-back-edge" />
+          {sheen}
+          <Animated.View pointerEvents="none" style={[styles.shade, backShade]} />
+        </View>
       </Animated.View>
       <Animated.View style={[styles.side, faceStyle]} testID="playing-card-face">
-        <Face card={card} number={number} width={width} />
+        <View style={styles.face}>
+          <Face card={card} number={number} width={width} />
+          {sheen}
+          <Animated.View pointerEvents="none" style={[styles.shade, faceShade]} />
+        </View>
+      </Animated.View>
+      <Animated.View pointerEvents="none" style={[styles.edge, edgeStyle]}>
+        <LinearGradient
+          colors={
+            FOIL.map(([, color]) => color) as unknown as readonly [string, string, ...string[]]
+          }
+          locations={
+            FOIL.map(([offset]) => offset) as unknown as readonly [number, number, ...number[]]
+          }
+          style={StyleSheet.absoluteFill}
+        />
       </Animated.View>
     </Pressable>
   );
@@ -371,26 +426,20 @@ const fill = { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 } as c
 const styles = StyleSheet.create({
   card: { alignSelf: 'center' },
   side: { ...fill, backfaceVisibility: 'hidden' },
-  face: {
-    flex: 1,
-    borderRadius: RADIUS,
-    overflow: 'hidden',
-    backgroundColor: NAVY,
-    borderWidth: 1,
-    borderColor: 'rgba(232,204,160,0.7)',
-  },
-  paper: { borderColor: 'rgba(184,149,90,0.75)' },
+  face: { flex: 1, borderRadius: RADIUS, overflow: 'hidden', backgroundColor: NAVY },
   overlay: { position: 'absolute', top: 0, left: 0 },
-  inner: {
+  shadow: { position: 'absolute', left: '-10%', top: '-6%' },
+  shade: { ...fill, backgroundColor: '#000000' },
+  sheen: { position: 'absolute', left: 0 },
+  edge: {
     position: 'absolute',
-    top: INSET,
-    left: INSET,
-    right: INSET,
-    bottom: INSET,
-    borderRadius: RADIUS - INSET / 2,
-    borderWidth: 0.75,
-    borderColor: GOLD,
-    opacity: 0.55,
+    top: 2,
+    bottom: 2,
+    left: '50%',
+    width: 3.4,
+    marginLeft: -1.7,
+    borderRadius: 1.7,
+    overflow: 'hidden',
   },
   index: { position: 'absolute', alignItems: 'center', gap: 2, minWidth: 20 },
   indexNear: { top: 11, left: 10 },
@@ -460,24 +509,5 @@ const styles = StyleSheet.create({
     lineHeight: 13,
     letterSpacing: 2,
     textAlign: 'center',
-  },
-  field: {
-    position: 'absolute',
-    top: INSET,
-    left: INSET,
-    right: INSET,
-    bottom: INSET,
-    borderRadius: RADIUS - INSET / 2,
-    overflow: 'hidden',
-  },
-  emblem: { ...fill, alignItems: 'center', justifyContent: 'center' },
-  markRow: { position: 'absolute', left: 0, right: 0, bottom: 34, alignItems: 'center' },
-  mark: {
-    fontFamily: 'CormorantGaramond_500Medium',
-    fontSize: 13,
-    lineHeight: 16,
-    letterSpacing: 5,
-    color: GOLD,
-    opacity: 0.85,
   },
 });
