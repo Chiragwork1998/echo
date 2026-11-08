@@ -1,49 +1,42 @@
+import { dayAndMonth } from '@/features/echoes/entryFacts';
 import type { BackupSummary, OpenFailure, RestoreCounts } from '@/services/importJournal';
 
 /**
  * WORKING COPY for Restore from a backup, in You's Your data. Not locked: the owner approves or
  * replaces it with You's design. The preview's and the result's shapes are the lead's
  * ("This backup holds 42 entries, from 3 March to 8 November. Add them to this phone?" and
- * "42 entries restored. 3 were already on this phone.").
+ * "42 entries restored. 3 were already on this phone."). Its days are written as the rest of ECHO
+ * writes them, in the phone's own way: "from March 3 to November 8" on a phone set to US English.
  */
-
-const MONTHS = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-];
 
 const count = (value: number, one: string, many: string) => `${value} ${value === 1 ? one : many}`;
 
-/** '2026-03-03' as '3 March', or '3 March 2026'. */
-function dayText(day: string, withYear: boolean): string {
-  const [year, month, date] = day.split('-').map(Number);
-  const name = MONTHS[(month ?? 1) - 1] ?? '';
-  return withYear ? `${date} ${name} ${year}` : `${date} ${name}`;
-}
+/**
+ * '2026-03-03' as Echoes writes the day, "March 3" or "3 March" as the phone does, with the year
+ * when asked. Its spaces do not break, so no line of the sheet ends inside a date.
+ */
+const dayText = (day: string, withYear: boolean, locale?: string): string =>
+  dayAndMonth(day, withYear, locale).replace(/\s/g, ' ');
 
 /**
  * The span a backup covers. The year is left out when it is this one, said once at the end when both
- * days share another, and said for both when they differ.
+ * days share another, and said for both when they differ. `locale` is for tests.
  */
-export function spanText(first: string, last: string, thisYear: number, total: number): string {
+export function spanText(
+  first: string,
+  last: string,
+  thisYear: number,
+  total: number,
+  locale?: string,
+): string {
   const firstYear = Number(first.slice(0, 4));
   const lastYear = Number(last.slice(0, 4));
   const sameYear = firstYear === lastYear;
   const lastWithYear = !sameYear || lastYear !== thisYear;
   if (first === last) {
-    return `${total === 1 ? 'from' : 'all from'} ${dayText(last, lastWithYear)}`;
+    return `${total === 1 ? 'from' : 'all from'} ${dayText(last, lastWithYear, locale)}`;
   }
-  return `from ${dayText(first, !sameYear)} to ${dayText(last, lastWithYear)}`;
+  return `from ${dayText(first, !sameYear, locale)} to ${dayText(last, lastWithYear, locale)}`;
 }
 
 /** "42 entries", "2 drafts", or "42 entries and 2 drafts". */
@@ -66,9 +59,9 @@ export const restoreCopy = {
 
   title: 'Restore from a backup',
 
-  preview(summary: BackupSummary, thisYear: number): string {
+  preview(summary: BackupSummary, thisYear: number, locale?: string): string {
     const total = summary.entries + summary.drafts;
-    const span = spanText(summary.firstDay, summary.lastDay, thisYear, total);
+    const span = spanText(summary.firstDay, summary.lastDay, thisYear, total, locale);
     const question = total === 1 ? 'Add it to this phone?' : 'Add them to this phone?';
     return `This backup holds ${holding(summary.entries, summary.drafts)}, ${span}. ${question}`;
   },

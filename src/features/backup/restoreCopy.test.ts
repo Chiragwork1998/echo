@@ -1,43 +1,71 @@
+import { longDate } from '@/features/echoes/entryFacts';
+
 import { restoreCopy, spanText } from './restoreCopy';
 import { typeset } from './RestoreSheet';
 
 const none = { entries: 0, drafts: 0, existing: 0, deleted: 0, withoutAudio: 0 };
 
+/** A date as the preview holds it: its spaces do not break, so no line ends inside it. */
+const day = (text: string) => text.replace(/ /g, ' ');
+
 describe('the preview', () => {
   const summary = { entries: 42, drafts: 0, firstDay: '2026-03-03', lastDay: '2026-11-08' };
 
-  it('is the lead’s sentence', () => {
-    expect(restoreCopy.preview(summary, 2026)).toBe(
-      'This backup holds 42 entries, from 3 March to 8 November. Add them to this phone?',
+  it('is the lead’s sentence, with its days as the phone writes them', () => {
+    expect(restoreCopy.preview(summary, 2026, 'en-US')).toBe(
+      `This backup holds 42 entries, from ${day('March 3')} to ${day('November 8')}. Add them to this phone?`,
     );
+    expect(restoreCopy.preview(summary, 2026, 'en-GB')).toBe(
+      `This backup holds 42 entries, from ${day('3 March')} to ${day('8 November')}. Add them to this phone?`,
+    );
+  });
+
+  // Echoes heads an entry "Sunday, November 8" and a card says "Sun, Nov 8": the preview of the
+  // same day must not say "8 November" beside them.
+  it('writes a day exactly as Echoes writes it, in whatever language the phone is in', () => {
+    const preview = spanText('2026-11-08', '2026-11-08', 2026, 1).replace(/ /g, ' ');
+    expect(longDate('2026-11-08', 2026)).toContain(preview.replace(/^from /, ''));
   });
 
   it('names drafts apart from entries', () => {
-    expect(restoreCopy.preview({ ...summary, entries: 40, drafts: 2 }, 2026)).toBe(
-      'This backup holds 40 entries and 2 drafts, from 3 March to 8 November. Add them to this phone?',
+    expect(restoreCopy.preview({ ...summary, entries: 40, drafts: 2 }, 2026, 'en-US')).toBe(
+      `This backup holds 40 entries and 2 drafts, from ${day('March 3')} to ${day('November 8')}. Add them to this phone?`,
     );
     expect(
-      restoreCopy.preview({ ...summary, entries: 0, drafts: 1, firstDay: '2026-11-08' }, 2026),
-    ).toBe('This backup holds 1 draft, from 8 November. Add it to this phone?');
+      restoreCopy.preview(
+        { ...summary, entries: 0, drafts: 1, firstDay: '2026-11-08' },
+        2026,
+        'en-US',
+      ),
+    ).toBe(`This backup holds 1 draft, from ${day('November 8')}. Add it to this phone?`);
   });
 
   it('speaks of one entry, and of many on one day', () => {
-    const day = { firstDay: '2026-03-03', lastDay: '2026-03-03' };
-    expect(restoreCopy.preview({ entries: 1, drafts: 0, ...day }, 2026)).toBe(
-      'This backup holds 1 entry, from 3 March. Add it to this phone?',
+    const days = { firstDay: '2026-03-03', lastDay: '2026-03-03' };
+    expect(restoreCopy.preview({ entries: 1, drafts: 0, ...days }, 2026, 'en-US')).toBe(
+      `This backup holds 1 entry, from ${day('March 3')}. Add it to this phone?`,
     );
-    expect(restoreCopy.preview({ entries: 3, drafts: 0, ...day }, 2026)).toBe(
-      'This backup holds 3 entries, all from 3 March. Add them to this phone?',
+    expect(restoreCopy.preview({ entries: 3, drafts: 0, ...days }, 2026, 'en-US')).toBe(
+      `This backup holds 3 entries, all from ${day('March 3')}. Add them to this phone?`,
     );
   });
 
   it('gives the year only when it is not this one, and once when both days share it', () => {
-    expect(spanText('2025-03-03', '2025-11-08', 2026, 9)).toBe('from 3 March to 8 November 2025');
-    expect(spanText('2025-03-03', '2026-11-08', 2026, 9)).toBe(
-      'from 3 March 2025 to 8 November 2026',
+    expect(spanText('2025-03-03', '2025-11-08', 2026, 9, 'en-US')).toBe(
+      `from ${day('March 3')} to ${day('November 8, 2025')}`,
     );
-    expect(spanText('2025-03-03', '2025-03-03', 2026, 1)).toBe('from 3 March 2025');
-    expect(spanText('2026-01-01', '2026-12-31', 2026, 9)).toBe('from 1 January to 31 December');
+    expect(spanText('2025-03-03', '2026-11-08', 2026, 9, 'en-US')).toBe(
+      `from ${day('March 3, 2025')} to ${day('November 8, 2026')}`,
+    );
+    expect(spanText('2025-03-03', '2025-03-03', 2026, 1, 'en-US')).toBe(
+      `from ${day('March 3, 2025')}`,
+    );
+    expect(spanText('2026-01-01', '2026-12-31', 2026, 9, 'en-US')).toBe(
+      `from ${day('January 1')} to ${day('December 31')}`,
+    );
+    expect(spanText('2025-03-03', '2025-11-08', 2026, 9, 'en-GB')).toBe(
+      `from ${day('3 March')} to ${day('8 November 2025')}`,
+    );
   });
 });
 
