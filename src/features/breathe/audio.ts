@@ -108,6 +108,10 @@ const RAMP_STEP_MS = 25;
 /**
  * Moves a player's volume to `to` over `ms`, in small steps. A loop never starts or stops at full
  * volume: its first sample carries on from the round before, so a hard start could tick.
+ *
+ * The ramp keeps to the clock, not to a count of steps. A busy phone runs every step late (the v5
+ * walk measured 44 ms apart, not 25), which made a 1.2 s fade last 2.7 s; now a late step only
+ * moves further, and the ramp ends on time.
  */
 export function rampVolume(player: BreathPlayer, to: number, ms: number, then?: () => void) {
   let from = 0;
@@ -116,17 +120,15 @@ export function rampVolume(player: BreathPlayer, to: number, ms: number, then?: 
   } catch {
     from = to;
   }
-  const steps = Math.max(1, Math.round(ms / RAMP_STEP_MS));
-  let step = 0;
+  const began = Date.now();
   const timer = setInterval(() => {
-    step += 1;
-    const t = step / steps;
+    const t = ms > 0 ? Math.min(1, (Date.now() - began) / ms) : 1;
     try {
       player.volume = from + (to - from) * t;
     } catch {
       // Released mid ramp.
     }
-    if (step >= steps) {
+    if (t >= 1) {
       clearInterval(timer);
       then?.();
     }
