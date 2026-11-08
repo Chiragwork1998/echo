@@ -1,7 +1,7 @@
 import { fireEvent, screen } from '@testing-library/react-native';
 import { render } from '@/testing/render';
 
-import { Loading, Notice, Row, SkeletonLine } from './parts';
+import { Loading, Notice, Row, SkeletonLine, SwitchRow } from './parts';
 
 describe('Row while it works', () => {
   it('has no spinner: a tide line runs along its rule and its label says the work', async () => {
@@ -54,5 +54,29 @@ describe('Notice', () => {
     expect(
       screen.getByText('Something went quietly wrong.').parent?.props.accessibilityLiveRegion,
     ).toBe('polite');
+  });
+});
+
+describe('SwitchRow', () => {
+  it('is a switch with its state, and asks for the opposite on press', async () => {
+    const onChange = jest.fn();
+    await render(<SwitchRow label="Gentle reminder" value={false} onChange={onChange} />);
+    const row = screen.getByRole('switch', { name: 'Gentle reminder' });
+    expect(row).not.toBeChecked();
+    await fireEvent.press(row);
+    expect(onChange).toHaveBeenCalledWith(true);
+  });
+
+  it('reports checked when on, and holds the golden knob position', async () => {
+    await render(<SwitchRow label="Gentle reminder" value onChange={jest.fn()} />);
+    expect(screen.getByRole('switch', { name: 'Gentle reminder' })).toBeChecked();
+    expect(screen.getByTestId('switch-fill')).toBeTruthy();
+  });
+
+  it('does nothing when disabled', async () => {
+    const onChange = jest.fn();
+    await render(<SwitchRow label="Gentle reminder" value={false} onChange={onChange} disabled />);
+    await fireEvent.press(screen.getByRole('switch', { name: 'Gentle reminder' }));
+    expect(onChange).not.toHaveBeenCalled();
   });
 });

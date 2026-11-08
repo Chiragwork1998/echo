@@ -13,6 +13,7 @@ import { Icon } from '@/components/Icon';
 import { links } from '@/config/links';
 import { copy } from '@/content/copy';
 import { EASE } from '@/design/ease';
+import { cue } from '@/design/haptics';
 import { useTheme, type ThemePreference } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 import { PlusSection } from '@/features/plus/PlusSection';
@@ -55,7 +56,11 @@ function Appearance() {
             detail={line}
             spoken={line ? `${label}. ${line}` : label}
             selected={preference === value}
-            onPress={() => setPreference(value)}
+            onPress={() => {
+              if (preference === value) return;
+              cue('tick');
+              setPreference(value);
+            }}
             trailing={<ChoiceMarker selected={preference === value} />}
           />
         ))}

@@ -16,17 +16,11 @@ import {
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
-import Animated, {
-  ReduceMotion,
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-} from 'react-native-reanimated';
-
 import { EchoText } from '@/components/EchoText';
 import { GlassBlur } from '@/components/GlassCard';
 import { Icon } from '@/components/Icon';
 import { SoftScrim } from '@/components/SoftScrim';
+import { SwitchTrack } from '@/components/SwitchTrack';
 import { TideLine } from '@/components/TideLine';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
@@ -285,38 +279,6 @@ export function Row({
   );
 }
 
-// Measured from the Privacy goldens, as ToggleRow is (docs/SPEC_CONFLICTS.md, C-13).
-const TRACK = { width: 44, height: 25 };
-const KNOB = 24;
-const KNOB_INSET = 0.5;
-const TRAVEL = TRACK.width - KNOB - KNOB_INSET * 2;
-const KNOB_COLOUR = '#FDFCFC';
-const TRACK_ON_ALPHA = 'B3'; // accentWarm at 70%
-
-/** The golden's switch, drawn inside a row. Decorative: the row carries the role and the state. */
-function SwitchTrack({ value }: { value: boolean }) {
-  const { colors } = useTheme();
-  const on = useSharedValue(value ? 1 : 0);
-  useEffect(() => {
-    on.set(
-      withSpring(value ? 1 : 0, { ...tokens.motion.spring, reduceMotion: ReduceMotion.System }),
-    );
-  }, [value, on]);
-  const knob = useAnimatedStyle(() => ({ transform: [{ translateX: on.get() * TRAVEL }] }));
-  return (
-    <View
-      style={[
-        styles.track,
-        value
-          ? { backgroundColor: `${colors.accentWarm}${TRACK_ON_ALPHA}` }
-          : { borderColor: colors.borderGlass, borderWidth: 1 },
-      ]}
-    >
-      <Animated.View style={[styles.knob, knob]} />
-    </View>
-  );
-}
-
 type SwitchRowProps = {
   label: string;
   value: boolean;
@@ -346,24 +308,26 @@ export function SwitchRow({
       onPress={() => onChange(!value)}
       style={({ pressed }) => [pressed && styles.pressed, disabled && styles.disabled]}
     >
-      <View style={styles.row}>
-        <View style={styles.text}>
-          <EchoText variant="bodyM" maxFontSizeMultiplier={1.6}>
-            {label}
-          </EchoText>
-          {detail ? (
-            <EchoText
-              variant="bodyM"
-              color="textSecondary"
-              style={detailText}
-              maxFontSizeMultiplier={1.6}
-            >
-              {keepTogether(detail)}
+      {({ pressed }) => (
+        <View style={styles.row}>
+          <View style={styles.text}>
+            <EchoText variant="bodyM" maxFontSizeMultiplier={1.6}>
+              {label}
             </EchoText>
-          ) : null}
+            {detail ? (
+              <EchoText
+                variant="bodyM"
+                color="textSecondary"
+                style={detailText}
+                maxFontSizeMultiplier={1.6}
+              >
+                {keepTogether(detail)}
+              </EchoText>
+            ) : null}
+          </View>
+          <SwitchTrack value={value} pressed={pressed} />
         </View>
-        <SwitchTrack value={value} />
-      </View>
+      )}
     </Pressable>
   );
 }
@@ -514,14 +478,6 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.66 },
   working: { opacity: 0.72 },
   disabled: { opacity: 0.42 },
-  track: {
-    width: TRACK.width,
-    height: TRACK.height,
-    borderRadius: TRACK.height / 2,
-    padding: KNOB_INSET,
-    justifyContent: 'center',
-  },
-  knob: { width: KNOB, height: KNOB, borderRadius: KNOB / 2, backgroundColor: KNOB_COLOUR },
   action: {
     minHeight: tokens.size.tapTarget,
     justifyContent: 'center',

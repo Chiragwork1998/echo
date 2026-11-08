@@ -53,6 +53,8 @@ const REDUCED_UNMOUNT_MS = 160;
 /** A dialog handing over to the next one: the new words fade in on the same sheet. */
 const HANDOFF_MS = 200;
 
+const nothing = () => undefined;
+
 /** True while the sheet is on its way out: its buttons hold the look they were pressed with. */
 const LeavingContext = createContext(false);
 
@@ -215,8 +217,8 @@ export function Sheet({
       transparent
       animationType="none"
       visible={present}
-      // A window on its way out is no longer the sheet: it names nothing and takes no Back.
-      onRequestClose={leaving ? undefined : onClose}
+      // A window on its way out is no longer the sheet: it names nothing, and Back does nothing.
+      onRequestClose={leaving ? nothing : onClose}
       testID={leaving ? undefined : testID}
     >
       <LeavingContext.Provider value={leaving}>

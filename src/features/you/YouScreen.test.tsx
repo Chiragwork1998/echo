@@ -90,6 +90,16 @@ describe('You: theme', () => {
     await fireEvent.press(screen.getByRole('radio', { name: new RegExp(youCopy.automatic) }));
     expect(usePreferences.getState().theme).toBe('automatic');
   });
+
+  it('is felt as a tick on a new choice, and not on the one already chosen', async () => {
+    jest.mocked(cue).mockClear();
+    await render(<YouScreen />);
+    await fireEvent.press(screen.getByRole('radio', { name: youCopy.night }));
+    expect(cue).not.toHaveBeenCalled();
+    await fireEvent.press(screen.getByRole('radio', { name: youCopy.day }));
+    expect(cue).toHaveBeenCalledTimes(1);
+    expect(cue).toHaveBeenCalledWith('tick');
+  });
 });
 
 describe('You: reminder', () => {
