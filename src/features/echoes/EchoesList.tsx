@@ -85,7 +85,9 @@ export function EchoesList({ rows, onOpen, waiting = false }: Props) {
   // Dimmed glass loses its blur on Android, so with glass in the list the list stays whole and the
   // rows on the glass are what dim.
   const { glass, arrival } = useGlassAware(dim);
-  const dimmed = useAnimatedStyle(() => ({ opacity: dim.get() }));
+  // One style for the view's whole life, whole when there is glass in the list: taking the style
+  // away when the glass is found would draw the list plain, at once, with nothing said of its fade.
+  const dimmed = useAnimatedStyle(() => ({ opacity: glass ? 1 : dim.get() }));
 
   let index = 0;
   return (
@@ -97,7 +99,7 @@ export function EchoesList({ rows, onOpen, waiting = false }: Props) {
     >
       <ArrivalContext.Provider value={arrival}>
         <Animated.View
-          style={[styles.months, glass ? undefined : dimmed]}
+          style={[styles.months, dimmed]}
           pointerEvents={waiting ? 'none' : 'auto'}
           accessibilityElementsHidden={waiting}
           importantForAccessibility={waiting ? 'no-hide-descendants' : 'auto'}

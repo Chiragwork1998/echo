@@ -6,14 +6,21 @@ import { cue } from '@/design/haptics';
 import { ThemeProvider } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 import { useReduceMotion } from '@/design/useReduceMotion';
+import { qaKeyboardHeight } from '@/features/journal-session/sky';
 import { ownWindowOpen } from '@/state/ownWindows';
 import { modalHost } from '@/testing/dialogs';
-import { reanimatedMock } from '@/testing/reanimatedMock';
+import { reanimatedMock, uiRuntime } from '@/testing/reanimatedMock';
 
 import { Sheet, SheetAction, SheetButton } from './Sheet';
 
 jest.mock('@/design/haptics');
 jest.mock('@/design/useReduceMotion', () => ({ useReduceMotion: jest.fn(() => false) }));
+// The visual harness reserves the room of a keyboard by name: an ordinary function, which is what the
+// sheet's worklet must not call (see 'a sheet on the UI thread').
+jest.mock('@/features/journal-session/sky', () => ({
+  ...jest.requireActual('@/features/journal-session/sky'),
+  qaKeyboardHeight: jest.fn(() => 0),
+}));
 
 const reduced = useReduceMotion as jest.Mock;
 const realTiming = reanimatedMock.withTiming;
@@ -54,6 +61,8 @@ beforeEach(() => {
   reduced.mockReturnValue(false);
   timing.mockClear();
   jest.mocked(cue).mockClear();
+  jest.mocked(qaKeyboardHeight).mockReturnValue(0);
+  uiRuntime.ran = 0;
 });
 afterEach(() => {
   timing.mockImplementation(realTiming as never);
@@ -472,5 +481,32 @@ describe('a sheet over the keyboard', () => {
     await advance(1500);
     expect(heard.every(({ remove }) => remove.mock.calls.length === 1)).toBe(true);
     listen.mockRestore();
+  });
+});
+
+describe('a sheet on the UI thread', () => {
+  // The walk (v9): every bottom sheet killed the app on Android ("Tried to synchronously call a
+  // Remote Function"). The ground's worklet called qaKeyboardHeight(), a plain function, and a
+  // worklet runs on the UI thread, where a function that is not a worklet cannot be called.
+  const stage = () =>
+    StyleSheet.flatten(
+      screen.getByTestId('sheet-stage', { includeHiddenElements: true }).props.style,
+    ) as { paddingBottom?: number };
+
+  it('works out its ground there without calling anything that is not a worklet', async () => {
+    await render(sheet({ visible: true }));
+    // Its styles were run as the UI runtime runs them, and nothing in them threw.
+    expect(uiRuntime.ran).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: 'Keep it' })).toBeEnabled();
+    expect(stage().paddingBottom ?? 0).toBe(0);
+  });
+
+  it('is given the room the harness reserves for a keyboard as a number, drawn with the sheet', async () => {
+    jest.mocked(qaKeyboardHeight).mockReturnValue(300);
+    await render(sheet({ visible: true }));
+    // 300 for the keyboard and the gap above it, less the sheet's own distance from the edge.
+    expect(stage().paddingBottom).toBe(
+      300 + tokens.space[8] - (tokens.space[12] + tokens.space[8]),
+    );
   });
 });

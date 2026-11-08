@@ -92,12 +92,25 @@ export type ClockText = {
   spoken: string;
 };
 
+// Making a formatter is the slow part of writing a time (milliseconds on a phone), and the dial writes
+// one for every step the handle takes: made once for the device's format and used for all of them.
+const formats = new Map<string, Intl.DateTimeFormat>();
+function formatterFor(locale: string | undefined, hour12: boolean | undefined) {
+  const key = `${locale ?? ''}|${hour12 ?? ''}`;
+  let format = formats.get(key);
+  if (!format) {
+    format = new Intl.DateTimeFormat(locale, { hour: 'numeric', minute: '2-digit', hour12 });
+    formats.set(key, format);
+  }
+  return format;
+}
+
 /** The time in the device's own format. 9:30 PM in en-US, 21:30 on a 24-hour clock. */
 export function clockText(minutes: number, { locale, hour12 }: ClockFormat = {}): ClockText {
   const wrapped = wrapMinutes(Math.round(minutes));
   const date = new Date(2000, 0, 1, Math.floor(wrapped / 60), wrapped % 60);
   try {
-    const format = new Intl.DateTimeFormat(locale, { hour: 'numeric', minute: '2-digit', hour12 });
+    const format = formatterFor(locale, hour12);
     const parts = format.formatToParts(date);
     const period = parts.find((part) => part.type === 'dayPeriod')?.value;
     const main = parts

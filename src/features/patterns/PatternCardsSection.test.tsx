@@ -1,6 +1,6 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { router } from 'expo-router';
-import { Dimensions, Linking } from 'react-native';
+import { Dimensions, Linking, StyleSheet } from 'react-native';
 
 import { createMemoryJournal, setJournal, type Entry } from '@/features/journal';
 import { deviceClock } from '@/features/journal/localDay';
@@ -8,6 +8,7 @@ import { readPatternCards, type PatternCard } from '@/services/patterns';
 import { usePlusStore } from '@/services/plus/store';
 import { usePreferences } from '@/state/preferences';
 import { withBillingForTests, withoutBillingForTests } from '@/testing/plus';
+import { animationClock } from '@/testing/reanimatedMock';
 import { render } from '@/testing/render';
 
 import { patternsCopy } from './patternsCopy';
@@ -83,7 +84,10 @@ beforeEach(() => {
   jest.mocked(saveReading).mockResolvedValue({ ok: true, value: null });
   jest.mocked(clearReading).mockResolvedValue({ ok: true, value: null });
 });
-afterEach(() => setJournal(null));
+afterEach(() => {
+  setJournal(null);
+  animationClock.reset();
+});
 
 const press = async (name: string | RegExp) =>
   fireEvent.press(await screen.findByRole('button', { name }));
@@ -156,6 +160,36 @@ describe('pattern cards', () => {
     expect(screen.queryByText(patternsCopy.cards.reading)).toBeNull();
     // And gone once the card has arrived.
     await waitFor(() => expect(skeleton()).toBeNull(), { timeout: 3000 });
+  });
+
+  it('has the reading skeleton on the glass in the very frame the consent leaves: no bare sky between', async () => {
+    // The walk (v9): the consent went, the sky was bare for a frame, and the skeleton came. The
+    // consent is cut when the person agrees, so what takes its place is there in that frame, at rest,
+    // not arriving from nothing.
+    animationClock.stepped = true;
+    read.mockReturnValue(new Promise(() => undefined));
+    await render(<PatternsScreen />);
+    await press(patternsCopy.cards.read);
+    expect(await screen.findByText(patternsCopy.consent.title)).toBeTruthy();
+    // The page and the consent have finished arriving.
+    await act(async () => new Promise((done) => setTimeout(done, 900)));
+    await press(patternsCopy.consent.agree);
+    // Nothing has been advanced: this is the frame the tap was drawn in.
+    expect(screen.queryByText(patternsCopy.consent.title)).toBeNull();
+    // How whole the skeleton is, as it is drawn: the least opacity of it and everything above it.
+    let seen = 1;
+    for (
+      let node = screen.getByText(patternsCopy.cards.reading, {
+        includeHiddenElements: true,
+      }).parent;
+      node;
+      node = node.parent
+    ) {
+      const opacity = (StyleSheet.flatten(node.props.style) as { opacity?: number } | undefined)
+        ?.opacity;
+      seen = Math.min(seen, opacity ?? 1);
+    }
+    expect(seen).toBe(1);
   });
 
   it('keeps the earlier cards and says so calmly when the reader cannot be reached', async () => {
