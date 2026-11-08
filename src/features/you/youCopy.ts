@@ -24,6 +24,17 @@ export const youCopy = {
   reminderBlocked: 'Notifications are off for ECHO, so no reminder will arrive.',
   openSettings: 'Open Settings',
 
+  // The name on the book (src/features/book/bookCopy.ts asks for it once). Working copy, waiting on
+  // the owner, like the book's own.
+  bookName: 'Name on your book',
+  bookNameNone: 'Not written',
+  bookNameHint: 'Write, change or remove the name on your book',
+  bookNameRemove: 'Remove my name',
+  bookNameRemoveTitle: 'Take your name off the book?',
+  bookNameRemoveBody: 'It comes off the cover and the page. You can write it again at any time.',
+  bookNameCancel: 'Cancel',
+  bookNameFailed: 'Your name couldn’t be kept. Try again.',
+
   privacy: 'Privacy',
   lockUnavailable: 'Set up a passcode or biometrics on this phone first. The lock stays off.',
   lockFailed: 'The lock couldn’t be confirmed, so it stays off.',

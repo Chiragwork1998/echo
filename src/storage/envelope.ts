@@ -14,7 +14,8 @@ export type ObjectKind =
   | 'onboarding'
   | 'canary'
   | 'patterns'
-  | 'breathe';
+  | 'breathe'
+  | 'book';
 
 /** Deliberately carries nothing from the failed object: errors can reach logs and crash reports. */
 export class DecryptionError extends Error {

@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { loadBookOwner, resetBookOwner, useBookOwner, writeName } from '@/features/book/owner';
 import { emptyContent } from '@/features/journal/content';
 import { sqlJournalFor } from '@/features/journal/runtime';
 import { bootApp, resetGateForTests, useGate } from '@/state/gate';
@@ -135,6 +136,18 @@ describe('deleteAllLocal', () => {
     await deleteAllLocal();
     expect(rt.secrets.items.size).toBe(1);
     expect([...rt.secrets.items.values()][0]).not.toBe(before);
+  });
+
+  it('takes the name off the book, and the book may ask again', async () => {
+    resetBookOwner();
+    await writeName('Odile Marsh');
+    await deleteAllLocal();
+    expect(useBookOwner.getState()).toMatchObject({ loaded: false, name: null, asked: false });
+    await loadBookOwner();
+    expect(useBookOwner.getState()).toMatchObject({ loaded: true, name: null, asked: false });
+    const row = await rt.db.first('SELECT key FROM sealed_kv WHERE key = ?', ['book']);
+    expect(row).toBeNull();
+    resetBookOwner();
   });
 
   it('cancels the reminder', async () => {

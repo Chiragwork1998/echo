@@ -20,7 +20,7 @@ import { mixColor } from '@/design/mixColor';
 import { tokens } from '@/design/tokens';
 import { useReduceMotion } from '@/design/useReduceMotion';
 
-import { BookCover } from './CoverArt';
+import { BookCover, type Inscribing } from './CoverArt';
 import { LeafRiffle } from './LeafRiffle';
 import { usePaperLook, type Surface } from './paper';
 import { coverPin, risePin } from './qaPins';
@@ -98,10 +98,29 @@ type Props = {
   preparing?: boolean;
   /** The book is shutting: the cover returns, rests, and the book sinks (./useBookClosing). */
   closing?: ClosingState | null;
+  /** Whose book it is: on the cover, in foil. */
+  name?: string | null;
+  /** The closed book being asked whose it is, and answering (./NamePrompt.tsx). */
+  inscribing?: Inscribing | null;
+  /** The name has been stamped on the cover. */
+  onStamped?: () => void;
   onOpened?: () => void;
-  /** The page, which is there from the first moment, and is told when the cover has opened. */
-  children: (open: boolean) => ReactNode;
+  /**
+   * The page, which is there from the first moment, and is told when the cover has opened and when
+   * it has swung far enough off the page for the page's own head to arrive (`headed`).
+   */
+  children: (open: boolean, headed: boolean) => ReactNode;
 };
+
+/** The page's head arrives once the cover has swung this far: past edge-on, the page is uncovered. */
+const HEAD_AT = 0.7;
+
+/** Where the opening's in-and-out swing is, in its own time, when the cover reaches `c` (0 to 1). */
+function swingTimeAt(c: number): number {
+  const target = clamp01(c);
+  // The inverse of Easing.inOut(Easing.cubic).
+  return target < 0.5 ? Math.cbrt(target / 4) : 1 - Math.cbrt(2 * (1 - target)) / 2;
+}
 
 /**
  * A book arriving and opening: it comes forward (or rises), and the cloth cover, a board with an
@@ -122,6 +141,9 @@ export function BookStage({
   echoes = 0,
   preparing = false,
   closing = null,
+  name = null,
+  inscribing = null,
+  onStamped,
   onOpened,
   children,
 }: Props) {
@@ -130,6 +152,7 @@ export function BookStage({
   const arrive = useSharedValue(0);
   const cover = useSharedValue(0);
   const [opened, setOpened] = useState(false);
+  const [headed, setHeaded] = useState(false);
   // The harness can hold the opening at a moment, to look at it (./qaPins). Never set in a real app.
   const [pin] = useState(() => ({ cover: coverPin(), rise: risePin() }));
   const phase = !start ? 'waiting' : closing ? 'closing' : opened ? 'open' : 'closed';
@@ -157,12 +180,15 @@ export function BookStage({
       reduceMotion: ReduceMotion.Never,
     });
     let total: number;
+    // When the page's head arrives: once the cover has swung well off the page.
+    let head: number;
     let unseat: ReturnType<typeof setTimeout> | undefined;
     if (reduced) {
       // Reduce Motion: the book fades in already open, in the time of a blink.
       cover.set(1);
       arrive.set(withTiming(1, timing(tokens.motion.fast)));
       total = tokens.motion.fast;
+      head = 0;
     } else if (pin.cover !== undefined || pin.rise !== undefined) {
       arrive.set(pin.rise ?? 1);
       cover.set(pin.cover ?? 0);
@@ -171,25 +197,31 @@ export function BookStage({
       cancelAnimation(arrive);
       cancelAnimation(cover);
       if (arrive.get() < BARELY) still.set(1);
+      const from = cover.get();
       arrive.set(withTiming(1, timing(HURRY_MS, Easing.out(Easing.cubic))));
       cover.set(withTiming(1, timing(HURRY_MS, Easing.inOut(Easing.cubic))));
       total = HURRY_MS;
+      head = from >= HEAD_AT ? 0 : HURRY_MS * swingTimeAt((HEAD_AT - from) / (1 - from));
     } else {
       const first = rising ? ritual.rise : ritual.forward;
       arrive.set(withTiming(1, timing(first)));
       cover.set(withDelay(first, withTiming(1, timing(ritual.cover, Easing.inOut(Easing.cubic)))));
       total = first + ritual.cover;
+      head = first + ritual.cover * swingTimeAt(HEAD_AT);
       // One small click as the board unseats: a book does not buzz while it rises, or while its
       // leaves riffle. It is felt once, where the cover first leaves the page: the board starts
       // from rest, so that is a little after the swing begins, not on its first frame.
       unseat = setTimeout(() => cue('tick'), first + ritual.cover * UNSEAT);
     }
+    const headTimer = setTimeout(() => setHeaded(true), head);
     const done = setTimeout(() => {
       setOpened(true);
+      setHeaded(true);
       report.current?.();
     }, total);
     return () => {
       clearTimeout(done);
+      clearTimeout(headTimer);
       if (unseat) clearTimeout(unseat);
     };
   }, [start, opened, hurry, reduced, entrance, ritual, arrive, cover, still, pin]);
@@ -350,7 +382,10 @@ export function BookStage({
         pointerEvents="none"
         style={[styles.edge, styles.edgeNear, { backgroundColor: look.leaves[0] }]}
       />
-      {children(phase === 'open' || phase === 'closing')}
+      {children(
+        phase === 'open' || phase === 'closing',
+        headed || opened || (pin.cover ?? 0) >= HEAD_AT,
+      )}
       {/* A few leaves lift from the spine in the wake of the cover. */}
       {closed && <LeafRiffle active count={leaves} cover={cover} look={look} />}
       {/* What the cover does to the page as it leaves it: its shadow, and the light it uncovers. */}
@@ -392,6 +427,17 @@ export function BookStage({
           testID="book-ribbon"
         />
       </View>
+      {/* Reduce Motion (or a screen reader) with a question to ask: the closed cover simply is. */}
+      {(reduced || shutReduced) && closing?.asking && closing.contact && (
+        <StillCover
+          height={height}
+          index={index}
+          volume={volume}
+          width={width}
+          inscribing={inscribing}
+          onStamped={onStamped}
+        />
+      )}
       {covering && (
         <Animated.View
           pointerEvents="none"
@@ -400,7 +446,15 @@ export function BookStage({
           style={[styles.hinge, swing]}
         >
           <Animated.View style={front}>
-            <BookCover height={height} index={index} volume={volume} width={width}>
+            <BookCover
+              height={height}
+              index={index}
+              volume={volume}
+              width={width}
+              name={name}
+              inscribing={inscribing}
+              onStamped={onStamped}
+            >
               {entrance === 'rise' && <ClothLight arrive={arrive} height={height} width={width} />}
               <Animated.View pointerEvents="none" style={[styles.dark, frontDark]} />
               {/* The board's top edge catches the light as it lands. */}
@@ -431,6 +485,62 @@ export function BookStage({
             />
             <Animated.View pointerEvents="none" style={[styles.dark, insideDark]} />
           </Animated.View>
+        </Animated.View>
+      )}
+    </Animated.View>
+  );
+}
+
+/**
+ * The closed cover under Reduce Motion, while the book is asked whose it is: it fades in where the book
+ * is, and a name, once written, comes in on a second face over it, so the title never jumps.
+ */
+function StillCover({
+  height,
+  index,
+  volume,
+  width,
+  inscribing,
+  onStamped,
+}: {
+  height: number;
+  index: number;
+  volume: Volume;
+  width: number;
+  inscribing: Inscribing | null;
+  onStamped?: () => void;
+}) {
+  const shown = useSharedValue(0);
+  const named = useSharedValue(0);
+  const written = inscribing?.phase === 'stamp' ? inscribing.name : null;
+  useEffect(() => {
+    shown.set(withTiming(1, { duration: tokens.motion.fast, reduceMotion: ReduceMotion.Never }));
+  }, [shown]);
+  const report = useRef(onStamped);
+  useEffect(() => {
+    report.current = onStamped;
+  });
+  useEffect(() => {
+    if (!written) return;
+    named.set(withTiming(1, { duration: tokens.motion.fast, reduceMotion: ReduceMotion.Never }));
+    const timer = setTimeout(() => report.current?.(), tokens.motion.fast);
+    return () => clearTimeout(timer);
+  }, [named, written]);
+  const plain = useAnimatedStyle(() => ({ opacity: shown.get() }));
+  const signed = useAnimatedStyle(() => ({ opacity: named.get() }));
+  return (
+    <Animated.View pointerEvents="none" testID="book-still-cover" style={[styles.hinge, plain]}>
+      <BookCover height={height} index={index} volume={volume} width={width} still />
+      {written && (
+        <Animated.View style={[StyleSheet.absoluteFill, signed]}>
+          <BookCover
+            height={height}
+            index={index}
+            volume={volume}
+            width={width}
+            name={written}
+            still
+          />
         </Animated.View>
       )}
     </Animated.View>

@@ -13,6 +13,9 @@ import {
 import { createOnboardingPersistence } from '@/state/onboardingStore';
 import { hydratePreferences, resetPreferences, usePreferences } from '@/state/preferences';
 
+import { saveOwner } from '@/features/book/ownerStore';
+
+import { installRuntime } from './runtime';
 import { createTestRuntime, everyStoredByte, type TestRuntime } from './testing/nodePorts';
 
 // Static guards. Each of these rules is one a future edit could break without any test failing. They
@@ -93,6 +96,37 @@ describe('privacy rules', () => {
     }
   });
 
+  // The name a person writes on their book (src/features/book/name.ts) is theirs. Nothing that sends,
+  // schedules, exports or gathers entries may so much as import where it is held, so no code path
+  // exists that could carry it off the phone. Only the book, the session that draws it, You, and
+  // Delete all data know of it.
+  const OWNER = /features\/book\/owner/;
+  const KEPT_FROM_THE_NAME = [
+    ...NETWORK,
+    'src/services/voiceApi.ts',
+    'src/services/reminders.ts',
+    'src/services/reminders.web.ts',
+    'src/services/exportJournal.ts',
+    'src/services/exportJournal.web.ts',
+    'src/features/patterns/gatherEntries.ts',
+  ];
+  it.each(KEPT_FROM_THE_NAME)('%s never reaches the name on the book', (path) => {
+    expect(read(path)).not.toMatch(OWNER);
+  });
+
+  it('lets only the book, the session, You and Delete all data hold the name', () => {
+    const everywhere = ['src', 'app']
+      .flatMap(sources)
+      .filter((path) => /\.tsx?$/.test(path) && !path.includes('.test.'));
+    const holders = everywhere.filter((path) => OWNER.test(read(path)));
+    expect(holders.length).toBeGreaterThan(0);
+    for (const path of holders) {
+      expect(path).toMatch(
+        /^src\/(features\/book\/|features\/journal-session\/ImmersiveSession\.tsx$|features\/you\/|services\/deleteAllLocal\.ts$)/,
+      );
+    }
+  });
+
   it.each(production)('%s never reports an error message', (path) => {
     // Native and JSON errors can quote what they failed on, which here is journal content.
     expect(read(path)).not.toMatch(/\b(error|err|e)\.message\b/);
@@ -123,6 +157,8 @@ describe('what the app actually does with private content', () => {
   const VOICE_BODY = 'MARKERVOICE';
   const DURATION = 4242;
   const REMINDER = '07:41';
+  // The name on the book, an invented one.
+  const OWNER_NAME = 'MARKEROWNERNAME';
   const MOOD = 'MARKERMOOD' as Mood;
   const ONBOARDING_MOOD = 'unsettled';
   const INTENT = 'understand_self';
@@ -149,6 +185,7 @@ describe('what the app actually does with private content', () => {
     ONBOARDING_MOOD,
     INTENT,
     MOOD,
+    OWNER_NAME,
     // Field names too: finding one would mean a whole record went down unsealed.
     'moodBefore',
     'durationSeconds',
@@ -165,7 +202,10 @@ describe('what the app actually does with private content', () => {
     await hydratePreferences(rt.db, rt.serial);
   });
 
-  afterEach(() => jest.restoreAllMocks());
+  afterEach(() => {
+    jest.restoreAllMocks();
+    installRuntime(null);
+  });
 
   function leaveRecording(recordingId: string) {
     const directory = rt.paths.recordingDirs[0] ?? '';
@@ -183,6 +223,10 @@ describe('what the app actually does with private content', () => {
       reminder: { time: REMINDER, enabled: true },
     });
     await flushOnboarding();
+
+    installRuntime(rt);
+    const owner = await saveOwner({ v: 1, name: OWNER_NAME, asked: true, namedOpens: 1 });
+    if (!owner.ok) throw new Error('the name was not kept');
 
     const journal = sqlJournalFor(rt);
     await journal.saveDraft('draft', content);

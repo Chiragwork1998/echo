@@ -42,7 +42,8 @@ const MIDDLE_LABEL = {
   stop: sessionCopy.quiet.stop,
 } as const;
 
-function Word(props: {
+/** One word of the quiet row, low on the sky: Cormorant, cream, with the sky's own shadow. */
+export function QuietWord(props: {
   label: string;
   onPress: () => void;
   strong?: boolean;
@@ -111,23 +112,23 @@ export function QuietControls({
       importantForAccessibility={visible ? 'auto' : 'no-hide-descendants'}
     >
       <View style={[styles.slot, styles.start]}>
-        <Word label={sessionCopy.quiet.back} onPress={onBack} testID="quiet-back" />
+        <QuietWord label={sessionCopy.quiet.back} onPress={onBack} testID="quiet-back" />
       </View>
       <View style={[styles.slot, styles.middle]}>
-        <Word
+        <QuietWord
           label={MIDDLE_LABEL[middle]}
           onPress={onMiddle}
           disabled={middleDisabled}
           testID="quiet-middle"
         />
-        {words && <Word label={words.label} onPress={words.onPress} testID="quiet-words" />}
+        {words && <QuietWord label={words.label} onPress={words.onPress} testID="quiet-words" />}
       </View>
       <View style={[styles.slot, styles.end]}>
         {canReflect && (
           // Reflect comes when the take is sealed, inside a row that may already be showing: it
           // comes up with the house curve rather than appearing whole beside a Write still fading.
           <Arrive testID="quiet-reflect-arrive">
-            <Word
+            <QuietWord
               label={copy.firstEcho.cta}
               onPress={onReflect}
               strong

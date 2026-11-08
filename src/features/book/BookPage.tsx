@@ -4,6 +4,7 @@ import { StyleSheet, TextInput, View, useWindowDimensions } from 'react-native';
 import { useLayout } from '@/design/layout';
 
 import { BookStage, type Entrance } from './BookStage';
+import type { Inscribing } from './CoverArt';
 import { ROW_CLEARANCE } from './bookPlace';
 import { Pages } from './Pages';
 import type { Ritual } from './ritual';
@@ -56,6 +57,14 @@ type Props = {
   preparing?: boolean;
   /** The book is shutting (./useBookClosing). */
   closing?: ClosingState | null;
+  /**
+   * Whose book it is, on the cover and in the page's head. `arrives` says how the head's name comes as
+   * the book opens: wiped in for the first few openings after it was written, then simply faded in.
+   */
+  owner?: { name: string; arrives: 'wipe' | 'fade' } | null;
+  /** The closed book being asked whose it is, and answering. */
+  inscribing?: Inscribing | null;
+  onStamped?: () => void;
   onOpened?: () => void;
   inputRef: RefObject<ComponentRef<typeof TextInput> | null>;
   value: string;
@@ -94,6 +103,9 @@ export function BookPage(props: Props) {
     echoes,
     preparing,
     closing = null,
+    owner = null,
+    inscribing = null,
+    onStamped,
     onOpened,
     children,
     ...page
@@ -120,9 +132,12 @@ export function BookPage(props: Props) {
         echoes={echoes}
         preparing={preparing}
         closing={closing}
+        name={owner?.name ?? null}
+        inscribing={inscribing}
+        onStamped={onStamped}
         onOpened={onOpened}
       >
-        {(open) => (
+        {(open, headed) => (
           <PaperProvider look={look}>
             <Pages
               {...page}
@@ -131,6 +146,7 @@ export function BookPage(props: Props) {
               look={look}
               volume={volume}
               closing={closing}
+              owner={owner ? { ...owner, headed } : null}
               stack={{ echoes: echoes ?? 0, room: frame.left, keeping: preparing }}
               hidden={!open}
               editable={page.editable && open}

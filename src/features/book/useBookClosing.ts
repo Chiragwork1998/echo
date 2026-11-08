@@ -16,6 +16,8 @@ export type ClosingState = {
   sinking: boolean;
   /** Reduce Motion: no leaf, no cover and no sink. The book fades where it is. */
   reduced: boolean;
+  /** The closed book will be asked something (whose it is), so Reduce Motion shows its cover. */
+  asking: boolean;
 };
 
 export type BeginOptions = {
@@ -94,6 +96,7 @@ export function useBookClosing(ritual: Ritual, reduced: boolean) {
           contact: false,
           sinking: fadesNow,
           reduced: still,
+          asking: Boolean(options.asking),
         });
         void (async () => {
           if (fadesNow) {

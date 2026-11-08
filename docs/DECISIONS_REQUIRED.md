@@ -7,6 +7,12 @@ Development of the locked onboarding and Today experience can begin. These decis
 - Approved golden screens and behavior specifications for Echoes.
 - Approved golden screens and behavior specifications for Patterns.
 - Approved golden screens and behavior specifications for You.
+- The words of the name on the book, which are working copy until the owner records them: ECHO asks
+  "Whose book is this?" once, inside the book, after an entry is kept (never in onboarding), with "Your
+  name goes on the cover. It stays on this phone.", the field "Your name", and "Write it" and "Not
+  now". You has the row "Name on your book" ("Not written" when there is none), its sheet, "Remove my
+  name", and the question "Take your name off the book?" with "It comes off the cover and the page. You
+  can write it again at any time." (`src/features/book/bookCopy.ts`, `src/features/you/youCopy.ts`).
 - Final app icon and store marketing artwork.
   - An interim icon is in use until the owner decides: the locked ECHO wordmark on Night navy `#13263A` (`assets/app/`, regenerate with `node scripts/generate-app-icon.mjs`).
 

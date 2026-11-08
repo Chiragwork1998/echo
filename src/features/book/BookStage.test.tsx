@@ -223,6 +223,7 @@ describe('the book shutting', () => {
     contact: false,
     sinking: false,
     reduced: false,
+    asking: false,
     ...patch,
   });
 

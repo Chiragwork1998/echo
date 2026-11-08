@@ -1,3 +1,4 @@
+import { resetBookOwner } from '@/features/book/owner';
 import { notifyJournalChanged } from '@/features/journal/api';
 import { sqlJournalFor } from '@/features/journal/runtime';
 import { bootApp } from '@/state/gate';
@@ -11,7 +12,8 @@ export type DeleteAllResult = { ok: true } | { ok: false; code: 'delete_incomple
 
 /**
  * Removes everything ECHO keeps on this device: entries, tombstones, audio, drafts, plaintext
- * leftovers, onboarding, preferences, reminder, and the encryption key. Irreversible, so ask first.
+ * leftovers, onboarding, preferences, reminder, the name on the book, and the encryption key.
+ * Irreversible, so ask first.
  *
  * Data goes first, then the key, then the sealed records, which hold the canary and the lock setting.
  * If this stops before the key, the key still opens whatever remains, the app starts normally with
@@ -32,6 +34,8 @@ export async function deleteAllLocal(): Promise<DeleteAllResult> {
   }
   resetOnboarding();
   resetPreferences();
+  // The name's sealed record went with the key; this forgets the copy held while the app runs.
+  resetBookOwner();
   notifyJournalChanged();
   await bootApp();
   return { ok: true };

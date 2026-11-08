@@ -11,4 +11,16 @@ export const bookCopy = {
     of: (page: number, pages: number) => `Page ${page} of ${pages}`,
   },
   another: 'Another volume',
+  /**
+   * Whose book this is: asked once, inside the book, after an entry is kept (never in onboarding).
+   * Working copy, waiting on the owner (docs/DECISIONS_REQUIRED.md). No hyphens, dashes or
+   * exclamation marks.
+   */
+  name: {
+    question: 'Whose book is this?',
+    line: 'Your name goes on the cover. It stays on this phone.',
+    placeholder: 'Your name',
+    write: 'Write it',
+    notNow: 'Not now',
+  },
 } as const;

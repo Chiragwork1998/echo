@@ -14,6 +14,7 @@ import { TabPage } from '@/features/tab-pages/TabPage';
 import { keepTogether } from '@/features/tab-pages/keepTogether';
 import { detail, runIn } from '@/features/tab-pages/textStyles';
 
+import { BookName } from './BookName';
 import { APP_VERSION, openPage, openSupport, SUPPORT_EMAIL } from './support';
 import { SupportSheet } from './SupportSheet';
 import { useDeleteAll, useExport, type ExportState } from './useDataActions';
@@ -319,6 +320,7 @@ export function YouScreen() {
     <TabPage title={youCopy.title}>
       <View style={styles.groups}>
         <PlusSection />
+        <BookName />
         <Appearance />
         <Reminder />
         <Privacy />

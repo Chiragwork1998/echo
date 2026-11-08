@@ -36,6 +36,7 @@ import { useReduceMotion } from '@/design/useReduceMotion';
 import { bookCopy } from './bookCopy';
 import { ArrivalFade } from '@/features/journal-session/ArrivalFade';
 
+import { InscribedName, nameType } from './InscribedName';
 import { LeftStack } from './LeftStack';
 import { linesOf, measuredText, pageCount, pageOfLine } from './pagination';
 import { Sheet, type PaperLook } from './paper';
@@ -131,6 +132,11 @@ type Props = {
   /** The book is shutting: the page is left by its last leaf, with the words that are on it. */
   closing?: ClosingState | null;
   /**
+   * Whose book it is: their name takes the volume's place in the page's head. It arrives once the
+   * cover is well off the page (`headed`): wiped in for the first few openings, then faded in.
+   */
+  owner?: { name: string; arrives: 'wipe' | 'fade'; headed: boolean } | null;
+  /**
    * The echoes the book holds, and the room between the page and the edge of the screen: the block of
    * earlier leaves at the spine is drawn from them. Left out, there is none.
    */
@@ -172,6 +178,7 @@ export function Pages({
   dimmed = false,
   arrival = 0,
   closing = null,
+  owner = null,
   stack,
   children,
 }: Props) {
@@ -404,6 +411,7 @@ export function Pages({
       text={blank ? '' : value}
       lead={lead}
       volume={volume}
+      name={owner?.name ?? null}
     />
   );
 
@@ -453,7 +461,7 @@ export function Pages({
           onPress={onTap}
           style={StyleSheet.absoluteFill}
         >
-          <Head look={look} metrics={metrics} volume={volume} />
+          <Head look={look} metrics={metrics} volume={volume} owner={owner} />
           <ArrivalFade
             arrival={arrival}
             filled={!concealed && value.length > 0}
@@ -621,7 +629,23 @@ export function Pages({
   );
 }
 
-function Head({ look, metrics, volume }: { look: PaperLook; metrics: Metrics; volume: Volume }) {
+/** The person's name in the head: the page's ink, quietened. */
+const HEAD_NAME = { size: 15, alpha: 0.72 } as const;
+const HEAD_WIPE_MS = 700;
+const HEAD_FADE_MS = 300;
+
+function Head({
+  look,
+  metrics,
+  volume,
+  owner = null,
+}: {
+  look: PaperLook;
+  metrics: Metrics;
+  volume: Volume;
+  /** Left out, or in a picture of the page, the name is simply there. */
+  owner?: { name: string; arrives?: 'wipe' | 'fade'; headed?: boolean } | null;
+}) {
   return (
     <View
       pointerEvents="none"
@@ -629,14 +653,77 @@ function Head({ look, metrics, volume }: { look: PaperLook; metrics: Metrics; vo
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
     >
-      <EchoText
-        variant="caption"
-        maxFontSizeMultiplier={1.4}
-        style={[styles.running, { color: look.muted }]}
-      >
-        {volume.subtitle}
-      </EchoText>
+      {owner ? (
+        <HeadName look={look} {...owner} />
+      ) : (
+        <EchoText
+          variant="caption"
+          maxFontSizeMultiplier={1.4}
+          style={[styles.running, { color: look.muted }]}
+        >
+          {volume.subtitle}
+        </EchoText>
+      )}
     </View>
+  );
+}
+
+/**
+ * The name in the page's head, in place of the volume's. As the book opens it arrives once the cover
+ * is well off the page: for the first few openings after it was written it is wiped in, as the cover's
+ * was stamped; after that it fades in, so it never becomes something to wait for (D-008). Under
+ * Reduce Motion it fades in over 180 ms.
+ */
+function HeadName({
+  look,
+  name,
+  arrives,
+  headed = true,
+}: {
+  look: PaperLook;
+  name: string;
+  arrives?: 'wipe' | 'fade';
+  headed?: boolean;
+}) {
+  const reduced = useReduceMotion();
+  const live = arrives !== undefined;
+  const wipe = live && arrives === 'wipe' && !reduced;
+  const shown = useSharedValue(live && !wipe ? 0 : 1);
+  useEffect(() => {
+    if (!live || wipe || !headed) return;
+    shown.set(
+      withTiming(1, {
+        duration: reduced ? FADE_MS : HEAD_FADE_MS,
+        easing: Easing.out(Easing.quad),
+        reduceMotion: ReduceMotion.Never,
+      }),
+    );
+  }, [headed, live, reduced, shown, wipe]);
+  const fade = useAnimatedStyle(() => ({ opacity: HEAD_NAME.alpha * shown.get() }));
+  const size = HEAD_NAME.size;
+  return (
+    <Animated.View testID="page-head-name" style={fade}>
+      {wipe ? (
+        // Until the cover is off the page there is nothing to wipe in.
+        headed ? (
+          <InscribedName
+            name={name}
+            colour={look.ink}
+            fontSize={size}
+            plain
+            stamping={{ delay: 0, duration: HEAD_WIPE_MS }}
+          />
+        ) : null
+      ) : (
+        <Text
+          numberOfLines={1}
+          maxFontSizeMultiplier={1}
+          style={[nameType(name), { color: look.ink, fontSize: size, lineHeight: size * 1.3 }]}
+        >
+          {name}
+        </Text>
+      )}
+    </Animated.View>
   );
 }
 
@@ -663,11 +750,12 @@ function Face(props: {
   text: string;
   lead?: Lead;
   volume: Volume;
+  name?: string | null;
 }) {
-  const { look, metrics, page, text, lead, volume } = props;
+  const { look, metrics, page, text, lead, volume, name } = props;
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      <Head look={look} metrics={metrics} volume={volume} />
+      <Head look={look} metrics={metrics} volume={volume} owner={name ? { name } : null} />
       <View style={[styles.window, { top: PAD.top + metrics.head, height: metrics.window }]}>
         <View style={{ transform: [{ translateY: -page * metrics.per * metrics.line }] }}>
           {lead && <Heading look={look} metrics={metrics} text={lead.text} />}

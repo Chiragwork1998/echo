@@ -21,6 +21,7 @@ const closing = (patch: Partial<ClosingState> = {}): ClosingState => ({
   contact: false,
   sinking: false,
   reduced: false,
+  asking: false,
   ...patch,
 });
 

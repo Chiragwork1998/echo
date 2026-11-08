@@ -1,12 +1,42 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
+import Animated, {
+  ReduceMotion,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withTiming,
+} from 'react-native-reanimated';
 import Svg, { Circle, Defs, Ellipse, Path, Pattern, Rect } from 'react-native-svg';
 
 import { EchoText } from '@/components/EchoText';
+import { EASE } from '@/design/ease';
 
 import { bookCopy } from './bookCopy';
+import { InscribedName, stampMs } from './InscribedName';
 import { BOOK_W, type Volume } from './volumes';
+
+/**
+ * The cover being asked whose book it is (./NamePrompt.tsx). `ask`: a blank line is drawn where a name
+ * would go, as on a bookplate. `decline`: the line is taken back. `stamp`: a name was written, the title
+ * makes room for it and it is stamped in foil.
+ */
+export type Inscribing = { phase: 'ask' } | { phase: 'decline' } | { phase: 'stamp'; name: string };
+
+/**
+ * Where a name sits on a 150 pt cover, and how far the title rises to make room for it, scaled with the
+ * cover. Low in the cover's foot, so the blank line reads as a line of its own and not as the
+ * subtitle's underline, and the title need only rise a little: risen further, it met the art's base.
+ */
+export const NAME_PLACE = { left: 16, bottom: 7, size: 9.5, lift: 4 } as const;
+/** The blank line: as wide as this share of the cover, in foil at this strength. */
+const LINE = { share: 0.4, alpha: 0.75 } as const;
+/** The stamp waits for the title to have begun to rise. */
+export const STAMP_AFTER = 240;
+const DRAW_MS = 560;
+const UNDRAW_MS = 320;
+const LIFT_MS = 520;
 
 /** Contour rings for "Stillness", generated once. */
 const CONTOURS = [1, 2, 3, 4, 5, 6, 7].map((ring) => {
@@ -211,14 +241,74 @@ export function BookCover({
   index,
   volume,
   width,
+  name = null,
+  inscribing = null,
+  still = false,
+  onStamped,
 }: {
   children?: ReactNode;
   height: number;
   index: number;
   volume: Volume;
   width: number;
+  /** Whose book it is: in foil at the foot of the cover, with the title raised to make room. */
+  name?: string | null;
+  /** The cover being asked for a name, and answering. */
+  inscribing?: Inscribing | null;
+  /** Reduce Motion: no line is drawn, nothing rises and nothing is stamped. Each state simply is. */
+  still?: boolean;
+  /** The stamp has landed. */
+  onStamped?: () => void;
 }) {
   const s = width / BOOK_W;
+  const phase = inscribing?.phase ?? null;
+  const shown = inscribing?.phase === 'stamp' ? inscribing.name : name;
+  const named = Boolean(shown);
+  const stamping = phase === 'stamp' && !still;
+
+  // The title rises as the name is stamped, and stays raised whenever there is a name.
+  const lift = useSharedValue(named && !stamping ? 1 : 0);
+  // The blank line, drawn from the left and taken back the way it came. Once a name is on it, the
+  // line has done its work and fades, so the name stands alone, as it will on every later opening.
+  const line = useSharedValue(0);
+  const kept = useSharedValue(1);
+  const landing = stamping && shown ? STAMP_AFTER + stampMs(shown) : 0;
+  useEffect(() => {
+    const timing = (duration: number) => ({
+      duration,
+      easing: EASE,
+      reduceMotion: ReduceMotion.Never,
+    });
+    if (stamping) lift.set(withTiming(1, timing(LIFT_MS)));
+    else lift.set(named ? 1 : 0);
+    if (still || phase === null) line.set(0);
+    else if (phase === 'ask') line.set(withTiming(1, timing(DRAW_MS)));
+    else if (phase === 'decline') line.set(withTiming(0, timing(UNDRAW_MS)));
+    kept.set(stamping ? withDelay(landing, withTiming(0, timing(UNDRAW_MS))) : 1);
+  }, [kept, landing, lift, line, named, phase, stamping, still]);
+  const raised = useAnimatedStyle(
+    () => ({
+      transform: [{ translateY: -NAME_PLACE.lift * s * lift.get() }],
+    }),
+    [s],
+  );
+  const blank = useAnimatedStyle(() => ({
+    opacity: line.get() > 0 ? LINE.alpha * kept.get() : 0,
+    transform: [{ scaleX: Math.max(line.get(), 0.001) }],
+  }));
+
+  // The stamp lands once its window has crossed the name.
+  const stamped = landing > 0 ? landing : null;
+  const report = useRef(onStamped);
+  useEffect(() => {
+    report.current = onStamped;
+  });
+  useEffect(() => {
+    if (stamped === null) return;
+    const timer = setTimeout(() => report.current?.(), stamped);
+    return () => clearTimeout(timer);
+  }, [stamped]);
+  const nameSize = NAME_PLACE.size * s;
 
   return (
     <View style={[styles.cover, { width, height, backgroundColor: volume.cloth }]}>
@@ -265,41 +355,81 @@ export function BookCover({
       >
         {bookCopy.coverKicker(index + 1)}
       </EchoText>
-      <EchoText
-        variant="displayM"
-        numberOfLines={1}
-        maxFontSizeMultiplier={1}
-        style={[
-          styles.title,
-          {
-            color: volume.foil,
-            fontSize: 20 * s,
-            lineHeight: 24 * s,
-            bottom: 26 * s,
-            left: 16 * s,
-          },
-        ]}
+      <Animated.View
+        pointerEvents="none"
+        testID="book-cover-title"
+        style={[StyleSheet.absoluteFill, raised]}
       >
-        {volume.title}
-      </EchoText>
-      <EchoText
-        variant="caption"
-        numberOfLines={1}
-        maxFontSizeMultiplier={1}
-        style={[
-          styles.label,
-          {
-            color: volume.foil,
-            fontSize: 5 * s,
-            lineHeight: 7 * s,
-            letterSpacing: 1.2 * s,
-            bottom: 17 * s,
-            left: 16 * s,
-          },
-        ]}
-      >
-        {volume.subtitle}
-      </EchoText>
+        <EchoText
+          variant="displayM"
+          numberOfLines={1}
+          maxFontSizeMultiplier={1}
+          style={[
+            styles.title,
+            {
+              color: volume.foil,
+              fontSize: 20 * s,
+              lineHeight: 24 * s,
+              bottom: 26 * s,
+              left: 16 * s,
+            },
+          ]}
+        >
+          {volume.title}
+        </EchoText>
+        <EchoText
+          variant="caption"
+          numberOfLines={1}
+          maxFontSizeMultiplier={1}
+          style={[
+            styles.label,
+            {
+              color: volume.foil,
+              fontSize: 5 * s,
+              lineHeight: 7 * s,
+              letterSpacing: 1.2 * s,
+              bottom: 17 * s,
+              left: 16 * s,
+            },
+          ]}
+        >
+          {volume.subtitle}
+        </EchoText>
+      </Animated.View>
+      {phase !== null && !still && (
+        <Animated.View
+          pointerEvents="none"
+          testID="book-name-line"
+          style={[
+            styles.line,
+            {
+              left: NAME_PLACE.left * s,
+              bottom: NAME_PLACE.bottom * s + nameSize * 0.32,
+              width: width * LINE.share,
+              backgroundColor: volume.foil,
+            },
+            blank,
+          ]}
+        />
+      )}
+      {shown ? (
+        <View
+          pointerEvents="none"
+          style={[
+            styles.name,
+            { left: NAME_PLACE.left * s, bottom: NAME_PLACE.bottom * s, right: 8 * s },
+          ]}
+        >
+          <InscribedName
+            key={stamping ? 'stamping' : 'still'}
+            name={shown}
+            colour={volume.foil}
+            fontSize={nameSize}
+            stamping={stamping ? { delay: STAMP_AFTER, duration: stampMs(shown) } : null}
+            testID="book-cover-name"
+          />
+        </View>
+      ) : null}
       {children}
     </View>
   );
@@ -316,4 +446,6 @@ const styles = StyleSheet.create({
   },
   label: { position: 'absolute', right: 8, opacity: 0.85 },
   title: { position: 'absolute', right: 8 },
+  line: { position: 'absolute', height: 1, transformOrigin: 'left center' },
+  name: { position: 'absolute' },
 });

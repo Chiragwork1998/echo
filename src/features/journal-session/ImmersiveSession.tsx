@@ -1,7 +1,7 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useRef, useState, type ComponentRef } from 'react';
-import { Keyboard, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState, type ComponentRef } from 'react';
+import { BackHandler, Keyboard, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import Animated, {
   Easing,
   ReduceMotion,
@@ -15,11 +15,21 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EchoBackground } from '@/components/EchoBackground';
 import { EchoText } from '@/components/EchoText';
 import { copy } from '@/content/copy';
+import { cue } from '@/design/haptics';
 import { useLayout } from '@/design/layout';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 import { BookPage, useBookFrame } from '@/features/book/BookPage';
 import { controlsBottom, keyboardRise, restingDrop } from '@/features/book/bookPlace';
+import type { Inscribing } from '@/features/book/CoverArt';
+import {
+  NAMED_OPENS_NOTICED,
+  countNamedOpen,
+  loadBookOwner,
+  markAsked,
+  useBookOwner,
+  writeName,
+} from '@/features/book/owner';
 import { PaperProvider, usePaperLook, type Surface } from '@/features/book/paper';
 import { opensPin, volumePin } from '@/features/book/qaPins';
 import { CLOSE_REDUCED_MS, PART_MS, ritualFor } from '@/features/book/ritual';
@@ -34,6 +44,7 @@ import { useReduceMotion } from '@/design/useReduceMotion';
 
 import { Arrive } from './Arrive';
 import { Beacon } from './Beacon';
+import { NamePrompt } from './NamePrompt';
 import { HEADER_HEIGHT } from './geometry';
 import { QuietControls } from './QuietControls';
 import { sessionCopy } from './sessionCopy';
@@ -55,6 +66,15 @@ const NOTE_WIDTH = 320;
 const SKY_WASH_BELOW = 70;
 const DOT = 6;
 const SERIF = 'CormorantGaramond_500Medium';
+
+/** The written name is held on the cover this long before the book goes. */
+const NAME_HOLD_MS = 400;
+/** Not now: the blank line on the cover is taken back over this long, and then the book goes. */
+const NAME_UNDRAW_MS = 320;
+/** The book keeps this far clear of the question while it is asked. */
+const PROMPT_GAP = 22;
+/** However tall the question grows, the book steps back no further than this. */
+const LEAST_STEP_BACK = 0.5;
 
 /**
  * The daily echo, as the owner asked for it (D-003): when Begin is pressed the phone falls away and
@@ -95,8 +115,13 @@ export function ImmersiveSession({
   const [tapped, setTapped] = useState(false);
   const stilled = useStillness(reduced, ritual.stillness);
   const settled = stilled || tapped;
-  // The book shutting, once the entry is kept: it plays the ritual it opened with.
-  const { closing, begin: shut, hurry: hurryClosing } = useBookClosing(ritual, reduced);
+  // The book shutting, once the entry is kept: it plays the ritual it opened with. A screen reader is
+  // not made to wait for it: it closes as it does under Reduce Motion, in a blink.
+  const {
+    closing,
+    begin: shut,
+    hurry: hurryClosing,
+  } = useBookClosing(ritual, reduced || screenReader);
   const parting = closing !== null;
   // From the moment the entry begins to be kept until the screen goes, unless keeping it fails: the
   // book makes its cover ready and holds the count it was opened with. The draft says it is done
@@ -172,20 +197,102 @@ export function ImmersiveSession({
   const bookInView = book && !shelf;
   const pageOpen = !book || opened;
 
+  // Whose book this is (./NamePrompt.tsx). Only the daily book can be named: First Echo is onboarding,
+  // and onboarding never asks. Read from its sealed record when the book first needs it.
+  const ownable = session.daily && page === 'vellum';
+  useEffect(() => {
+    if (ownable) void loadBookOwner();
+  }, [ownable]);
+  const owner = useBookOwner();
+  // How the name in the page's head arrives this session, decided once and kept, like the ritual.
+  const [nameArrives, setNameArrives] = useState<'wipe' | 'fade' | null>(null);
+  if (owner.loaded && nameArrives === null) {
+    setNameArrives(owner.namedOpens < NAMED_OPENS_NOTICED ? 'wipe' : 'fade');
+  }
+  const named = ownable && owner.name ? { name: owner.name, arrives: nameArrives ?? 'fade' } : null;
+
+  // The question on the closed book, and how it is answered. Asked at most once, ever: `asked` is kept
+  // the moment it appears. The closing waits for the answer before the book sinks.
+  const [inscribing, setInscribing] = useState<Inscribing | null>(null);
+  const answer = useRef<(() => void) | null>(null);
+  const asking = useRef<Inscribing['phase'] | null>(null);
+  const later = useRef(new Set<ReturnType<typeof setTimeout>>());
+  useEffect(() => {
+    const pending = later.current;
+    return () => pending.forEach(clearTimeout);
+  }, []);
+  const after = (ms: number, task: () => void) => {
+    const id = setTimeout(() => {
+      later.current.delete(id);
+      task();
+    }, ms);
+    later.current.add(id);
+  };
+  const answered = () => {
+    const release = answer.current;
+    answer.current = null;
+    release?.();
+  };
+  const ask = useCallback(
+    () =>
+      new Promise<void>((resolve) => {
+        answer.current = resolve;
+        asking.current = 'ask';
+        setInscribing({ phase: 'ask' });
+        void markAsked();
+      }),
+    [],
+  );
+  const writeOwnName = (name: string) => {
+    if (asking.current !== 'ask') return;
+    asking.current = 'stamp';
+    Keyboard.dismiss();
+    // Sealed at once; nothing drawn waits for it.
+    void writeName(name);
+    setInscribing({ phase: 'stamp', name });
+  };
+  // The stamp has landed: felt once, held a moment, and the book goes.
+  const stamped = () => {
+    cue('fine');
+    after(NAME_HOLD_MS, answered);
+  };
+  const notNow = () => {
+    if (asking.current !== 'ask') return;
+    asking.current = 'decline';
+    Keyboard.dismiss();
+    setInscribing({ phase: 'decline' });
+    after(reduced || screenReader ? CLOSE_REDUCED_MS : NAME_UNDRAW_MS, answered);
+  };
+  // Back, while the book asks, is Not now. Once it is answered there is nothing to go back to.
+  const latestNotNow = useRef(notNow);
+  useEffect(() => {
+    latestNotNow.current = notNow;
+  });
+  const promptShown = inscribing !== null;
+  useEffect(() => {
+    if (!promptShown) return;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      latestNotNow.current();
+      return true;
+    });
+    return () => subscription.remove();
+  }, [promptShown]);
+
   // Once the entry is kept, the book shuts before the next screen comes (the session asks for it
   // when it is ready to go). The keys go first, so the book settles back to its place as it closes
-  // (D-010). A screen reader is not made to wait for the book to close either.
+  // (D-010). The first time, the closed book asks whose it is.
   const { onLeave } = session;
   useEffect(() => {
     if (!bookInView || !pageOpen) return;
     return onLeave(() => {
+      const { loaded, asked } = useBookOwner.getState();
+      const question = ownable && loaded && !asked;
       // The closing first: letting the keys go blurs the page, and on web that draws at once.
-      const closed = shut();
+      const closed = shut(question ? { atContact: ask, asking: true } : undefined);
       Keyboard.dismiss();
-      if (screenReader) hurryClosing();
       return closed;
     });
-  }, [bookInView, hurryClosing, onLeave, pageOpen, screenReader, shut]);
+  }, [ask, bookInView, onLeave, ownable, pageOpen, shut]);
 
   // The quiet things leave as the closing begins, and the notes on the page with them.
   const away = useSharedValue(0);
@@ -233,10 +340,20 @@ export function ImmersiveSession({
   });
 
   // The book rises with the keyboard, just far enough for the words being typed to stay in view.
+  // While the closed book asks whose it is, it also keeps clear of the question beneath it: it steps
+  // back from its top as the keys come up, and comes forward again as they go.
+  const promptRoom = useSharedValue(0);
+  const bookTop = bookFrame.top;
+  const bookHeight = bookFrame.height;
   const bookRise = useAnimatedStyle(() => {
     const height = Math.max(keyboard.height.get(), qaKeyboard);
     const rise = keyboardRise(height, screenHeight, bookBottom, bookDrop);
-    return { transform: [{ translateY: -rise }] };
+    const room = promptRoom.get();
+    if (room <= 0) return { transform: [{ translateY: -rise }] };
+    const below = screenHeight - controlsBottom(height, resting, CONTROLS.aboveKeyboard) - room;
+    const fits = (below - PROMPT_GAP - (bookTop - rise)) / bookHeight;
+    const scale = Math.min(1, Math.max(LEAST_STEP_BACK, fits));
+    return { transform: [{ translateY: -rise }, { scale }] };
   });
 
   // Recording is a point of light, and Stop is always one glance away in the quiet row. A pause,
@@ -360,7 +477,15 @@ export function ImmersiveSession({
       )}
 
       {bookInView && (
-        <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, bookRise]}>
+        <Animated.View
+          pointerEvents="box-none"
+          style={[
+            StyleSheet.absoluteFill,
+            // It steps back from its own top, so the head of the book stays where it was.
+            { transformOrigin: `${width / 2}px ${bookTop}px` },
+            bookRise,
+          ]}
+        >
           <BookPage
             frame={bookFrame}
             surface={page === 'paper' ? 'paper' : 'vellum'}
@@ -374,12 +499,16 @@ export function ImmersiveSession({
             echoes={echoes}
             preparing={keeping}
             closing={closing}
+            owner={named}
+            inscribing={inscribing}
+            onStamped={stamped}
             concealed={hidden}
             dimmed={noteDrawn}
             arrival={session.arrival}
             onOpened={() => {
               setOpened(true);
               countOpen();
+              if (named) void countNamedOpen();
             }}
             inputRef={inputRef}
             value={
@@ -513,7 +642,11 @@ export function ImmersiveSession({
       <Wash
         kind="ground"
         quiet
-        visible={!parting && ((quiet.visible && pageOpen && !shelf) || notice !== null)}
+        visible={
+          // The question on the closed book is cream words low on the scenery, as the quiet row is.
+          inscribing?.phase === 'ask' ||
+          (!parting && ((quiet.visible && pageOpen && !shelf) || notice !== null))
+        }
         style={[styles.ground, span]}
       />
 
@@ -537,21 +670,31 @@ export function ImmersiveSession({
             </Arrive>
           </Animated.View>
         )}
-        <QuietControls
-          visible={quiet.visible && pageOpen && !shelf && !parting}
-          middle={recording ? 'stop' : writing ? 'speak' : 'write'}
-          middleDisabled={busy || !ready}
-          canReflect={canReflect}
-          reflecting={draft.commitState === 'committing'}
-          words={
-            writing || !session.daily
-              ? undefined
-              : { label: session.wordsLabel, onPress: session.toggleWords }
-          }
-          onBack={session.back}
-          onMiddle={onMiddle}
-          onReflect={() => void session.reflect()}
-        />
+        {inscribing !== null ? (
+          // The question takes the quiet row's place, its two words where Back and Reflect were.
+          <NamePrompt
+            leaving={inscribing.phase !== 'ask'}
+            onWrite={writeOwnName}
+            onNotNow={notNow}
+            onLayout={(event) => promptRoom.set(event.nativeEvent.layout.height)}
+          />
+        ) : (
+          <QuietControls
+            visible={quiet.visible && pageOpen && !shelf && !parting}
+            middle={recording ? 'stop' : writing ? 'speak' : 'write'}
+            middleDisabled={busy || !ready}
+            canReflect={canReflect}
+            reflecting={draft.commitState === 'committing'}
+            words={
+              writing || !session.daily
+                ? undefined
+                : { label: session.wordsLabel, onPress: session.toggleWords }
+            }
+            onBack={session.back}
+            onMiddle={onMiddle}
+            onReflect={() => void session.reflect()}
+          />
+        )}
       </Animated.View>
     </View>
   );
