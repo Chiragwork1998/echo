@@ -1,7 +1,7 @@
 import * as Haptics from 'expo-haptics';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, AppState, BackHandler, Keyboard } from 'react-native';
+import { AppState, BackHandler, Keyboard } from 'react-native';
 
 import { copy } from '@/content/copy';
 import { holdTheme } from '@/design/themeHold';
@@ -9,6 +9,7 @@ import { BECOME_PROMPT_ID, becomeCopy } from '@/features/become/becomeCopy';
 import { routeAfterReflect } from '@/features/become/rehearsal';
 import { useDraft, useVoiceRecorder, type JournalErrorCode } from '@/features/journal';
 import { backPath, nextPath, onboardingSteps } from '@/features/onboarding/flow';
+import { showDialog } from '@/features/tab-pages/Dialog';
 import {
   getMicrophonePermission,
   openAppSettings,
@@ -292,7 +293,7 @@ export function useSessionController({ variant, initialMode, draftId, become }: 
     // Only a recording that has not become words is lost by recording again. One that has is in
     // the page, so speaking a second time just adds to it.
     const { replaceTitle, replaceMessage, replace, cancel } = sessionCopy.speak;
-    Alert.alert(
+    showDialog(
       replaceTitle,
       voiceChoice === 'voice_only' || stuck
         ? replaceMessage
@@ -414,7 +415,7 @@ export function useSessionController({ variant, initialMode, draftId, become }: 
     if (reflecting.current || !canReflect) return;
     if (transcription.active) {
       const { title, message, wait, goOn } = sessionCopy.transcribe.waiting;
-      Alert.alert(title, message, [
+      showDialog(title, message, [
         { text: wait, onPress: () => void (waitingToReflect.current = true) },
         {
           text: goOn,
@@ -428,7 +429,7 @@ export function useSessionController({ variant, initialMode, draftId, become }: 
     }
     if (wordsMissing) {
       const { title, message, retry, goOn } = sessionCopy.transcribe.missing;
-      Alert.alert(title, message, [
+      showDialog(title, message, [
         {
           text: retry,
           onPress: () => {
@@ -465,7 +466,7 @@ export function useSessionController({ variant, initialMode, draftId, become }: 
       return;
     }
     const { title, message, keep, discard, stay } = sessionCopy.leave;
-    Alert.alert(title, message, [
+    showDialog(title, message, [
       { text: keep, onPress: () => void keepDraft() },
       { text: discard, style: 'destructive', onPress: () => void discardDraft() },
       { text: stay, style: 'cancel' },

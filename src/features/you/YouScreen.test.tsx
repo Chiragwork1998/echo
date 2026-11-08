@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { router } from 'expo-router';
-import { Alert, Dimensions, Linking } from 'react-native';
+import { Dimensions, Linking } from 'react-native';
 
 import { showToast } from '@/components/Toast';
 import { links } from '@/config/links';
@@ -14,6 +14,14 @@ import { getNotificationPermission, openAppSettings } from '@/services/permissio
 import { plusCopy } from '@/features/plus/plusCopy';
 import { initialOnboarding, useOnboarding } from '@/state/onboarding';
 import { usePreferences, VOICE_POLICY_VERSION } from '@/state/preferences';
+import {
+  backOutOfDialog,
+  chooseInDialog,
+  dialogChoices,
+  dialogPrimary,
+  openDialog,
+  renderWithDialogs,
+} from '@/testing/dialogs';
 import { withBillingForTests, withoutBillingForTests } from '@/testing/plus';
 import { render } from '@/testing/render';
 
@@ -49,21 +57,12 @@ jest.mock('expo-localization', () => ({
 }));
 
 const verifyLock = jest.mocked(verifyLockAvailable);
-const alert = () => jest.mocked(Alert.alert);
 const lock = () => screen.getByRole('switch', { name: copy.privacy.lockIos });
 const reminder = () => screen.getByRole('switch', { name: copy.rhythm.reminder });
 const button = (name: string | RegExp) => screen.getByRole('button', { name });
 
-/** Press a button in the most recent native alert, as a person would. */
-async function chooseInAlert(text: string) {
-  const buttons = alert().mock.lastCall?.[2];
-  const chosen = buttons?.find((b) => b.text === text);
-  await act(async () => chosen?.onPress?.());
-}
-
 beforeEach(() => {
   jest.clearAllMocks();
-  jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
   usePreferences.setState({ theme: 'night' });
   useOnboarding.setState({ ...initialOnboarding });
   verifyLock.mockResolvedValue({ ok: true });
@@ -352,36 +351,54 @@ describe('You: export', () => {
 
 describe('You: delete all data', () => {
   const start = async () => {
-    await render(<YouScreen />);
+    await renderWithDialogs(<YouScreen />);
     await fireEvent.press(button(new RegExp(youCopy.deleteAll)));
   };
 
   it('asks twice, and states that it cannot be undone, before anything is deleted', async () => {
     await start();
-    expect(alert()).toHaveBeenCalledTimes(1);
-    expect(alert().mock.lastCall?.[1]).toMatch(/can’t be undone/);
-    await chooseInAlert(youCopy.deleteContinue);
-    expect(alert()).toHaveBeenCalledTimes(2);
-    expect(alert().mock.lastCall?.[0]).toBe(youCopy.deleteFinalTitle);
-    expect(alert().mock.lastCall?.[1]).toMatch(/gone for good/);
+    expect(screen.getByRole('header', { name: youCopy.deleteFirstTitle })).toBeTruthy();
+    expect(screen.getByText(youCopy.deleteFirstBody)).toBeTruthy();
+    expect(youCopy.deleteFirstBody).toMatch(/can’t be undone/);
+    // Going on toward deleting is never the inviting button: both are quiet, and Cancel is last.
+    expect(dialogChoices()).toEqual([youCopy.deleteContinue, youCopy.deleteCancel]);
+    expect(dialogPrimary()).toBeNull();
+    await chooseInDialog(youCopy.deleteContinue);
+    expect(screen.getByRole('header', { name: youCopy.deleteFinalTitle })).toBeTruthy();
+    expect(screen.getByText(youCopy.deleteFinalBody)).toBeTruthy();
+    expect(youCopy.deleteFinalBody).toMatch(/gone for good/);
+    expect(dialogChoices()).toEqual([youCopy.deleteConfirm, youCopy.deleteCancel]);
+    expect(dialogPrimary()).toBeNull();
     expect(deleteAllLocal).not.toHaveBeenCalled();
   });
 
   it('deletes only after the second confirmation', async () => {
     jest.mocked(deleteAllLocal).mockResolvedValue({ ok: true });
     await start();
-    await chooseInAlert(youCopy.deleteContinue);
-    await chooseInAlert(youCopy.deleteConfirm);
+    await chooseInDialog(youCopy.deleteContinue);
+    await chooseInDialog(youCopy.deleteConfirm);
     expect(deleteAllLocal).toHaveBeenCalledTimes(1);
   });
 
   it('deletes nothing when either step is cancelled', async () => {
     await start();
-    await chooseInAlert(youCopy.deleteCancel);
-    expect(alert()).toHaveBeenCalledTimes(1);
+    await chooseInDialog(youCopy.deleteCancel);
+    expect(openDialog()).toBeNull();
     await fireEvent.press(button(new RegExp(youCopy.deleteAll)));
-    await chooseInAlert(youCopy.deleteContinue);
-    await chooseInAlert(youCopy.deleteCancel);
+    await chooseInDialog(youCopy.deleteContinue);
+    await chooseInDialog(youCopy.deleteCancel);
+    expect(openDialog()).toBeNull();
+    expect(deleteAllLocal).not.toHaveBeenCalled();
+  });
+
+  it('deletes nothing when either step is left with Back', async () => {
+    await start();
+    await backOutOfDialog();
+    expect(openDialog()).toBeNull();
+    await fireEvent.press(button(new RegExp(youCopy.deleteAll)));
+    await chooseInDialog(youCopy.deleteContinue);
+    await backOutOfDialog();
+    expect(openDialog()).toBeNull();
     expect(deleteAllLocal).not.toHaveBeenCalled();
   });
 
@@ -389,8 +406,8 @@ describe('You: delete all data', () => {
     let finish: (value: Awaited<ReturnType<typeof deleteAllLocal>>) => void = () => undefined;
     jest.mocked(deleteAllLocal).mockReturnValue(new Promise((resolve) => (finish = resolve)));
     await start();
-    await chooseInAlert(youCopy.deleteContinue);
-    await chooseInAlert(youCopy.deleteConfirm);
+    await chooseInDialog(youCopy.deleteContinue);
+    await chooseInDialog(youCopy.deleteConfirm);
     expect(
       await screen.findByRole('button', { name: new RegExp(youCopy.deleting) }),
     ).toBeDisabled();

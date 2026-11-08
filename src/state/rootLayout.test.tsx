@@ -2,13 +2,23 @@ import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import { router, usePathname } from 'expo-router';
 import * as ScreenCapture from 'expo-screen-capture';
 import * as SplashScreen from 'expo-splash-screen';
-import { Alert, AppState, Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 
 import { clearToast, showToast } from '@/components/Toast';
+import { copy } from '@/content/copy';
+import { clearDialogs, showDialog } from '@/features/tab-pages/Dialog';
 import { deleteAllLocal } from '@/services/deleteAllLocal';
 import { getLockMethod } from '@/services/biometric';
 import { startPlus } from '@/services/plus/engine';
 import { markOffered, usePlusStore } from '@/services/plus/store';
+import {
+  backOutOfDialog,
+  chooseInDialog,
+  dialogChoices,
+  dialogPrimary,
+  openDialog,
+  tapOutsideDialog,
+} from '@/testing/dialogs';
 import { withBillingForTests, withoutBillingForTests } from '@/testing/plus';
 
 import RootLayout from '../../app/_layout';
@@ -76,6 +86,7 @@ const preventCapture = jest.mocked(ScreenCapture.preventScreenCaptureAsync);
 const allowCapture = jest.mocked(ScreenCapture.allowScreenCaptureAsync);
 
 let appState: ((state: string) => void)[];
+let windowFocus: Record<'blur' | 'focus', (() => void)[]>;
 
 const setGate = (state: Partial<ReturnType<typeof useGate.getState>>) =>
   act(async () => useGate.setState(state));
@@ -86,6 +97,13 @@ const send = (state: string) =>
     appState.forEach((handler) => handler(state));
   });
 
+/** Android's window focus: 'blur' as anything takes the app window's focus, 'focus' as it returns. */
+const windowEvent = (type: 'blur' | 'focus') =>
+  act(async () => windowFocus[type].forEach((handler) => handler()));
+
+/** What the privacy cover shows: the wordmark alone on the plate's colour. */
+const cover = () => screen.queryByRole('header', { name: copy.landing.wordmark });
+
 beforeAll(() => {
   jest.useFakeTimers();
 });
@@ -94,10 +112,13 @@ beforeEach(() => {
   jest.clearAllMocks();
   resetGateForTests();
   resetOnboarding();
+  clearDialogs();
   appState = [];
+  windowFocus = { blur: [], focus: [] };
   pathname.mockReturnValue('/');
   jest.spyOn(AppState, 'addEventListener').mockImplementation((type, handler) => {
     if (type === 'change') appState.push(handler as (state: string) => void);
+    if (type === 'blur' || type === 'focus') windowFocus[type].push(handler as () => void);
     return { remove: () => undefined } as ReturnType<typeof AppState.addEventListener>;
   });
 });
@@ -242,16 +263,33 @@ describe('when the key is lost', () => {
   });
 
   it('erases only after an explicit confirmation', async () => {
-    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+    const { startOver, confirmTitle, confirmErase, confirmCancel } = gateCopy.keyLost;
+    await render(<RootLayout />);
+    await setGate(lost);
+    await fireEvent.press(screen.getByRole('button', { name: startOver }));
+    expect(screen.getByRole('header', { name: confirmTitle })).toBeTruthy();
+    expect(screen.getByText(gateCopy.keyLost.confirmBody)).toBeTruthy();
+    // Erasing is never the inviting button: both are quiet words, and Cancel comes last.
+    expect(dialogChoices()).toEqual([confirmErase, confirmCancel]);
+    expect(dialogPrimary()).toBeNull();
+    expect(deleteAllLocal).not.toHaveBeenCalled();
+
+    await chooseInDialog(confirmErase);
+    expect(deleteAllLocal).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['Cancel', () => chooseInDialog(gateCopy.keyLost.confirmCancel)],
+    ['Back', backOutOfDialog],
+    ['a tap outside', tapOutsideDialog],
+  ])('erases nothing on %s', async (_way, leave) => {
     await render(<RootLayout />);
     await setGate(lost);
     await fireEvent.press(screen.getByRole('button', { name: gateCopy.keyLost.startOver }));
+    await leave();
+    expect(openDialog()).toBeNull();
     expect(deleteAllLocal).not.toHaveBeenCalled();
-
-    const buttons = alert.mock.calls[0]?.[2] ?? [];
-    const erase = buttons.find((button) => button.style === 'destructive');
-    await act(async () => erase?.onPress?.());
-    expect(deleteAllLocal).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(gateCopy.keyLost.title)).toBeTruthy();
   });
 });
 
@@ -318,6 +356,26 @@ describe('the lock', () => {
     await render(<RootLayout />);
     await setGate(locked);
     expect(screen.queryByText(gateCopy.lock.disable)).toBeNull();
+  });
+
+  it('holds an open dialog until it is unlocked, so nothing is answered from behind it', async () => {
+    const erase = jest.fn();
+    await render(<RootLayout />);
+    await setGate({ status: locked.status });
+    await act(async () =>
+      showDialog(gateCopy.keyLost.confirmTitle, gateCopy.keyLost.confirmBody, [
+        { text: gateCopy.keyLost.confirmCancel, style: 'cancel' },
+        { text: gateCopy.keyLost.confirmErase, style: 'destructive', onPress: erase },
+      ]),
+    );
+    expect(openDialog()).toBeTruthy();
+
+    await setGate({ lock: locked.lock });
+    expect(screen.queryByTestId('dialog', { includeHiddenElements: true })).toBeNull();
+
+    await setGate({ lock: { kind: 'unlocked' } });
+    await chooseInDialog(gateCopy.keyLost.confirmErase);
+    expect(erase).toHaveBeenCalledTimes(1);
   });
 
   it('with no credential left, offers only turning it off', async () => {
@@ -428,6 +486,64 @@ describe('the privacy cover', () => {
     jest.setSystemTime(Date.now() + RELOCK_AFTER_MS);
     await send('active');
     expect(screen.getByText(gateCopy.lock.title)).toBeTruthy();
+    expect(screen.queryByTestId(NAVIGATOR)).toBeNull();
+  });
+});
+
+// On Android, 'blur' is the app window losing focus. It comes as recents opens, ahead of the pause,
+// and also as every window of ECHO's own opens: each sheet and dialog is a window, and takes focus.
+describe('the privacy cover and ECHO’s own windows', () => {
+  const ready = { status: { kind: 'ready', resume: '/' } as const };
+  const ask = () =>
+    act(async () =>
+      showDialog(gateCopy.keyLost.confirmTitle, gateCopy.keyLost.confirmBody, [
+        { text: gateCopy.keyLost.confirmCancel, style: 'cancel' },
+        { text: gateCopy.keyLost.confirmErase, style: 'destructive' },
+      ]),
+    );
+
+  beforeEach(async () => {
+    Object.defineProperty(AppState, 'currentState', { value: 'active', configurable: true });
+    await render(<RootLayout />);
+    await setGate(ready);
+  });
+
+  it('covers on blur when no window of ECHO’s own is open, as recents opens', async () => {
+    await windowEvent('blur');
+    expect(cover()).toBeTruthy();
+    expect(screen.queryByTestId(NAVIGATOR)).toBeNull();
+  });
+
+  it('lifts again on focus', async () => {
+    await windowEvent('blur');
+    await windowEvent('focus');
+    expect(cover()).toBeNull();
+    expect(screen.getByTestId(NAVIGATOR)).toBeTruthy();
+  });
+
+  it('does not cover on blur while one of ECHO’s own windows is open: the page shows, dimmed', async () => {
+    await ask();
+    await windowEvent('blur');
+    expect(cover()).toBeNull();
+    expect(screen.getByTestId(NAVIGATOR)).toBeTruthy();
+    expect(openDialog()).toBeTruthy();
+  });
+
+  it('covers on blur again once that window has closed', async () => {
+    await ask();
+    await windowEvent('blur');
+    await chooseInDialog(gateCopy.keyLost.confirmCancel);
+    await windowEvent('focus');
+    await windowEvent('blur');
+    expect(cover()).toBeTruthy();
+    expect(screen.queryByTestId(NAVIGATOR)).toBeNull();
+  });
+
+  it('still covers on background with one of ECHO’s own windows open', async () => {
+    await ask();
+    await windowEvent('blur');
+    await send('background');
+    expect(cover()).toBeTruthy();
     expect(screen.queryByTestId(NAVIGATOR)).toBeNull();
   });
 });

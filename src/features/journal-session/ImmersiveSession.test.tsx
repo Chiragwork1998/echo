@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { router } from 'expo-router';
-import { AccessibilityInfo, Alert } from 'react-native';
+import { AccessibilityInfo } from 'react-native';
 
 import { copy } from '@/content/copy';
 import {
@@ -14,7 +14,7 @@ import { requestMicrophonePermission } from '@/services/permissions';
 import { initialOnboarding, useOnboarding } from '@/state/onboarding';
 import { usePreferences, VOICE_POLICY_VERSION } from '@/state/preferences';
 import { transcribeEntryAudio } from '@/services/transcription';
-import { render } from '@/testing/render';
+import { dialogChoices, dialogPrimary, renderWithDialogs } from '@/testing/dialogs';
 
 import { JournalSession } from './JournalSession';
 import { sessionCopy } from './sessionCopy';
@@ -106,7 +106,7 @@ afterEach(() => {
 
 async function open(props = {}) {
   // The open sky: D-003 as first built, and what DAILY_PAGE = 'sky' returns to.
-  await render(<JournalSession variant="daily" plain {...props} />);
+  await renderWithDialogs(<JournalSession variant="daily" plain {...props} />);
   const input = () => screen.getByLabelText(copy.home.prompt);
   // The draft has opened once the scenery can be touched.
   await waitFor(() =>
@@ -195,14 +195,10 @@ describe('the quiet controls', () => {
     const input = await open();
     await write(input);
     await fireEvent(input(), 'blur');
-    const alert = jest.spyOn(Alert, 'alert');
     await fireEvent.press(controls()!);
-    const buttons = alert.mock.calls[0]?.[2] ?? [];
-    expect(buttons.map((button: { text?: string }) => button.text)).toEqual([
-      'Keep draft',
-      'Discard',
-      'Stay',
-    ]);
+    expect(screen.getByRole('header', { name: sessionCopy.leave.title })).toBeTruthy();
+    expect(dialogChoices()).toEqual(['Keep draft', 'Discard', 'Stay']);
+    expect(dialogPrimary()).toBe('Keep draft');
     expect(router.navigate).not.toHaveBeenCalled();
   });
 });

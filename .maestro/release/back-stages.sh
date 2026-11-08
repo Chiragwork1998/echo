@@ -14,11 +14,15 @@ shot() { "$ADB" exec-out screencap -p >"$OUT/$1.png"; echo "shot $OUT/$1.png"; }
 tap() { "$ADB" shell input tap "$1" "$2"; }
 back() { "$ADB" shell input keyevent 4; }
 rec_events() { "$ADB" shell dumpsys audio | grep -E "rec (update|stop) riid" | tail -2 | cut -c1-90; }
+# "Keep your draft?" is ECHO's own sheet, anchored to the bottom: Keep draft, then the quiet words
+# Discard and Stay. Measured from the report sheet's footer on this emulator, not yet walked.
+DISCARD="540 2108"
+STAY="540 2234"
 
 "$ADB" shell settings put global transition_animation_scale 1.0
 
 echo "== clear the draft first"
-tap 540 1000; sleep 22; back; sleep 3; tap 704 1368; sleep 15; shot 0-clean-home
+tap 540 1000; sleep 22; back; sleep 3; tap $DISCARD; sleep 15; shot 0-clean-home
 
 echo "== S1: Back during the stillness, 2 s after Begin"
 tap 540 1000; sleep 2; back; sleep 5; shot s1-during-stillness
@@ -29,7 +33,7 @@ tap 540 1000; sleep 22; shot s2a-book-open; back; sleep 5; shot s2b-after-back
 echo "== S3: Back mid-take: Stay, then Back and Discard"
 tap 540 1000; sleep 22; tap 540 900; sleep 8; shot s3a-recording
 back; sleep 3; shot s3b-dialog
-tap 894 1368; sleep 3; shot s3c-after-stay      # Stay: the take must still be running
+tap $STAY; sleep 3; shot s3c-after-stay      # Stay: the take must still be running
 rec_events
-back; sleep 3; tap 704 1368; sleep 10; shot s3d-after-discard
+back; sleep 3; tap $DISCARD; sleep 10; shot s3d-after-discard
 rec_events

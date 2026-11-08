@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert } from 'react-native';
 
+import { showDialog } from '@/features/tab-pages/Dialog';
 import { deleteAllLocal } from '@/services/deleteAllLocal';
 import { exportJournal } from '@/services/exportJournal';
 
@@ -49,7 +49,7 @@ export function useExport() {
 }
 
 /**
- * Two native confirmations, the second stating it cannot be undone. Only then does anything go.
+ * Two confirmations, the second stating it cannot be undone. Only then does anything go.
  * On success the app resets itself and the root layout shows Landing, so there is nothing to do.
  */
 export function useDeleteAll() {
@@ -68,13 +68,13 @@ export function useDeleteAll() {
 
   const confirm = useCallback(() => {
     const cancel = { text: youCopy.deleteCancel, style: 'cancel' } as const;
-    Alert.alert(youCopy.deleteFirstTitle, youCopy.deleteFirstBody, [
+    showDialog(youCopy.deleteFirstTitle, youCopy.deleteFirstBody, [
       cancel,
       {
         text: youCopy.deleteContinue,
         style: 'destructive',
         onPress: () =>
-          Alert.alert(youCopy.deleteFinalTitle, youCopy.deleteFinalBody, [
+          showDialog(youCopy.deleteFinalTitle, youCopy.deleteFinalBody, [
             cancel,
             { text: youCopy.deleteConfirm, style: 'destructive', onPress: () => void run() },
           ]),

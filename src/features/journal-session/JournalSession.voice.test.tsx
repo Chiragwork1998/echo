@@ -1,7 +1,6 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import type { ComponentProps } from 'react';
-import { Alert } from 'react-native';
 
 import { copy } from '@/content/copy';
 import {
@@ -19,6 +18,14 @@ import {
 } from '@/services/transcription';
 import { initialOnboarding, useOnboarding } from '@/state/onboarding';
 import { usePreferences, VOICE_POLICY_VERSION } from '@/state/preferences';
+import {
+  backOutOfDialog,
+  chooseInDialog,
+  dialogChoices,
+  dialogPrimary,
+  renderWithDialogs,
+  tapOutsideDialog,
+} from '@/testing/dialogs';
 import { render } from '@/testing/render';
 
 import { JournalSession as Session } from './JournalSession';
@@ -74,7 +81,6 @@ jest.mock('@/services/plus', () => ({
 }));
 
 const send = jest.mocked(transcribeEntryAudio);
-const alert = jest.spyOn(Alert, 'alert');
 
 const AT = Date.parse('2026-11-06T09:00:00Z');
 const RECORDED: EntryAudio = { id: 'a1', extension: '.m4a', durationSeconds: 6, recovered: false };
@@ -142,20 +148,14 @@ afterEach(() => {
 
 const field = () => screen.getByLabelText(copy.firstEcho.title);
 const stopRecording = async () => {
-  await render(<JournalSession variant="onboarding" />);
+  await renderWithDialogs(<JournalSession variant="onboarding" />);
   await fireEvent.press(await screen.findByRole('button', { name: sessionCopy.speak.stop }));
 };
 const reopen = async (entry = withRecording()) => {
   journal = createMemoryJournal({ entries: [entry] });
   setJournal(journal);
   voice.state = 'idle';
-  await render(<JournalSession variant="onboarding" />);
-};
-const choose = async (label: string) => {
-  const buttons = alert.mock.lastCall?.[2] ?? [];
-  await act(async () => {
-    await buttons.find((button) => button.text === label)?.onPress?.();
-  });
+  await renderWithDialogs(<JournalSession variant="onboarding" />);
 };
 
 describe('the consent question', () => {
@@ -309,14 +309,33 @@ describe('speaking again after a recording that cannot become words', () => {
     );
     expect(await screen.findByText(sessionCopy.transcribe.failed.tooLong)).toBeTruthy();
     await fireEvent.press(screen.getByRole('button', { name: sessionCopy.speak.record }));
-    expect(alert).toHaveBeenCalledWith(
-      sessionCopy.speak.replaceTitle,
-      sessionCopy.speak.replaceMessage,
-      expect.any(Array),
-    );
+    expect(screen.getByRole('header', { name: sessionCopy.speak.replaceTitle })).toBeTruthy();
+    expect(screen.getByText(sessionCopy.speak.replaceMessage)).toBeTruthy();
+    expect(dialogChoices()).toEqual([sessionCopy.speak.replace, sessionCopy.speak.cancel]);
+    expect(dialogPrimary()).toBe(sessionCopy.speak.replace);
     expect(voice.start).not.toHaveBeenCalled();
-    await choose(sessionCopy.speak.replace);
+    await chooseInDialog(sessionCopy.speak.replace);
     expect(voice.start).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the recording on Cancel, Back or a tap outside', async () => {
+    allowed();
+    send.mockResolvedValue(failed('too_long'));
+    await reopen();
+    await fireEvent.press(
+      await screen.findByRole('button', { name: sessionCopy.transcribe.action }),
+    );
+    await screen.findByText(sessionCopy.transcribe.failed.tooLong);
+    const ask = () =>
+      fireEvent.press(screen.getByRole('button', { name: sessionCopy.speak.record }));
+    await ask();
+    await chooseInDialog(sessionCopy.speak.cancel);
+    await ask();
+    await backOutOfDialog();
+    await ask();
+    await tapOutsideDialog();
+    expect(voice.start).not.toHaveBeenCalled();
+    expect(screen.getByText(sessionCopy.transcribe.failed.tooLong)).toBeTruthy();
   });
 });
 
@@ -378,22 +397,40 @@ describe('Reflect while the words are on their way', () => {
     await begin();
     const signal = (send.mock.calls[0]?.[1] as { signal: AbortSignal }).signal;
     await fireEvent.press(reflect());
-    const { title, wait, goOn } = sessionCopy.transcribe.waiting;
-    expect(alert).toHaveBeenCalledWith(title, expect.any(String), expect.any(Array));
-    expect(alert.mock.lastCall?.[2]?.map((button) => button.text)).toEqual([wait, goOn]);
+    const { title, message, wait, goOn } = sessionCopy.transcribe.waiting;
+    expect(screen.getByRole('header', { name: title })).toBeTruthy();
+    expect(screen.getByText(message)).toBeTruthy();
+    // Waiting keeps the words, so it is what the question offers. Go on is the quiet way past it.
+    expect(dialogChoices()).toEqual([wait, goOn]);
+    expect(dialogPrimary()).toBe(wait);
     expect(router.navigate).not.toHaveBeenCalled();
 
-    await choose(goOn);
+    await chooseInDialog(goOn);
     await waitFor(() => expect(router.navigate).toHaveBeenCalledWith('/onboarding/completion'));
     expect(signal.aborted).toBe(true);
     const kept = await journal.latestEntry();
     expect(kept).toMatchObject({ ok: true, value: { hasAudio: true } });
   });
 
+  it('decides nothing on Back or a tap outside: it waits for Wait or Go on', async () => {
+    await begin();
+    await fireEvent.press(reflect());
+    await backOutOfDialog();
+    await tapOutsideDialog();
+    const { title, wait, goOn } = sessionCopy.transcribe.waiting;
+    expect(screen.getByRole('header', { name: title })).toBeTruthy();
+    expect(dialogChoices()).toEqual([wait, goOn]);
+    expect(router.navigate).not.toHaveBeenCalled();
+    expect(screen.getByText(sessionCopy.transcribe.listening)).toBeTruthy();
+    // Answered, it goes on, and the words on their way are let go.
+    await chooseInDialog(goOn);
+    await waitFor(() => expect(router.navigate).toHaveBeenCalledWith('/onboarding/completion'));
+  });
+
   it('waits when asked, and reflects with the words in the entry', async () => {
     const request = await begin();
     await fireEvent.press(reflect());
-    await choose(sessionCopy.transcribe.waiting.wait);
+    await chooseInDialog(sessionCopy.transcribe.waiting.wait);
     expect(router.navigate).not.toHaveBeenCalled();
 
     await act(async () => request.settle(said('All of it, in my own voice.')));
@@ -408,7 +445,7 @@ describe('Reflect while the words are on their way', () => {
   it('does not wait on its own if the words fail while the person waits', async () => {
     const request = await begin();
     await fireEvent.press(reflect());
-    await choose(sessionCopy.transcribe.waiting.wait);
+    await chooseInDialog(sessionCopy.transcribe.waiting.wait);
     await act(async () => request.settle(failed('offline')));
     expect(await screen.findByText(sessionCopy.transcribe.failed.offline)).toBeTruthy();
     expect(router.navigate).not.toHaveBeenCalled();
@@ -422,11 +459,35 @@ describe('Reflect while the words are on their way', () => {
     );
     await screen.findByText(sessionCopy.transcribe.failed.offline);
     await fireEvent.press(reflect());
-    const { title, retry, goOn } = sessionCopy.transcribe.missing;
-    expect(alert).toHaveBeenCalledWith(title, expect.any(String), expect.any(Array));
-    await choose(goOn);
+    const { title, message, retry, goOn } = sessionCopy.transcribe.missing;
+    expect(screen.getByRole('header', { name: title })).toBeTruthy();
+    expect(screen.getByText(message)).toBeTruthy();
+    expect(dialogChoices()).toEqual([retry, goOn]);
+    expect(dialogPrimary()).toBe(retry);
+    // No way out but a choice: Back and a tap outside leave the question where it is.
+    await backOutOfDialog();
+    await tapOutsideDialog();
+    expect(router.navigate).not.toHaveBeenCalled();
+    await chooseInDialog(goOn);
     await waitFor(() => expect(router.navigate).toHaveBeenCalledWith('/onboarding/completion'));
-    expect(retry).toBeTruthy();
+  });
+
+  it('after a failure, Try again sends the recording again and reflects once the words come', async () => {
+    send.mockResolvedValueOnce(failed('offline'));
+    await reopen();
+    await fireEvent.press(
+      await screen.findByRole('button', { name: sessionCopy.transcribe.action }),
+    );
+    await screen.findByText(sessionCopy.transcribe.failed.offline);
+    send.mockResolvedValueOnce(said('Here after all.'));
+    await fireEvent.press(reflect());
+    await chooseInDialog(sessionCopy.transcribe.missing.retry);
+    await waitFor(() => expect(router.navigate).toHaveBeenCalledWith('/onboarding/completion'));
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(await journal.getEntry('draft-1')).toMatchObject({
+      ok: true,
+      value: { status: 'committed', body: 'Here after all.' },
+    });
   });
 });
 

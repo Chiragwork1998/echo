@@ -1,9 +1,17 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { router } from 'expo-router';
-import { Alert, Dimensions } from 'react-native';
+import { Dimensions } from 'react-native';
 
 import { createMemoryJournal, openEntryAudio, setJournal, type Entry } from '@/features/journal';
 import { usePreferences } from '@/state/preferences';
+import {
+  backOutOfDialog,
+  chooseInDialog,
+  dialogChoices,
+  dialogPrimary,
+  openDialog,
+  renderWithDialogs,
+} from '@/testing/dialogs';
 import { render } from '@/testing/render';
 
 import { echoesCopy } from './echoesCopy';
@@ -53,14 +61,8 @@ const base: Entry = {
 };
 const seed = (...entries: Entry[]) => setJournal(createMemoryJournal({ entries }));
 
-function confirmDelete() {
-  const [, , buttons] = jest.mocked(Alert.alert).mock.calls[0] ?? [];
-  return buttons?.find((button) => button.style === 'destructive');
-}
-
 beforeEach(() => {
   jest.clearAllMocks();
-  jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
   usePreferences.setState({ theme: 'night' });
   const metrics = { width: 393, height: 852, scale: 2, fontScale: 1 };
   Dimensions.set({ window: metrics, screen: metrics });
@@ -113,26 +115,32 @@ describe('EntryReaderScreen', () => {
     await waitFor(() => expect(router.back).toHaveBeenCalledTimes(1));
   });
 
-  it('asks before deleting, deletes only on the destructive button, and leaves exactly once', async () => {
+  it('asks before deleting, deletes only on Delete, and leaves exactly once', async () => {
     seed(base);
-    await render(<EntryReaderScreen id="one" />);
+    await renderWithDialogs(<EntryReaderScreen id="one" />);
     await fireEvent.press(await screen.findByRole('button', { name: echoesCopy.delete }));
-    expect(Alert.alert).toHaveBeenCalledTimes(1);
-    expect(jest.mocked(Alert.alert).mock.calls[0]?.[0]).toBe(echoesCopy.deleteTitle);
-    expect(jest.mocked(Alert.alert).mock.calls[0]?.[1]).toMatch(/can’t be undone/);
+    expect(screen.getByRole('header', { name: echoesCopy.deleteTitle })).toBeTruthy();
+    expect(screen.getByText(echoesCopy.deleteBody)).toBeTruthy();
+    expect(echoesCopy.deleteBody).toMatch(/can’t be undone/);
+    // Deleting is never the inviting button: both are quiet words, and Cancel comes last.
+    expect(dialogChoices()).toEqual([echoesCopy.deleteConfirm, echoesCopy.deleteCancel]);
+    expect(dialogPrimary()).toBeNull();
     expect(router.back).not.toHaveBeenCalled();
 
-    await act(async () => confirmDelete()?.onPress?.());
+    await chooseInDialog(echoesCopy.deleteConfirm);
     await waitFor(() => expect(router.back).toHaveBeenCalled());
     expect(router.back).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps the echo when the confirmation is cancelled', async () => {
+  it.each([
+    ['Cancel', () => chooseInDialog(echoesCopy.deleteCancel)],
+    ['Back', backOutOfDialog],
+  ])('keeps the echo on %s', async (_way, leave) => {
     seed(base);
-    await render(<EntryReaderScreen id="one" />);
+    await renderWithDialogs(<EntryReaderScreen id="one" />);
     await fireEvent.press(await screen.findByRole('button', { name: echoesCopy.delete }));
-    const cancel = jest.mocked(Alert.alert).mock.calls[0]?.[2]?.find((b) => b.style === 'cancel');
-    await act(async () => cancel?.onPress?.());
+    await leave();
+    expect(openDialog()).toBeNull();
     expect(router.back).not.toHaveBeenCalled();
     expect(screen.getByText(base.body)).toBeTruthy();
   });
