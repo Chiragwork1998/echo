@@ -339,14 +339,26 @@ describe('You: export', () => {
     expect(screen.getByText(/1 echo can’t be opened, so it was left out\./)).toBeTruthy();
   });
 
+  it('says what was prepared on the Export row itself, never below the group under the tab bar', async () => {
+    jest.mocked(exportJournal).mockResolvedValue({ ok: true, exported: 4, unreadable: 0 });
+    await render(<YouScreen />);
+    await fireEvent.press(button(new RegExp(youCopy.export)));
+    const row = await screen.findByRole('button', {
+      name: /^Export your journal\. Prepared 4 echoes for sharing\.$/,
+    });
+    expect(within(row).getByText(/Prepared 4 echoes for sharing\./)).toBeTruthy();
+    expect(screen.getAllByText(/Prepared 4 echoes for sharing\./)).toHaveLength(1);
+  });
+
   it.each([
     ['failed' as const, youCopy.exportFailed],
     ['unavailable' as const, youCopy.exportUnavailable],
-  ])('says so when the export is %s', async (code, message) => {
+  ])('says so on the Export row when the export is %s', async (code, message) => {
     jest.mocked(exportJournal).mockResolvedValue({ ok: false, code });
     await render(<YouScreen />);
     await fireEvent.press(button(new RegExp(youCopy.export)));
     expect(await screen.findByText(message)).toBeTruthy();
+    expect(within(button(new RegExp(youCopy.export))).getByText(message)).toBeTruthy();
   });
 });
 

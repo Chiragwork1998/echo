@@ -1,5 +1,5 @@
-import { useState, type PropsWithChildren } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState, type PropsWithChildren } from 'react';
+import { AccessibilityInfo, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { ChoiceMarker } from '@/components/ChoiceMarker';
 import { EchoText } from '@/components/EchoText';
@@ -187,14 +187,20 @@ function exportMessage(state: ExportState): string | null {
 function Data() {
   const exporting = useExport();
   const deleting = useDeleteAll();
-  const message = exportMessage(exporting.state);
+  // What the export did is said on its own row, where the person tapped, until they leave the page.
+  // Set below the group, it landed behind the floating tab bar (walk v6).
+  const result = exportMessage(exporting.state);
+  useEffect(() => {
+    const said = exportMessage(exporting.state);
+    if (said) AccessibilityInfo.announceForAccessibility(said);
+  }, [exporting.state]);
   const working = exporting.state.kind === 'working' || deleting.state === 'deleting';
   return (
     <Group>
       <Section title={youCopy.data}>
         <Row
           label={exporting.state.kind === 'working' ? youCopy.exporting : youCopy.export}
-          detail={youCopy.exportDetail}
+          detail={result ?? youCopy.exportDetail}
           busy={exporting.state.kind === 'working'}
           disabled={working}
           onPress={() => void exporting.run()}
@@ -209,7 +215,6 @@ function Data() {
           onPress={deleting.confirm}
         />
       </Section>
-      {message && <Notice message={message} />}
       {deleting.state === 'error' && <Notice message={youCopy.deleteFailed} />}
     </Group>
   );
