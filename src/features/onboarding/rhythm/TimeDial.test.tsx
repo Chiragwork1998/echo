@@ -23,7 +23,8 @@ type Shared = { value: unknown; get(): unknown; set(next: unknown): void };
 type Reaction = {
   prepare: () => unknown;
   react: (now: unknown, was: unknown) => void;
-  was: unknown;
+  /** What it saw last, kept across draws: the reaction is one thing for the life of its component. */
+  seen: { was: unknown };
 };
 const mockShared: Shared[] = [];
 const mockReactions = new Set<Reaction>();
