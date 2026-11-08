@@ -399,7 +399,11 @@ function RecentCard({ summary, strong }: { summary: HomeSummary; strong: boolean
   const display = entryDisplay(recent);
   const meta = `${dayLabel(recent.localDay, rhythm.today)} · ${homeLabels.minutes(minutesOf(recent.durationSeconds))}`;
   return (
-    <GlassCard radius={tokens.radius.medium} strength={strong ? 'strong' : 'regular'}>
+    <GlassCard
+      radius={tokens.radius.medium}
+      strength={strong ? 'strong' : 'regular'}
+      contentKey={`recent:${recent.id}`}
+    >
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`${display.title}. ${display.openable ? meta : ''}`}

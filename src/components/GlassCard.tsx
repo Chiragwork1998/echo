@@ -23,6 +23,7 @@ import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 
 import { OnGlass } from './arrival';
+import { Swap } from './Swap';
 
 type BlurTarget = RefObject<ComponentRef<typeof View> | null>;
 const BlurTargetContext = createContext<BlurTarget | null>(null);
@@ -82,9 +83,22 @@ type Props = PropsWithChildren<{
   radius?: number;
   style?: StyleProp<ViewStyle>;
   contentStyle?: StyleProp<ViewStyle>;
+  /**
+   * What the card is about, for a card whose answer can arrive after the card has. When it changes,
+   * what is written on the glass dissolves into what replaces it, in place (see Swap), and the glass
+   * itself is never faded. Leave it out for a card that is always about the same thing.
+   */
+  contentKey?: string | number;
 }>;
 
-export function GlassCard({ strength = 'regular', radius, style, contentStyle, children }: Props) {
+export function GlassCard({
+  strength = 'regular',
+  radius,
+  style,
+  contentStyle,
+  contentKey,
+  children,
+}: Props) {
   const { colors } = useTheme();
   const reduceTransparency = useReduceTransparency();
   const strong = strength === 'strong' || reduceTransparency;
@@ -103,7 +117,7 @@ export function GlassCard({ strength = 'regular', radius, style, contentStyle, c
           ]}
         />
         <OnGlass style={contentStyle} wrap>
-          {children}
+          {contentKey === undefined ? children : <Swap contentKey={contentKey}>{children}</Swap>}
         </OnGlass>
       </View>
     </View>
