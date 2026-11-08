@@ -1,5 +1,6 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { router } from 'expo-router';
+import { StyleSheet } from 'react-native';
 
 import { DEFAULT_PRACTICE, usePreferences } from '@/state/preferences';
 import { useRequirePlus, usePlus } from '@/services/plus';
@@ -116,6 +117,19 @@ describe('What are you feeling?', () => {
     await render(<BreatheScreen />);
     await fireEvent.press(screen.getByTestId('breathe-back'));
     expect(router.dismissTo).toHaveBeenCalledWith('/home');
+  });
+});
+
+describe('the page under the status bar', () => {
+  // Seen on You and Patterns in the release walk: words scrolled up ran under the clock. Breathe's
+  // list and its Before screen (long once "Why this helps" is open) scroll the same way, so their
+  // scrolling begins below the status bar, as the onboarding screens' and the tab pages' do.
+  it('begins its scrolling below the status bar, with the inset given once', async () => {
+    await render(<BreatheScreen />);
+    const scroll = screen.getByTestId('breathe-scroll');
+    // The safe area mock has no inset, so the page keeps its 8 pt floor.
+    expect(StyleSheet.flatten(scroll.props.style).marginTop).toBe(8);
+    expect(StyleSheet.flatten(scroll.props.contentContainerStyle).paddingTop ?? 0).toBe(0);
   });
 });
 

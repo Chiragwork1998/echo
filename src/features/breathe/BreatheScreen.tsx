@@ -211,12 +211,13 @@ export function BreatheScreen() {
     <View style={styles.fill}>
       <Settle key={content}>
         {(stage.kind === 'feelings' || stage.kind === 'before') && (
+          // The scrolling begins below the status bar, as on the tab pages and the onboarding screens,
+          // so words scrolled up go out of sight there and never pass under the clock. At rest the
+          // header sits where it always has.
           <ScrollView
-            style={styles.fill}
-            contentContainerStyle={[
-              styles.scroll,
-              { paddingTop: top, paddingBottom: insets.bottom + 120 },
-            ]}
+            testID="breathe-scroll"
+            style={[styles.fill, { marginTop: top }]}
+            contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 120 }]}
             showsVerticalScrollIndicator={false}
           >
             <View style={column}>
