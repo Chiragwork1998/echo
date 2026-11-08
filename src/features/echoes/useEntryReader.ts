@@ -1,8 +1,8 @@
 import { router } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert } from 'react-native';
 
 import { deleteEntry, useEntry, type AsyncData, type Entry } from '@/features/journal';
+import { showDialog } from '@/features/tab-pages/Dialog';
 
 import { echoesCopy } from './echoesCopy';
 
@@ -36,7 +36,7 @@ function leave() {
 
 export type DeleteState = 'idle' | 'deleting' | 'error';
 
-/** Reading one entry, and deleting it behind a native confirmation. */
+/** Reading one entry, and deleting it behind a confirmation. */
 export function useEntryReader(id: string | null) {
   const entry = useEntry(id);
   const [deleteState, setDeleteState] = useState<DeleteState>('idle');
@@ -63,7 +63,7 @@ export function useEntryReader(id: string | null) {
   }, [exit, id]);
 
   const confirmDelete = useCallback(() => {
-    Alert.alert(echoesCopy.deleteTitle, echoesCopy.deleteBody, [
+    showDialog(echoesCopy.deleteTitle, echoesCopy.deleteBody, [
       { text: echoesCopy.deleteCancel, style: 'cancel' },
       { text: echoesCopy.deleteConfirm, style: 'destructive', onPress: () => void remove() },
     ]);

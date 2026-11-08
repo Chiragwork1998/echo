@@ -1,5 +1,4 @@
-import { Alert } from 'react-native';
-
+import { showDialog } from '@/features/tab-pages/Dialog';
 import {
   getNotificationPermission,
   openAppSettings,
@@ -13,7 +12,7 @@ const TITLE = 'Gentle reminder';
 
 const ask = (body: string, confirm: string) =>
   new Promise<boolean>((resolve) => {
-    Alert.alert(TITLE, body, [
+    showDialog(TITLE, body, [
       { text: 'Not now', style: 'cancel', onPress: () => resolve(false) },
       { text: confirm, onPress: () => resolve(true) },
     ]);

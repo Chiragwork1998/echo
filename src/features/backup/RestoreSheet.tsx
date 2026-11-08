@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { AccessibilityInfo, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { AccessibilityInfo, StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
   ReduceMotion,
@@ -8,12 +8,9 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { EchoText } from '@/components/EchoText';
-import { PrimaryCTA } from '@/components/PrimaryCTA';
-import { useLayout } from '@/design/layout';
 import { tokens } from '@/design/tokens';
 import { useTone } from '@/features/onboarding/rhythm/tone';
-import { supporting } from '@/features/tab-pages/textStyles';
+import { Sheet, SheetAction, SheetButton, SheetText, SheetTitle } from '@/features/tab-pages/Sheet';
 
 import { restoreCopy, type RestoreProblem } from './restoreCopy';
 import type { RestoreState } from './useRestore';
@@ -136,14 +133,12 @@ function Progress({ done, total }: { done: number; total: number }) {
 }
 
 /**
- * Every step of a restore after the file is chosen, in one calm sheet over You: what the backup
- * holds and the question, the restore as it goes, and what happened. A restore under way cannot be
- * waved away, because it cannot be stopped half way.
+ * Every step of a restore after the file is chosen, in one calm sheet over You, in the cloth every
+ * sheet shares: what the backup holds and the question, the restore as it goes, and what happened. A
+ * restore under way cannot be waved away, because it cannot be stopped half way.
  */
 export function RestoreSheet(props: Props) {
   const { state, visible, thisYear = new Date().getFullYear() } = props;
-  const tone = useTone();
-  const { ctaWidth } = useLayout();
   const shown = visible && SHEET_STATES.includes(state.kind);
   const view = viewOf(state, thisYear, props);
   const settled = state.kind === 'done' || state.kind === 'stopped' || state.kind === 'failed';
@@ -156,85 +151,32 @@ export function RestoreSheet(props: Props) {
     }
   }, [settled, shown, view.message]);
 
+  const footer =
+    view.primary || view.secondary ? (
+      <>
+        {view.primary ? (
+          <SheetButton label={view.primary.label} onPress={view.primary.onPress} />
+        ) : null}
+        {view.secondary ? (
+          <SheetAction label={view.secondary.label} onPress={view.secondary.onPress} />
+        ) : null}
+      </>
+    ) : undefined;
+
+  // Under the lock it goes at once: nothing should fade over the lock.
   return (
-    <Modal
-      testID="restore-sheet"
-      transparent
-      animationType={visible ? 'fade' : 'none'}
-      visible={shown}
-      onRequestClose={back}
-    >
-      <View style={styles.scrim}>
-        <View
-          accessibilityViewIsModal
-          onAccessibilityEscape={back}
-          style={[styles.sheet, { backgroundColor: tone.sheet, borderColor: tone.edge }]}
-        >
-          <ScrollView style={styles.scroll} contentContainerStyle={styles.body}>
-            <EchoText
-              variant="displayM"
-              accessibilityRole="header"
-              style={{ color: tone.ink }}
-              maxFontSizeMultiplier={1.5}
-            >
-              {typeset(restoreCopy.title)}
-            </EchoText>
-            <View accessibilityLiveRegion="polite">
-              <EchoText variant="bodyM" style={{ color: tone.ink }} maxFontSizeMultiplier={1.5}>
-                {typeset(view.message)}
-              </EchoText>
-            </View>
-            {view.progress ? <Progress {...view.progress} /> : null}
-            {view.note ? (
-              <EchoText
-                variant="caption"
-                style={[supporting, { color: tone.inkSoft }]}
-                maxFontSizeMultiplier={1.5}
-              >
-                {typeset(view.note)}
-              </EchoText>
-            ) : null}
-          </ScrollView>
-          {view.primary || view.secondary ? (
-            <View style={styles.choices}>
-              {view.primary ? (
-                <PrimaryCTA label={view.primary.label} onPress={view.primary.onPress} />
-              ) : null}
-              {view.secondary ? (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={view.secondary.label}
-                  onPress={view.secondary.onPress}
-                  style={({ pressed }) => [
-                    styles.secondary,
-                    { width: ctaWidth, borderColor: tone.edge, opacity: pressed ? 0.7 : 1 },
-                  ]}
-                >
-                  <EchoText variant="label" style={{ color: tone.ink }} maxFontSizeMultiplier={1.4}>
-                    {view.secondary.label.toUpperCase()}
-                  </EchoText>
-                </Pressable>
-              ) : null}
-            </View>
-          ) : null}
-        </View>
+    <Sheet visible={shown} animated={visible} onClose={back} footer={footer} testID="restore-sheet">
+      <SheetTitle>{restoreCopy.title}</SheetTitle>
+      <View accessibilityLiveRegion="polite">
+        <SheetText>{typeset(view.message)}</SheetText>
       </View>
-    </Modal>
+      {view.progress ? <Progress {...view.progress} /> : null}
+      {view.note ? <SheetText soft>{typeset(view.note)}</SheetText> : null}
+    </Sheet>
   );
 }
 
 const styles = StyleSheet.create({
-  scrim: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(3,11,22,0.5)' },
-  sheet: {
-    margin: tokens.space[12],
-    marginBottom: tokens.space[32],
-    maxHeight: '86%',
-    borderRadius: tokens.radius.large,
-    borderWidth: 1,
-    paddingVertical: tokens.space[16],
-  },
-  scroll: { flexGrow: 0 },
-  body: { gap: tokens.space[12], paddingHorizontal: tokens.space[24] },
   track: {
     height: 3,
     borderRadius: tokens.radius.pill,
@@ -242,19 +184,4 @@ const styles = StyleSheet.create({
     marginVertical: tokens.space[8],
   },
   fill: { ...StyleSheet.absoluteFill, transformOrigin: 'left' },
-  choices: {
-    alignItems: 'center',
-    gap: tokens.space[12],
-    paddingHorizontal: tokens.space[24],
-    paddingTop: tokens.space[16],
-  },
-  // As wide as the primary action above it.
-  secondary: {
-    minHeight: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 24,
-    borderWidth: 1,
-    paddingHorizontal: tokens.space[16],
-  },
 });

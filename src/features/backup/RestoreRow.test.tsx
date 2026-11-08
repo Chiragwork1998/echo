@@ -8,6 +8,7 @@ import { dirname, join } from 'node:path';
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { AccessibilityInfo } from 'react-native';
 
+import { tokens } from '@/design/tokens';
 import { emptyContent } from '@/features/journal/content';
 import { sqlJournalFor } from '@/features/journal/runtime';
 import type { JournalResult } from '@/features/journal/types';
@@ -26,6 +27,10 @@ import { restoreCopy } from './restoreCopy';
 import { RestoreRow } from './RestoreRow';
 
 jest.mock('./pickBackupFile', () => ({ pickBackupFile: jest.fn() }));
+jest.mock(
+  'react-native-safe-area-context',
+  () => jest.requireActual('react-native-safe-area-context/jest/mock').default,
+);
 jest.mock('@/services/importJournal', () => {
   const actual = jest.requireActual('@/services/importJournal');
   return { ...actual, openBackup: jest.fn(actual.openBackup) };
@@ -124,6 +129,9 @@ async function picks(bytes: Uint8Array): Promise<string> {
 
 const row = () => screen.getByRole('button', { name: new RegExp(restoreCopy.row) });
 const button = (name: string) => screen.getByRole('button', { name });
+/** A tap on the dimmed page around the sheet, which screen readers never reach. */
+const tapOutside = () =>
+  fireEvent.press(screen.getByTestId('restore-sheet-outside', { includeHiddenElements: true }));
 const tempLeft = () =>
   existsSync(rt.paths.tempDir) ? readdirSync(rt.paths.tempDir, { recursive: true }) : [];
 
@@ -234,8 +242,9 @@ describe('a backup restored', () => {
     expect(screen.getByText(restoreCopy.keepOpen)).toBeTruthy();
     expect(screen.getByRole('progressbar')).toHaveAccessibilityValue({ min: 0, max: 3, now: 1 });
     expect(screen.queryByRole('button', { name: restoreCopy.notNow })).toBeNull();
-    // The system Back button does nothing until it is done.
+    // The system Back button, and a tap outside, do nothing until it is done.
     await fireEvent(screen.getByTestId('restore-sheet'), 'requestClose');
+    await tapOutside();
     expect(screen.getByText(restoreCopy.restoring(1, 3))).toBeTruthy();
 
     await act(async () => finish());
@@ -275,6 +284,29 @@ describe('a backup restored', () => {
     await fireEvent.press(row());
     await fireEvent.press(await screen.findByRole('button', { name: restoreCopy.notNow }));
 
+    expect(screen.queryByTestId('restore-sheet')).toBeNull();
+    expect(tempLeft()).toEqual([]);
+    expect(await rt.db.first('SELECT id FROM entries')).toBeNull();
+  });
+
+  it('offers Restore as the one primary button, and Not now as a quiet word', async () => {
+    await show();
+    await picks(await backup());
+    await fireEvent.press(row());
+    await screen.findByText(preview());
+    expect(button(restoreCopy.restore)).toHaveStyle({ height: tokens.size.primaryButtonHeight });
+    expect(button(restoreCopy.notNow)).toHaveStyle({ minHeight: tokens.size.tapTarget });
+    // Sentence case, as every sheet's quiet word is: never a shouted, tracked pill.
+    expect(screen.getByText(restoreCopy.notNow)).toBeTruthy();
+    expect(screen.queryByText(restoreCopy.notNow.toUpperCase())).toBeNull();
+  });
+
+  it('treats a tap outside the preview as Not now', async () => {
+    await show();
+    await picks(await backup());
+    await fireEvent.press(row());
+    await screen.findByText(preview());
+    await tapOutside();
     expect(screen.queryByTestId('restore-sheet')).toBeNull();
     expect(tempLeft()).toEqual([]);
     expect(await rt.db.first('SELECT id FROM entries')).toBeNull();

@@ -2,7 +2,7 @@ import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import type { ComponentProps } from 'react';
-import { Alert, AppState, Text } from 'react-native';
+import { AppState, Text } from 'react-native';
 
 import { copy } from '@/content/copy';
 import { ThemeProvider, useTheme } from '@/design/theme';
@@ -20,6 +20,14 @@ import {
 } from '@/services/permissions';
 import { initialOnboarding, useOnboarding } from '@/state/onboarding';
 import { usePreferences } from '@/state/preferences';
+import {
+  backOutOfDialog,
+  chooseInDialog,
+  dialogChoices,
+  dialogPrimary,
+  openDialog,
+  renderWithDialogs,
+} from '@/testing/dialogs';
 import { render } from '@/testing/render';
 
 import { JournalSession as Session, type SessionVariant } from './JournalSession';
@@ -63,7 +71,6 @@ function JournalSession(props: ComponentProps<typeof Session>) {
 }
 
 const BODY = 'something I have carried';
-const alert = jest.spyOn(Alert, 'alert');
 /** The handlers the session gave the app's foreground/background events, so a test can fire them. */
 let appStateHandlers: ((state: string) => void)[] = [];
 const appState = (state: string) => appStateHandlers.forEach((handler) => handler(state));
@@ -111,7 +118,7 @@ beforeEach(() => {
 afterEach(() => setJournal(null));
 
 async function open(variant: SessionVariant = 'onboarding', props = {}) {
-  await render(<JournalSession variant={variant} {...props} />);
+  await renderWithDialogs(<JournalSession variant={variant} {...props} />);
   const input = () =>
     screen.getByLabelText(variant === 'daily' ? copy.home.prompt : copy.firstEcho.title);
   await waitFor(() => expect(input().props.editable).toBe(true));
@@ -310,17 +317,11 @@ describe('JournalSession Reflect', () => {
 
 describe('JournalSession Back', () => {
   const back = () => screen.getByRole('button', { name: 'Back' });
-  const choose = async (label: string) => {
-    const buttons = alert.mock.calls[0]?.[2] ?? [];
-    await act(async () => {
-      await buttons.find((button) => button.text === label)?.onPress?.();
-    });
-  };
 
   it('leaves at once when there is nothing to keep', async () => {
     await open();
     await fireEvent.press(back());
-    expect(alert).not.toHaveBeenCalled();
+    expect(openDialog()).toBeNull();
     expect(router.navigate).toHaveBeenCalledWith('/onboarding/arrival');
   });
 
@@ -343,7 +344,7 @@ describe('JournalSession Back', () => {
     await write(input);
     await fireEvent(input(), 'blur');
     await fireEvent.press(screen.getByTestId('quiet-back'));
-    await choose(label);
+    await chooseInDialog(label);
     expect(router.dismissTo).toHaveBeenCalledWith('/home');
     expect(router.navigate).not.toHaveBeenCalled();
   });
@@ -352,8 +353,11 @@ describe('JournalSession Back', () => {
     const input = await open();
     await write(input);
     await fireEvent.press(back());
-    const buttons = alert.mock.calls[0]?.[2] ?? [];
-    expect(buttons.map((button) => button.text)).toEqual(['Keep draft', 'Discard', 'Stay']);
+    expect(screen.getByRole('header', { name: sessionCopy.leave.title })).toBeTruthy();
+    expect(screen.getByText(sessionCopy.leave.message)).toBeTruthy();
+    // Keeping is what it offers. Discard destroys, so it is a quiet word, and Stay is the way out.
+    expect(dialogChoices()).toEqual(['Keep draft', 'Discard', 'Stay']);
+    expect(dialogPrimary()).toBe('Keep draft');
     expect(router.navigate).not.toHaveBeenCalled();
   });
 
@@ -361,7 +365,7 @@ describe('JournalSession Back', () => {
     const input = await open();
     await write(input);
     await fireEvent.press(back());
-    await choose(sessionCopy.leave.keep);
+    await chooseInDialog(sessionCopy.leave.keep);
     expect(router.navigate).toHaveBeenCalledWith('/onboarding/arrival');
     const saved = await latestDraft();
     expect(saved).toMatchObject({ ok: true, value: { body: BODY } });
@@ -371,7 +375,7 @@ describe('JournalSession Back', () => {
     const input = await open();
     await write(input);
     await fireEvent.press(back());
-    await choose(sessionCopy.leave.discard);
+    await chooseInDialog(sessionCopy.leave.discard);
     expect(router.navigate).toHaveBeenCalledWith('/onboarding/arrival');
     expect(await latestDraft()).toMatchObject({ ok: true, value: null });
   });
@@ -380,7 +384,17 @@ describe('JournalSession Back', () => {
     const input = await open();
     await write(input);
     await fireEvent.press(back());
-    await choose(sessionCopy.leave.stay);
+    await chooseInDialog(sessionCopy.leave.stay);
+    expect(router.navigate).not.toHaveBeenCalled();
+    expect(input().props.value).toBe(BODY);
+  });
+
+  it('Back on the question is Stay', async () => {
+    const input = await open();
+    await write(input);
+    await fireEvent.press(back());
+    await backOutOfDialog();
+    expect(openDialog()).toBeNull();
     expect(router.navigate).not.toHaveBeenCalled();
     expect(input().props.value).toBe(BODY);
   });
