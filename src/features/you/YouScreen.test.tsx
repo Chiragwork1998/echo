@@ -375,6 +375,18 @@ describe('You: export', () => {
     expect(screen.getAllByText(/Prepared 4 echoes for sharing\./)).toHaveLength(1);
   });
 
+  it('holds the row at two lines of detail whether it describes or reports: nothing below it moves', async () => {
+    const room = (text: string | RegExp) =>
+      (StyleSheet.flatten(screen.getByText(text).props.style) as { minHeight?: number }).minHeight;
+    jest.mocked(exportJournal).mockResolvedValue({ ok: true, exported: 9, unreadable: 0 });
+    await render(<YouScreen />);
+    const idle = room(youCopy.exportDetail);
+    expect(idle).toBeGreaterThanOrEqual(40);
+    await fireEvent.press(button(new RegExp(youCopy.export)));
+    await screen.findByText(/Prepared 9 echoes for sharing\./);
+    expect(room(/Prepared 9 echoes for sharing\./)).toBe(idle);
+  });
+
   it.each([
     ['failed' as const, youCopy.exportFailed],
     ['unavailable' as const, youCopy.exportUnavailable],

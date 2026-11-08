@@ -231,6 +231,8 @@ function Data() {
         <Row
           label={exporting.state.kind === 'working' ? youCopy.exporting : youCopy.export}
           detail={result ?? youCopy.exportDetail}
+          // The description is two lines and the result one: the rows below stay where they are.
+          detailLines={2}
           busy={exporting.state.kind === 'working'}
           disabled={working}
           onPress={() => void exporting.run()}

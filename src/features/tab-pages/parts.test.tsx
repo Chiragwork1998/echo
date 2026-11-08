@@ -1,4 +1,7 @@
 import { fireEvent, screen } from '@testing-library/react-native';
+import { Dimensions, StyleSheet } from 'react-native';
+
+import { ThemeProvider } from '@/design/theme';
 import { render } from '@/testing/render';
 
 import { Loading, Notice, Row, SkeletonLine, SwitchRow } from './parts';
@@ -25,6 +28,43 @@ describe('Row while it works', () => {
     await render(<Row label="Export" onPress={onPress} busy />);
     await fireEvent.press(screen.getByRole('button', { name: /Export/ }));
     expect(onPress).not.toHaveBeenCalled();
+  });
+});
+
+describe('Row detail room', () => {
+  const metrics = { width: 393, height: 852, scale: 2 };
+  const fontScale = (scale: number) =>
+    Dimensions.set({
+      window: { ...metrics, fontScale: scale },
+      screen: { ...metrics, fontScale: scale },
+    });
+  beforeEach(() => fontScale(1));
+  afterEach(() => fontScale(1));
+
+  const room = (text: string) =>
+    (StyleSheet.flatten(screen.getByText(text).props.style) as { minHeight?: number }).minHeight;
+
+  it('reserves the lines it is told to, so a detail that changes never moves the rows below', async () => {
+    // The Export row: a two-line description is replaced by a one-line result, and back. At 20 pt a line.
+    const view = await render(<Row label="Export" detail="Two lines of words" detailLines={2} />);
+    expect(room('Two lines of words')).toBe(40);
+    await view.rerender(
+      <ThemeProvider crossfade={false}>
+        <Row label="Export" detail="One line." detailLines={2} />
+      </ThemeProvider>,
+    );
+    expect(room('One line.')).toBe(40);
+  });
+
+  it('reserves nothing unless asked: a row that has one line of detail is as tall as one', async () => {
+    await render(<Row label="Export" detail="One line." />);
+    expect(room('One line.')).toBeUndefined();
+  });
+
+  it('grows with the type size the person has chosen, as far as the type itself does (1.6 times)', async () => {
+    fontScale(2);
+    await render(<Row label="Export" detail="One line." detailLines={2} />);
+    expect(room('One line.')).toBe(2 * 20 * 1.6);
   });
 });
 
