@@ -9,6 +9,7 @@ import { tokens } from '@/design/tokens';
 import { useReduceMotion } from '@/design/useReduceMotion';
 import { HomeDissolveProvider } from '@/features/home/dissolve';
 import { NightHomeLoop } from '@/features/home/NightHomeLoop';
+import { SESSION_ROUTE } from '@/features/home/sessionRoute';
 import { HomeTabBar } from '@/features/home/tabs/HomeTabBar';
 import { useGate } from '@/state/gate';
 
@@ -54,15 +55,9 @@ export default function HomeLayout() {
         },
       })}
     >
-      {/* Reached by dissolve, so it swaps in with no animation and no screen colour of its own. */}
-      <Stack.Screen
-        name="session"
-        options={{
-          animation: 'none',
-          gestureEnabled: false,
-          contentStyle: { backgroundColor: 'transparent' },
-        }}
-      />
+      {/* Reached by dissolve, so Home has already melted when it arrives; its fade out is the stack's
+          own, so the book goes gently (src/features/home/sessionRoute.ts). */}
+      <Stack.Screen name="session" options={SESSION_ROUTE} />
       {/* Breathe is reached the same way, and breathes over the same plate. */}
       <Stack.Screen
         name="breathe"
