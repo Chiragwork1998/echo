@@ -3,8 +3,9 @@
 // card's words, a quote, or anything the person wrote, and nothing here is logged.
 //
 // It goes to POST /api/report on the voice server (voice-api/api/report.ts), which refuses any field
-// but these four. When the server cannot be reached the report is kept on this phone, sealed like the
-// cards themselves, and sent the next time Patterns opens.
+// but these four. When the server cannot take it now (no connection, a server that does not answer or
+// is busy, or one without the report route yet) the report is kept on this phone, sealed like the
+// cards themselves, and sent the next time Patterns opens, once and only once.
 
 import { getRuntime } from '@/storage/runtime';
 
@@ -61,21 +62,51 @@ export const reportBody = (report: CardReport): string =>
   });
 
 /**
- * What one attempt came to. `offline` and `busy` are worth another try later; `refused` (the server
- * would not take it) and `unavailable` (this build has no server) are not.
+ * What one attempt came to. Worth another try later: `offline` (the phone says it has no
+ * connection), `unreachable` (the request did not get through, and the phone has a connection or
+ * cannot say), `busy` (429 or 5xx), and `missing` (404: a server without the report route yet). Not
+ * worth one: `refused` (the server would not take it) and `unavailable` (this build has no server).
  */
-export type SendOutcome = 'sent' | 'offline' | 'busy' | 'refused' | 'unavailable';
+export type SendOutcome =
+  'sent' | 'offline' | 'unreachable' | 'busy' | 'missing' | 'refused' | 'unavailable';
 
 const outcomeOf = (status: number): SendOutcome =>
-  status >= 200 && status < 300 ? 'sent' : status === 429 || status >= 500 ? 'busy' : 'refused';
+  status >= 200 && status < 300
+    ? 'sent'
+    : status === 404
+      ? 'missing'
+      : status === 429 || status >= 500
+        ? 'busy'
+        : 'refused';
 
-const later = (outcome: SendOutcome) => outcome === 'offline' || outcome === 'busy';
+const LATER: readonly SendOutcome[] = ['offline', 'unreachable', 'busy', 'missing'];
+const later = (outcome: SendOutcome) => LATER.includes(outcome);
+
+/**
+ * Whether the phone has a connection: false only when the phone itself says it has none, and null
+ * when it cannot say. The same rule as a recording's (src/services/transcription.ts): a person is
+ * never told to check a connection that is fine.
+ */
+export async function phoneOnline(): Promise<boolean | null> {
+  try {
+    // Required here so that importing this file stays free of native modules in tests and on web.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const network = require('expo-network') as typeof import('expo-network');
+    const state = await network.getNetworkStateAsync();
+    return state.isConnected === false || state.isInternetReachable === false ? false : true;
+  } catch {
+    return null;
+  }
+}
+
+type Online = () => Promise<boolean | null>;
 
 /** One report, once, with this install's token and the shared one. Nothing throws. */
 export async function sendReport(
   report: CardReport,
   send: typeof fetch = fetch,
   tokens: InstallTokens = installTokens,
+  online: Online = phoneOnline,
 ): Promise<SendOutcome> {
   const api = voiceApi();
   if (!api) return 'unavailable';
@@ -93,7 +124,9 @@ export async function sendReport(
           signal: controller.signal,
         });
       } catch {
-        return { outcome: 'offline' as SendOutcome, refusedInstall: false };
+        const connected = await online().catch(() => null);
+        const outcome: SendOutcome = connected === false ? 'offline' : 'unreachable';
+        return { outcome, refusedInstall: false };
       }
       let body: unknown;
       try {
@@ -183,7 +216,12 @@ export const sealedShelf: ReportShelf = {
   },
 };
 
-export type ReportDeps = { send?: typeof fetch; tokens?: InstallTokens; shelf?: ReportShelf };
+export type ReportDeps = {
+  send?: typeof fetch;
+  tokens?: InstallTokens;
+  shelf?: ReportShelf;
+  online?: Online;
+};
 
 // Keeping and sending what waits take turns, so a report kept during a send is never lost.
 let turn: Promise<unknown> = Promise.resolve();
@@ -194,19 +232,25 @@ function inTurn<T>(task: () => Promise<T>): Promise<T> {
 }
 
 /**
- * Sent: the server has it. Kept: it could not be sent now, and waits on this phone to be sent the
- * next time Patterns opens. Failed: it was not sent and is not waiting.
+ * Sent: the server has it. Kept: ECHO could not take it now, and it waits on this phone to be sent
+ * the next time Patterns opens. Offline: kept in the same way, because the phone has no connection.
+ * Failed: it was not sent and is not waiting.
  */
-export type ReportResult = 'sent' | 'kept' | 'failed';
+export type ReportResult = 'sent' | 'kept' | 'offline' | 'failed';
 
-/** Sends a report now, or keeps it for later when the server cannot be reached. */
+/** Sends a report now, or keeps it for later when the server cannot take it now. */
 export async function reportCard(
   report: CardReport,
-  { send = fetch, tokens = installTokens, shelf = sealedShelf }: ReportDeps = {},
+  {
+    send = fetch,
+    tokens = installTokens,
+    shelf = sealedShelf,
+    online = phoneOnline,
+  }: ReportDeps = {},
 ): Promise<ReportResult> {
-  const outcome = await sendReport(report, send, tokens);
+  const outcome = await sendReport(report, send, tokens, online);
   if (outcome === 'sent') {
-    void sendWaitingReports({ send, tokens, shelf });
+    void sendWaitingReports({ send, tokens, shelf, online });
     return 'sent';
   }
   if (!later(outcome)) return 'failed';
@@ -215,26 +259,31 @@ export async function reportCard(
     if (waiting === null) return false;
     return shelf.save([...waiting, report].slice(-MOST_KEPT));
   });
-  return kept ? 'kept' : 'failed';
+  if (!kept) return 'failed';
+  return outcome === 'offline' ? 'offline' : 'kept';
 }
 
 /**
- * Sends whatever waits, oldest first, and stops at the first that still cannot go. Ones the server
- * refuses are let go: sending them again would be refused again.
+ * Sends whatever waits, oldest first, and stops at the first that still cannot go. Each one is let
+ * go of the moment it has gone, before the next is tried, so a report the server has is never sent
+ * again, even when ECHO is closed partway. Ones the server refuses are let go too: sending them
+ * again would be refused again.
  */
 export function sendWaitingReports({
   send = fetch,
   tokens = installTokens,
   shelf = sealedShelf,
+  online = phoneOnline,
 }: ReportDeps = {}): Promise<void> {
   return inTurn(async () => {
-    const waiting = await shelf.load();
-    if (!waiting || waiting.length === 0) return;
-    let sent = 0;
-    for (const report of waiting) {
-      if (later(await sendReport(report, send, tokens))) break;
-      sent += 1;
+    let waiting = await shelf.load();
+    while (waiting && waiting.length > 0) {
+      const [report, ...rest] = waiting;
+      if (!report || later(await sendReport(report, send, tokens, online))) return;
+      // A shelf that cannot be written stops this here, so that only the one just sent, still on
+      // it, could ever go a second time.
+      if (!(await shelf.save(rest))) return;
+      waiting = rest;
     }
-    if (sent > 0) await shelf.save(waiting.slice(sent));
   });
 }

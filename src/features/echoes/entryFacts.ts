@@ -43,6 +43,20 @@ export function longDate(localDay: string | undefined, thisYear = new Date().get
   });
 }
 
+/**
+ * "November 4", as the device writes a day and its month, the way longDate does without the
+ * weekday. The year only when asked for. `locale` is for tests: the app always uses the device's.
+ */
+export function dayAndMonth(localDay: string | undefined, withYear = false, locale?: string) {
+  const date = dayOf(localDay);
+  if (!date) return '';
+  return date.toLocaleDateString(locale, {
+    day: 'numeric',
+    month: 'long',
+    year: withYear ? 'numeric' : undefined,
+  });
+}
+
 /** The day of the month and the short weekday, for the margin of the archive: "5", "Thu". */
 export function marginDate(localDay: string | undefined) {
   const date = dayOf(localDay);

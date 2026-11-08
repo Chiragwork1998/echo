@@ -146,3 +146,14 @@ describe('the words on the page while a note is drawn', () => {
     expect(opacity()).toBe(0);
   });
 });
+
+describe('the field the words are written in', () => {
+  // Only a browser draws a focus ring to take away. Android cannot read an outline style at all, and
+  // logged "Could not parse OutlineStyle:none" for every page drawn.
+  it('carries no outline style on a phone', async () => {
+    await open(true);
+    const field = StyleSheet.flatten(screen.getByLabelText(copy.home.prompt).props.style);
+    expect(field).not.toHaveProperty('outlineStyle');
+    expect(field).not.toHaveProperty('outlineWidth');
+  });
+});

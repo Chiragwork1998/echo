@@ -7,6 +7,7 @@ import { utf8Encode } from '@/storage/bytes';
 import { childUri } from '@/storage/ports';
 import { getRuntime, type Runtime } from '@/storage/runtime';
 
+import { BACKUP_FORMAT_VERSION } from './importJournal';
 import { loadSharing } from './nativeModules';
 import { createZipWriter } from './zip';
 
@@ -65,8 +66,14 @@ type Exported = {
   moodBefore: string | null;
   promptId: string | null;
   prompt: string | null;
+  /** How long the session ran. */
   durationSeconds: number;
   audioFile: string | null;
+  /**
+   * How long the recording itself is, which is not the session's length. Null when there is no
+   * recording in the archive, or its length is not known, as for a take rescued after a crash.
+   */
+  audioDurationSeconds: number | null;
   reflection: string | null;
 };
 
@@ -87,6 +94,7 @@ function toExported(entry: Entry, audioFile: string | null, reflection: string |
     prompt: entry.promptText ?? null,
     durationSeconds: entry.durationSeconds,
     audioFile,
+    audioDurationSeconds: audioFile === null ? null : (entry.audio?.durationSeconds ?? null),
     reflection,
   };
 }
@@ -135,7 +143,12 @@ async function writeArchive(
         toExported(entry, audioFile, reflection.ok ? (reflection.value?.text ?? null) : null),
       );
     }
-    const json = { app: 'ECHO', formatVersion: 1, exportedAt: at.toISOString(), entries: items };
+    const json = {
+      app: 'ECHO',
+      formatVersion: BACKUP_FORMAT_VERSION,
+      exportedAt: at.toISOString(),
+      entries: items,
+    };
     await zip.add('entries.json', utf8Encode(JSON.stringify(json, null, 2)));
     await zip.add('entries.md', utf8Encode(toMarkdown(items, at)));
     await zip.finish();

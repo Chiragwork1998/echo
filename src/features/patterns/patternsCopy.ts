@@ -108,10 +108,13 @@ export const patternsCopy = {
     reported: 'Reported',
     sentBody: 'Thank you for telling ECHO.',
     keptTitle: 'Kept to send later',
-    keptBody:
-      'ECHO couldn’t be reached just now. The report waits on this phone and is sent the next time you open Patterns.',
+    /** ECHO could not take it now: a server without the report route, busy, or not answering. */
+    keptBody: 'The report waits on this phone and goes to ECHO the next time you open Patterns.',
+    /** The same, said only when the phone itself reports no connection. */
+    offlineBody:
+      'There’s no connection just now. The report waits on this phone and goes to ECHO the next time you open Patterns.',
     failedTitle: 'The report couldn’t be sent',
-    failedBody: 'Nothing was sent. You can try again once you’re online.',
+    failedBody: 'Nothing was sent. You can try again.',
     tryAgain: 'Try again',
     done: 'Done',
   },

@@ -30,6 +30,7 @@ import {
   type OpenResult,
   type RestoreResult,
 } from './importJournal';
+import { wavHeader } from './wav';
 import { createZipWriter } from './zip';
 
 function unwrap<T>(result: JournalResult<T>): T {
@@ -525,7 +526,11 @@ describe('a backup it will not open', () => {
   it('is one from a newer ECHO, refused kindly whatever it holds', async () => {
     expect(
       await codeOf(
-        await withManifest(() => ({ app: 'ECHO', formatVersion: 2, shelves: [{ new: 'shape' }] })),
+        await withManifest(() => ({
+          app: 'ECHO',
+          formatVersion: BACKUP_FORMAT_VERSION + 1,
+          shelves: [{ new: 'shape' }],
+        })),
       ),
     ).toBe('newer');
   });
@@ -598,6 +603,148 @@ describe('a backup it will not open', () => {
 function indexOf(haystack: Uint8Array, needle: Uint8Array): number {
   return Buffer.from(haystack).indexOf(Buffer.from(needle));
 }
+
+/** `seconds` of silence as a live take keeps it: 24 kHz, mono, 16-bit PCM in a WAV. */
+function wavOf(seconds: number): Uint8Array {
+  const pcm = new Uint8Array(Math.round(seconds * 24_000) * 2);
+  const out = new Uint8Array(44 + pcm.length);
+  out.set(wavHeader({ sampleRate: 24_000, channels: 1 }, pcm.length));
+  out.set(pcm, 44);
+  return out;
+}
+
+/** `frames` ADTS frames of AAC at 16 kHz, mono, as Android keeps a hidden take: 1,024 samples each. */
+function adtsOf(frames: number): Uint8Array {
+  const length = 7 + 96;
+  const out = new Uint8Array(frames * length);
+  for (let index = 0; index < frames; index += 1) {
+    const at = index * length;
+    // Sync, MPEG-4, no CRC; AAC LC at 16 kHz (index 8); one channel; the frame's length; one block.
+    out.set(
+      [
+        0xff,
+        0xf1,
+        0x60,
+        0x40 | ((length >> 11) & 3),
+        (length >> 3) & 0xff,
+        ((length & 7) << 5) | 0x1f,
+        0xfc,
+      ],
+      at,
+    );
+  }
+  return out;
+}
+
+describe('a recording’s own length', () => {
+  /** One spoken entry: a take of `recorded` seconds, kept in a session that ran `session` seconds. */
+  async function spoken(
+    recorded: number | null,
+    session: number,
+    extension = '.m4a',
+    bytes: Uint8Array = SPOKEN,
+  ): Promise<Uint8Array> {
+    const rt = await createTestRuntime();
+    const journal = createSqlJournal(rt, clockAt('2026-11-08T07:00:00.000Z', '2026-11-08'));
+    const { recordingId } = unwrap(await journal.beginRecording('take'));
+    const directory = rt.paths.recordingDirs[0] ?? '';
+    mkdirSync(directory, { recursive: true });
+    const uri = join(directory, `${recordingId}${extension}`);
+    writeFileSync(uri, bytes);
+    unwrap(
+      await journal.attachRecording({
+        recordingId,
+        uri,
+        draftId: 'take',
+        durationSeconds: recorded,
+        content: emptyContent({ mode: 'voice' }),
+      }),
+    );
+    unwrap(
+      await journal.commitEntry(
+        'take',
+        emptyContent({ mode: 'voice', body: MARK.spoken, durationSeconds: session }),
+      ),
+    );
+    return exported(rt);
+  }
+
+  /** The same backup as an ECHO that wrote format 1 made it: no recording lengths in it. */
+  async function asFormatOne(zip: Uint8Array): Promise<Uint8Array> {
+    const files = unpack(zip);
+    const manifest = manifestOf(files);
+    manifest.formatVersion = 1;
+    for (const entry of manifest.entries) delete entry.audioDurationSeconds;
+    return pack(
+      files.map((file) =>
+        file.name === 'entries.json'
+          ? { name: file.name, bytes: utf8Encode(JSON.stringify(manifest)) }
+          : file,
+      ),
+    );
+  }
+
+  async function restoredLength(zip: Uint8Array): Promise<number | null | undefined> {
+    const target = await createTestRuntime();
+    expect(await restore(target, zip)).toMatchObject({ ok: true, entries: 1, withoutAudio: 0 });
+    return unwrap(await sqlJournalFor(target).getEntry('take'))?.audio?.durationSeconds;
+  }
+
+  it('comes back as it was, not as the length of the session it was spoken in', async () => {
+    const zip = await spoken(61, 180);
+    expect(entryIn(manifestOf(unpack(zip)), 'take').audioDurationSeconds).toBe(61);
+    expect(await restoredLength(zip)).toBe(61);
+  });
+
+  it('is measured from the file in an older backup that did not carry it: a live take’s WAV', async () => {
+    expect(
+      await restoredLength(await asFormatOne(await spoken(2.5, 180, '.wav', wavOf(2.5)))),
+    ).toBe(2.5);
+  });
+
+  it('is measured from the file in an older backup: Android’s ADTS, frame by frame', async () => {
+    const zip = await asFormatOne(await spoken(3, 180, '.aac', adtsOf(47)));
+    expect(await restoredLength(zip)).toBeCloseTo((47 * 1024) / 16_000, 6);
+  });
+
+  it('is measured when the backup says it is not known, as for a take rescued after a crash', async () => {
+    const zip = await spoken(null, 180, '.wav', wavOf(4));
+    expect(entryIn(manifestOf(unpack(zip)), 'take').audioDurationSeconds).toBeNull();
+    expect(await restoredLength(zip)).toBe(4);
+  });
+
+  it('falls back to the session’s length only when the file cannot be measured', async () => {
+    expect(await restoredLength(await asFormatOne(await spoken(61, 180)))).toBe(180);
+  });
+
+  it('is refused when it is impossible, or given for an entry with no recording', async () => {
+    const zip = await spoken(61, 180);
+    for (const change of [
+      (entry: Record<string, unknown>) => void (entry.audioDurationSeconds = -1),
+      (entry: Record<string, unknown>) => void (entry.audioDurationSeconds = '61'),
+      (entry: Record<string, unknown>) => void delete entry.audioDurationSeconds,
+    ]) {
+      const files = unpack(zip);
+      const manifest = manifestOf(files);
+      change(entryIn(manifest, 'take'));
+      const changed = await pack(
+        files.map((file) =>
+          file.name === 'entries.json'
+            ? { name: file.name, bytes: utf8Encode(JSON.stringify(manifest)) }
+            : file,
+        ),
+      );
+      expect(await codeOf(changed)).toBe('damaged');
+    }
+    expect(
+      await codeOf(
+        await withManifest(
+          (manifest) => void (entryIn(manifest, 'first').audioDurationSeconds = 5),
+        ),
+      ),
+    ).toBe('damaged');
+  });
+});
 
 describe('a recording the backup does not hold whole', () => {
   async function restoredWith(files: Unpacked) {
@@ -850,7 +997,14 @@ describe('nothing reaches the console or a result', () => {
     const backup = readdirSync('src/features/backup')
       .filter((name) => /\.tsx?$/.test(name) && !name.includes('.test.'))
       .map((name) => join('src/features/backup', name));
-    const sources = ['src/services/importJournal.ts', 'src/services/zipReader.ts', ...backup];
+    // The two parsers that measure an older backup's recordings read the plaintext too.
+    const sources = [
+      'src/services/importJournal.ts',
+      'src/services/zipReader.ts',
+      'src/services/wav.ts',
+      'src/services/adts.ts',
+      ...backup,
+    ];
     expect(backup.length).toBeGreaterThanOrEqual(5);
     for (const path of sources) {
       const source = readFileSync(path, 'utf8');

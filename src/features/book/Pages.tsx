@@ -70,8 +70,13 @@ export function usePageMetrics(height: number, lead: number) {
 }
 type Metrics = ReturnType<typeof usePageMetrics>;
 
-/** Web draws a focus ring around a text field, and an `auto` ring ignores a width of nothing. */
-const noRing = { outlineStyle: 'none', outlineWidth: 0 } as unknown as TextStyle;
+/**
+ * Web draws a focus ring around a text field, and an `auto` ring ignores a width of nothing. Only
+ * web: Android cannot parse an outline style, and logs it for every page drawn.
+ */
+const noRing = (Platform.OS === 'web'
+  ? { outlineStyle: 'none', outlineWidth: 0 }
+  : {}) as unknown as TextStyle;
 
 // On web a focused field scrolls an `overflow: hidden` parent to bring its caret into view, which
 // would slide the page out of its window. `clip` cannot be scrolled.

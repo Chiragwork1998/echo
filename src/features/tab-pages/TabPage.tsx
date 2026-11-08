@@ -53,19 +53,20 @@ export function TabPage({ title, subtitle, onBack, tabBar = true, children }: Pr
     <View style={styles.root}>
       <BlurSurface backdrop={<EchoBackground screen="home" />}>
         {name === 'night' && <NightFloor />}
+        {/* The scrolling begins below the status bar, as on the onboarding screens (ScreenShell), so
+            words scrolled up go out of sight there and never pass under the clock. At rest the title
+            sits where it always has. */}
         <ScrollView
           testID="tab-page-scroll"
-          style={styles.fill}
+          style={[styles.fill, { marginTop: top }]}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scroll}
         >
           <View
-            style={[
-              styles.column,
-              { width, paddingHorizontal: gutter, paddingTop: top, paddingBottom: bottom },
-            ]}
+            testID="tab-page-column"
+            style={[styles.column, { width, paddingHorizontal: gutter, paddingBottom: bottom }]}
           >
             {onBack && (
               <Pressable

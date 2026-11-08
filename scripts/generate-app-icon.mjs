@@ -2,7 +2,8 @@
 // the cream ECHO wordmark on Night navy. The final icon is an open owner decision
 // (docs/DECISIONS_REQUIRED.md); replace the PNGs, not the wiring, when it is made.
 // Run with `node scripts/generate-app-icon.mjs`. Uses Playwright (to draw the wordmark in its own
-// typeface) and sharp, both already dev dependencies.
+// typeface) and sharp, both already dev dependencies. The notification's small icon is not one of
+// these: it is the favicon's E, made by scripts/generate-notification-icon.mjs.
 import { readFileSync, mkdirSync } from 'node:fs';
 import { chromium } from 'playwright';
 import sharp from 'sharp';
@@ -15,8 +16,6 @@ const SIZE = 1024;
 // to sit inside the circle of that diameter, not just inside the square.
 const SAFE_DIAMETER = Math.round(SIZE * 0.66);
 const MARK_WIDTH = 600;
-const NOTIFICATION_SIZE = 96;
-const NOTIFICATION_MARK = 88;
 
 const outDir = 'assets/app';
 mkdirSync(outDir, { recursive: true });
@@ -100,21 +99,4 @@ await (await onCanvas(white)).png().toFile(`${outDir}/adaptive-monochrome.png`);
 // Splash mark: transparent, same geometry, so the Android 12 circular mask never clips it.
 await (await onCanvas(cream)).png().toFile(`${outDir}/splash-mark.png`);
 
-// Android draws a notification's small icon from its alpha alone, so this one is a white shape.
-const small = await sharp(white)
-  .resize({ width: NOTIFICATION_MARK, kernel: 'lanczos3' })
-  .png()
-  .toBuffer();
-await sharp({
-  create: {
-    width: NOTIFICATION_SIZE,
-    height: NOTIFICATION_SIZE,
-    channels: 4,
-    background: '#00000000',
-  },
-})
-  .composite([{ input: small, gravity: 'centre' }])
-  .png()
-  .toFile(`${outDir}/notification-icon.png`);
-
-console.log('wrote 5 PNGs to', outDir);
+console.log('wrote 4 PNGs to', outDir);

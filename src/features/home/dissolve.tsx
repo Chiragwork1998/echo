@@ -200,8 +200,19 @@ export function useSessionEntry() {
         dissolve({ pathname: '/home/session', params: sessionParams('voice', morning, arrive) }),
       writeInstead: () =>
         dissolve({ pathname: '/home/session', params: sessionParams('write', morning, false) }),
-      continueDraft: (draftId: string) =>
-        dissolve({ pathname: '/home/session', params: { draftId } }),
+      // A draft holding a recording that has not become words opens spoken, as Begin opens it, which
+      // is where "Turn my voice into words" is offered. Any other draft opens as it was last used. A
+      // morning draft keeps its question, "Who will you be today?", and its Rehearse, at any hour;
+      // Arrive is not asked again.
+      continueDraft: (draftId: string, { untranscribed = false, become = false } = {}) =>
+        dissolve({
+          pathname: '/home/session',
+          params: {
+            draftId,
+            ...(untranscribed ? { mode: 'voice' } : {}),
+            ...(become ? { prompt: 'become' } : {}),
+          },
+        }),
       breathe: () => dissolve('/home/breathe'),
     }),
     [arrive, dissolve, morning],

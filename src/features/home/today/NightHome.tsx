@@ -149,7 +149,13 @@ function EchoCard({ summary, strong }: CardProps) {
       : homeLabels.minutes(minutesOf(entry.durationSeconds))
     : `${dayLabel(entry.localDay, rhythm.today)} · ${homeLabels.minutes(minutesOf(entry.durationSeconds))}`;
   const label = (draft ? copy.home.continueEcho : copy.home.recentTitle).toUpperCase();
-  const onPress = () => (draft ? continueDraft(draft.id) : openEntry(entry.id));
+  const onPress = () =>
+    draft
+      ? continueDraft(draft.id, {
+          untranscribed: draft.untranscribed,
+          become: draft.promptId === 'become',
+        })
+      : openEntry(entry.id);
 
   return (
     <GlassCard radius={tokens.radius.medium} strength={strong ? 'strong' : 'regular'}>

@@ -13,7 +13,7 @@ import { emptyContent } from '@/features/journal/content';
 import { sqlJournalFor } from '@/features/journal/runtime';
 import type { JournalResult } from '@/features/journal/types';
 import { Section } from '@/features/tab-pages/parts';
-import { openBackup, type OpenFailure } from '@/services/importJournal';
+import { BACKUP_FORMAT_VERSION, openBackup, type OpenFailure } from '@/services/importJournal';
 import { createZipWriter } from '@/services/zip';
 import { useGate } from '@/state/gate';
 import { utf8Encode } from '@/storage/bytes';
@@ -399,7 +399,10 @@ describe('a file it will not restore', () => {
       close() {},
     };
     const zip = createZipWriter(sink, new Date(2026, 10, 8));
-    await zip.add('entries.json', utf8Encode('{"app":"ECHO","formatVersion":2}'));
+    await zip.add(
+      'entries.json',
+      utf8Encode(JSON.stringify({ app: 'ECHO', formatVersion: BACKUP_FORMAT_VERSION + 1 })),
+    );
     await zip.finish();
     const uri = await picks(Buffer.concat(chunks));
     await fireEvent.press(row());
