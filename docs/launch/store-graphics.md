@@ -23,12 +23,29 @@ The ECHO wordmark over a moonlit Himalayan sky and a lit monastery, with the lin
 Rules kept on the feature graphic: no "free", "new", "best", ranking, price or call to action; no store
 badges; key content in the middle, clear of the edges; not a pure white, black or dark gray background.
 
-## To capture: phone screenshots
+## Phone screenshots
 
 Play needs at least 2 screenshots and takes up to 8 per device type; it recommends at least 4 for apps,
 portrait 9:16, 1080 x 1920 or more (JPEG or 24 bit PNG, no alpha, longer side at most twice the
-shorter). These must show the real app, so they are taken from the release build on a phone by the lead
-or the owner, after the Practices and Plus work has merged. They cannot be made from this folder.
+shorter). These must show the real app.
+
+**Captured 8 November 2026** from the 1.0.0 release build on the emulator, with invented entries only,
+the status bar in demo mode (9:41) and then trimmed: `store-graphics/screenshots/01` to `08`, 1080 x
+2160 JPEG (exactly 2:1; the phone's own 1080 x 2400 is taller than Play allows). Shot 8 is Echoes for
+now: the ECHO Plus paywall cannot be shown until RevenueCat is set up, and is captured then.
+
+| File | Shot |
+|---|---|
+| `01-today-night.jpg` | 1, Today at night |
+| `02-breathe-feelings.jpg` | 2, What are you feeling? |
+| `03-practice-breathe-out.jpg` | 3, a practice |
+| `04-daily-echo-words.jpg` | 4, the daily echo |
+| `05-morning-day.jpg` | 5, a morning |
+| `06-pattern-card.jpg` | 6, a pattern card |
+| `07-privacy-you.jpg` | 7, privacy in You |
+| `08-echoes.jpg` | Echoes, in place of 8 until the paywall can be captured |
+
+Alt text for `08-echoes.jpg`: `Echoes keeps every entry by month, searchable by word, with morning entries marked.`
 
 Shot list, in this order (the first three matter most, because Play shows them first):
 
