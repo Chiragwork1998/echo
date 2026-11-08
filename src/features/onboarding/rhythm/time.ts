@@ -45,6 +45,21 @@ export function nearestAngle(from: number, target: number): number {
   return from + delta;
 }
 
+/** A touch further than this from the handle carries it round instead of taking it there at once. */
+export const GLIDE_FROM = 20;
+
+/**
+ * Where the handle goes for a finger at `minutes`, starting from `from`: the short way round, and
+ * whether it should glide there. Under the finger the handle is set directly, because a timing
+ * restarted at every 5-minute step never gets going and the hand falls behind the number; a touch
+ * far from the handle turns it the way a preset does.
+ */
+export function followTarget(from: number, minutes: number): { angle: number; glide: boolean } {
+  'worklet';
+  const angle = nearestAngle(from, minutesToAngle(minutes));
+  return { angle, glide: Math.abs(angle - from) > GLIDE_FROM };
+}
+
 /** True when the hour changes between two times, including 23:55 to 00:00. */
 export function crossesHour(previous: number, next: number): boolean {
   'worklet';

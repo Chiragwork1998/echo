@@ -10,7 +10,7 @@ import { render } from '@/testing/render';
 import { IntentScreen } from './IntentScreen';
 
 jest.mock('@/design/haptics');
-jest.mock('expo-router', () => ({ router: { navigate: jest.fn() } }));
+jest.mock('expo-router', () => ({ router: { navigate: jest.fn(), dismissTo: jest.fn() } }));
 jest.mock(
   'react-native-safe-area-context',
   () => jest.requireActual('react-native-safe-area-context/jest/mock').default,
@@ -106,10 +106,11 @@ describe('IntentScreen', () => {
     expect(cta()).toBeEnabled();
   });
 
-  it('goes back to Landing', async () => {
+  it('goes back to Landing by returning to it, not by opening it again on top', async () => {
     await render(<IntentScreen />);
     await fireEvent.press(screen.getByRole('button', { name: 'Back' }));
-    expect(router.navigate).toHaveBeenCalledWith('/');
+    expect(router.dismissTo).toHaveBeenCalledWith('/');
+    expect(router.navigate).not.toHaveBeenCalled();
   });
 
   it('announces step 1 of 8', async () => {

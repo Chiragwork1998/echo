@@ -60,10 +60,17 @@ export function MoodStone({ label, box, rx, ry, selected, onSelect }: Props) {
       style={[styles.hit, box]}
     >
       <Animated.View
+        testID="stone-press"
         pointerEvents="none"
         style={[
           styles.press,
-          { width: rx * 2, height: ry * 2, borderRadius: ry, backgroundColor: colors.textPrimary },
+          // 50% gives elliptical corners, so the glow follows the stone's outline, not a stadium.
+          {
+            width: rx * 2,
+            height: ry * 2,
+            borderRadius: '50%',
+            backgroundColor: colors.textPrimary,
+          },
           glow,
         ]}
       />

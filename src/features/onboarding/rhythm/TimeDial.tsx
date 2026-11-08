@@ -20,6 +20,7 @@ import { Glass } from './Glass';
 import {
   angleToMinutes,
   crossesHour,
+  followTarget,
   minutesToAngle,
   nearestAngle,
   pointToAngle,
@@ -34,7 +35,6 @@ const SIZE = { min: 248, max: 292, ratio: 262 / 393 };
 export const dialSize = (width: number) =>
   Math.round(Math.min(SIZE.max, Math.max(SIZE.min, width * SIZE.ratio)));
 
-const FOLLOW_MS = 90; // the handle chases the finger a little behind, so 5-minute steps glide
 const SETTLE_MS = 560; // a preset or the picker carries the handle round
 const DEAD_ZONE = 70; // touches nearer the centre than this belong to the time, not the handle
 const REACH = 22; // and touches this far past the rim still count
@@ -106,11 +106,17 @@ export function TimeDial({
     const previous = last.get();
     if (next === previous) return;
     last.set(next);
+    // Under the finger the handle is set directly, because a timing restarted at every step never
+    // gets going; a touch far from the handle turns it the way a preset does.
+    const { angle: target, glide } = followTarget(angle.get(), next);
     angle.set(
-      withTiming(nearestAngle(angle.get(), minutesToAngle(next)), {
-        duration: FOLLOW_MS,
-        reduceMotion: ReduceMotion.System,
-      }),
+      glide
+        ? withTiming(target, {
+            duration: SETTLE_MS,
+            easing: Easing.out(Easing.cubic),
+            reduceMotion: ReduceMotion.System,
+          })
+        : target,
     );
     runOnJS(report)(next);
     if (crossesHour(previous, next)) runOnJS(tick)();
