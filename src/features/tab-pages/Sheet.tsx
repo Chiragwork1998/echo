@@ -1,6 +1,7 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useRef,
@@ -8,13 +9,24 @@ import {
   type PropsWithChildren,
   type ReactNode,
 } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import {
+  Dimensions,
+  Keyboard,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+  type KeyboardEvent,
+} from 'react-native';
 import Animated, {
   Easing,
   ReduceMotion,
+  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -26,6 +38,7 @@ import { parseColor } from '@/design/mixColor';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 import { useReduceMotion } from '@/design/useReduceMotion';
+import { qaKeyboardHeight } from '@/features/journal-session/sky';
 import { useTone } from '@/features/onboarding/rhythm/tone';
 
 import { keepTogether } from './keepTogether';
@@ -46,12 +59,21 @@ const RISE = 24;
 const SHEET_OUT_MS = 240;
 const SCRIM_OUT_MS = 260;
 const SINK = 12;
-/** The window outlasts its own exit, so it is still there to see (and still counted) while it fades. */
-const UNMOUNT_MS = 280;
+/**
+ * The window outlasts its own exit, so it is still there to see (and still counted) while it fades.
+ * It ends when the scrim has been seen to reach nothing, never when a clock says it should have: a
+ * screen busy with the page behind (a draft kept, a screen changing) draws the fade late, and a
+ * window taken away by the clock would take the sheet from the glass whole. This is only how long
+ * it waits for that word before ending the window anyway, so none can be left behind, invisible,
+ * and swallowing touches.
+ */
+const UNMOUNT_CAP_MS = 1200;
 // Reduce Motion: the sheet and the scrim fade, and nothing travels.
 const REDUCED_IN_MS = tokens.motion.fast;
 const REDUCED_OUT_MS = 140;
-const REDUCED_UNMOUNT_MS = 160;
+/** The sheet clears the keyboard by this much, as it clears the safe edge by this much at rest. */
+const KEYBOARD_GAP = tokens.space[8];
+const KEYBOARD_MS = 220;
 /** A dialog handing over to the next one: the new words fade in on the same sheet. */
 const HANDOFF_MS = 200;
 
@@ -154,6 +176,13 @@ export function Sheet({
   const fade = useSharedValue(rest ? 1 : 0);
   const y = useSharedValue(rest || reduced ? 0 : RISE);
   const wasVisible = useRef(visible);
+  // The scrim has been seen to reach nothing: the exit is over, and the window may go. An answer
+  // from an exit that has since been undone (the sheet is back) is not the window's to act on.
+  const exited = useCallback(() => {
+    if (wasVisible.current) return;
+    setHandoff(false);
+    setMounted(false);
+  }, []);
 
   useEffect(() => {
     const was = wasVisible.current;
@@ -203,33 +232,35 @@ export function Sheet({
       }),
     );
     dim.set(
-      withTiming(0, {
-        ...options,
-        duration: reduced ? REDUCED_OUT_MS : SCRIM_OUT_MS,
-        easing: Easing.out(Easing.quad),
-      }),
+      withTiming(
+        0,
+        {
+          ...options,
+          duration: reduced ? REDUCED_OUT_MS : SCRIM_OUT_MS,
+          easing: Easing.out(Easing.quad),
+        },
+        (finished) => {
+          'worklet';
+          // False when the sheet came back and cut the fade short: that exit was never finished.
+          if (finished) runOnJS(exited)();
+        },
+      ),
     );
     if (!reduced) {
       y.set(
         withTiming(SINK, { ...options, duration: SHEET_OUT_MS, easing: Easing.out(Easing.cubic) }),
       );
     }
-  }, [animated, dim, fade, reduced, visible, y]);
+  }, [animated, dim, exited, fade, reduced, visible, y]);
 
-  // The window ends its own exit. It lives in its own effect so that anything that changes during
-  // the exit (the lock engaging, Reduce Motion) re-arms it rather than leaving a window that is
-  // invisible, full screen, and swallowing touches. A timer ends it, never an animation callback.
+  // The window's last word, if the fade never reports. It lives in its own effect so that anything
+  // that changes during the exit (the lock engaging, Reduce Motion) re-arms it rather than leaving
+  // a window that is invisible, full screen, and swallowing touches.
   useEffect(() => {
     if (visible || !mounted) return;
-    const done = setTimeout(
-      () => {
-        setHandoff(false);
-        setMounted(false);
-      },
-      reduced ? REDUCED_UNMOUNT_MS : UNMOUNT_MS,
-    );
+    const done = setTimeout(exited, UNMOUNT_CAP_MS);
     return () => clearTimeout(done);
-  }, [visible, mounted, reduced]);
+  }, [exited, visible, mounted, reduced]);
 
   // Once the window is gone the next opening starts from nothing.
   useEffect(() => {
@@ -244,63 +275,130 @@ export function Sheet({
     opacity: fade.get(),
     transform: [{ translateY: y.get() }],
   }));
+  /** The sheet's own distance from the bottom edge: the safe edge, and a little more. */
+  const resting = Math.max(bottom, SIDE) + tokens.space[8];
 
   return (
+    // Nothing the window itself is told changes while it is open, however the sheet changes: every
+    // update to a Modal on Android runs its window through a pass of its own, and a window put
+    // through one as the sheet leaves is one that can blink. The sheet's name is on what is inside.
     <EchoModal
       transparent
       animationType="none"
       visible={present}
-      // A window on its way out is no longer the sheet: it names nothing, and Back does nothing.
+      // A window on its way out is no longer the sheet: Back does nothing.
       onRequestClose={leaving ? nothing : onClose}
-      testID={leaving ? undefined : testID}
     >
       <LeavingContext.Provider value={leaving}>
-        <View
-          testID={testID && `${testID}-stage`}
-          style={styles.stage}
-          pointerEvents={leaving ? 'none' : 'auto'}
-          accessibilityElementsHidden={leaving}
-          importantForAccessibility={leaving ? 'no-hide-descendants' : 'auto'}
-        >
-          <Animated.View
-            pointerEvents="none"
-            style={[StyleSheet.absoluteFill, styles.dim, scrim]}
-          />
-          <Pressable
-            testID={testID && `${testID}-outside`}
-            style={StyleSheet.absoluteFill}
-            onPress={onClose}
-            accessible={false}
-            importantForAccessibility="no"
-          />
-          <Animated.View
-            accessibilityViewIsModal
-            onAccessibilityEscape={onClose}
-            style={[
-              styles.sheet,
-              {
-                backgroundColor: cloth,
-                borderColor: tone.edge,
-                marginBottom: Math.max(bottom, SIDE) + tokens.space[8],
-              },
-              paper,
-            ]}
-          >
-            <Presented key={contentKey} fade={handoff}>
-              <ScrollView
-                style={styles.scroll}
-                contentContainerStyle={styles.body}
-                showsVerticalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-              >
-                {children}
-              </ScrollView>
-              {footer ? <View style={styles.footer}>{footer}</View> : null}
-            </Presented>
-          </Animated.View>
+        <View testID={leaving ? undefined : testID} style={styles.window}>
+          <Stage testID={testID} leaving={leaving} bottom={bottom} resting={resting}>
+            <Animated.View
+              pointerEvents="none"
+              style={[StyleSheet.absoluteFill, styles.dim, scrim]}
+            />
+            <Pressable
+              testID={testID && `${testID}-outside`}
+              style={StyleSheet.absoluteFill}
+              onPress={onClose}
+              accessible={false}
+              importantForAccessibility="no"
+            />
+            <Animated.View
+              accessibilityViewIsModal
+              onAccessibilityEscape={onClose}
+              style={[
+                styles.sheet,
+                { backgroundColor: cloth, borderColor: tone.edge, marginBottom: resting },
+                paper,
+              ]}
+            >
+              <Presented key={contentKey} fade={handoff}>
+                <ScrollView
+                  style={styles.scroll}
+                  contentContainerStyle={styles.body}
+                  showsVerticalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"
+                >
+                  {children}
+                </ScrollView>
+                {footer ? <View style={styles.footer}>{footer}</View> : null}
+              </Presented>
+            </Animated.View>
+          </Stage>
         </View>
       </LeavingContext.Provider>
     </EchoModal>
+  );
+}
+
+/**
+ * How much of the screen the keyboard has, from the bottom edge, in points, as it comes and goes.
+ * Only while the sheet's window is there to be moved: the window is a window of its own, and the
+ * keyboard is reported by the screen it is above.
+ */
+function useKeyboardRoom(): SharedValue<number> {
+  const room = useSharedValue(0);
+  useEffect(() => {
+    const ios = Platform.OS === 'ios';
+    const go = (height: number, duration?: number) =>
+      room.set(
+        withTiming(height, {
+          duration: duration || KEYBOARD_MS,
+          easing: Easing.out(Easing.cubic),
+          reduceMotion: ReduceMotion.Never,
+        }),
+      );
+    const shown = (event: KeyboardEvent) => {
+      const { height, screenY } = event.endCoordinates;
+      // iOS changes the keyboard's frame to take it away, too: below the screen is gone.
+      go(ios && screenY >= Dimensions.get('window').height ? 0 : height, event.duration);
+    };
+    const hidden = (event?: KeyboardEvent) => go(0, event?.duration);
+    const subscriptions = ios
+      ? [
+          Keyboard.addListener('keyboardWillChangeFrame', shown),
+          Keyboard.addListener('keyboardWillHide', hidden),
+        ]
+      : [
+          Keyboard.addListener('keyboardDidShow', shown),
+          Keyboard.addListener('keyboardDidHide', hidden),
+        ];
+    return () => subscriptions.forEach((subscription) => subscription.remove());
+  }, [room]);
+  return room;
+}
+
+/**
+ * The sheet's ground: the whole window, the sheet at its foot. The sheet is its own window, where
+ * the page's keyboard handling cannot reach, so the ground gives way to the keyboard itself, and the
+ * sheet, and its buttons, ride up above it. A sheet taller than what is left scrolls inside.
+ */
+function Stage({
+  testID,
+  leaving,
+  bottom,
+  resting,
+  children,
+}: PropsWithChildren<{ testID?: string; leaving: boolean; bottom: number; resting: number }>) {
+  const room = useKeyboardRoom();
+  // Android reports the keyboard without the navigation bar it also covers.
+  const under = Platform.OS === 'android' ? bottom : 0;
+  const ground = useAnimatedStyle(() => {
+    const height = Math.max(room.get(), qaKeyboardHeight());
+    return {
+      paddingBottom: height <= 0 ? 0 : Math.max(0, height + under + KEYBOARD_GAP - resting),
+    };
+  });
+  return (
+    <Animated.View
+      testID={testID && `${testID}-stage`}
+      style={[styles.stage, ground]}
+      pointerEvents={leaving ? 'none' : 'auto'}
+      accessibilityElementsHidden={leaving}
+      importantForAccessibility={leaving ? 'no-hide-descendants' : 'auto'}
+    >
+      {children}
+    </Animated.View>
   );
 }
 
@@ -432,6 +530,7 @@ export function SheetAction({ label, onPress }: { label: string; onPress: () => 
 }
 
 const styles = StyleSheet.create({
+  window: { flex: 1 },
   stage: {
     flex: 1,
     justifyContent: 'flex-end',

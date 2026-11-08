@@ -31,7 +31,16 @@ export const reanimatedMock = {
     state: { value: 0, get: () => 0 },
   }),
   useAnimatedReaction: () => undefined,
-  withTiming: identity,
+  // An animation ends at its value at once. A callback is called when its time is up, as the UI
+  // thread would call it back: a test that wants a busy screen holds it back.
+  withTiming: (
+    value: unknown,
+    config?: { duration?: number },
+    callback?: (finished: boolean) => void,
+  ) => {
+    if (callback) setTimeout(() => callback(true), config?.duration ?? 300);
+    return value;
+  },
   withSpring: identity,
   withDelay: (_delay: number, value: unknown) => value,
   withRepeat: identity,

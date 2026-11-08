@@ -63,6 +63,32 @@ export async function chooseInDialog(name: string) {
   await fireEvent.press(await within(dialog).findByRole('button', { name }));
 }
 
+type Json = { type: string; props: Record<string, unknown>; children?: unknown };
+const MODAL_HOST = 'Modal'; // what react-native's Modal is drawn as under jest
+
+/**
+ * The window itself, as the native side receives it: the properties of the Modal that holds a sheet.
+ * The sheet's name is on what is inside, so that it can be taken away as the sheet leaves without the
+ * window being told anything.
+ */
+export function modalHost(): Record<string, unknown> {
+  const walk = (node: unknown): Json | null => {
+    if (!node || typeof node !== 'object') return null;
+    if (Array.isArray(node)) {
+      for (const child of node) {
+        const found = walk(child);
+        if (found) return found;
+      }
+      return null;
+    }
+    const json = node as Json;
+    return json.type === MODAL_HOST ? json : walk(json.children);
+  };
+  const host = walk(screen.toJSON());
+  if (!host) throw new Error('No window is open.');
+  return host.props;
+}
+
 /** The system Back button, with the dialog open. */
 export const backOutOfDialog = () => fireEvent(screen.getByTestId('dialog'), 'requestClose');
 
