@@ -1,5 +1,5 @@
 import { useFonts } from 'expo-font';
-import { router, Stack, usePathname } from 'expo-router';
+import { router, Stack, ThemeProvider as NavigationTheme, usePathname } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState, type PropsWithChildren } from 'react';
@@ -11,9 +11,10 @@ import { EchoText } from '@/components/EchoText';
 import { EchoWordmark } from '@/components/EchoWordmark';
 import { PrimaryCTA } from '@/components/PrimaryCTA';
 import { ToastHost } from '@/components/Toast';
+import { CLEAR_NAVIGATOR, CLEAR_SCREEN } from '@/design/clearScreens';
 import { fontMap } from '@/design/fonts';
-import { plateColour } from '@/design/plateColour';
 import { setPlateFlowStep } from '@/design/plateMotion';
+import { PlateBacking } from '@/design/PlateBacking';
 import { PLATE_WAIT_MS, usePlatesPending } from '@/design/platePaint';
 import { ThemeProvider, useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
@@ -64,17 +65,7 @@ function SafeArea({ children }: PropsWithChildren) {
   );
 }
 
-// The plate each top-level route opens on, for the colour behind it. Onboarding opens on Intent, and
-// ECHO Plus sits over Home's plate.
-const ROOT_PLATE: Record<string, string> = {
-  index: 'landing',
-  onboarding: 'intent',
-  home: 'home',
-  plus: 'home',
-};
-
 function Navigator({ resume, onSettled }: { resume: string; onSettled: () => void }) {
-  const { target, colors } = useTheme();
   const reduced = useReduceMotion();
   const pathname = usePathname();
   const completed = useOnboarding((state) => state.completedAt !== undefined);
@@ -112,20 +103,27 @@ function Navigator({ resume, onSettled }: { resume: string; onSettled: () => voi
     if (step !== null) setOnboardingStep(step);
   }, [completed, offerPlus, onSettled, pathname, resume]);
 
+  const stack = (
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        animation: launching ? 'none' : 'fade',
+        animationDuration: reduced ? tokens.motion.fast : tokens.motion.screen,
+        // No screen paints a colour of its own: beneath them all lies the plate that was last on show
+        // (PlateBacking), so that between one screen going and the next one's photograph being drawn
+        // there is never a flat colour, white or blank. Each screen draws its own plate above it.
+        contentStyle: CLEAR_SCREEN,
+      }}
+    />
+  );
   return (
     <>
       <StatusBar style="light" />
-      <Stack
-        screenOptions={({ route }) => ({
-          headerShown: false,
-          animation: launching ? 'none' : 'fade',
-          animationDuration: reduced ? tokens.motion.fast : tokens.motion.screen,
-          // Behind each screen sits its own plate's dominant colour: never white, never blank.
-          contentStyle: {
-            backgroundColor: plateColour(target, ROOT_PLATE[route.name] ?? '', colors.textInk),
-          },
-        })}
-      />
+      {Platform.OS === 'web' ? (
+        <NavigationTheme value={CLEAR_NAVIGATOR}>{stack}</NavigationTheme>
+      ) : (
+        stack
+      )}
     </>
   );
 }
@@ -295,6 +293,8 @@ function Content({ status, onSettled }: { status: GateStatus; onSettled: () => v
       >
         {status.kind === 'ready' ? (
           <>
+            {/* Beneath the navigator, so that no screen can ever be over a flat colour. */}
+            <PlateBacking />
             <Navigator resume={status.resume} onSettled={onSettled} />
             {/* Here, so that a lock or the app switcher hides it from screen readers too. */}
             <ToastHost />

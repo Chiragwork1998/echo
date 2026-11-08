@@ -58,6 +58,11 @@ type Dissolve = {
   sessionOpened: () => void;
   /** The session closed, so Home's UI comes back. */
   sessionClosed: () => void;
+  /**
+   * Home's UI comes back now, ahead of the session closing. Asked for by the card that follows the
+   * session, so that Home is whole beneath it, and arrives with its photograph when the card goes.
+   */
+  returnHome: () => void;
 };
 
 const go = (href: Href) => router.push(href as never);
@@ -70,6 +75,7 @@ const direct: Dissolve = {
   dissolve: go,
   sessionOpened: () => undefined,
   sessionClosed: () => undefined,
+  returnHome: () => undefined,
 };
 
 const DissolveContext = createContext<Dissolve>(direct);
@@ -90,6 +96,8 @@ export function HomeDissolveProvider({ children }: PropsWithChildren) {
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const closing = useRef<ReturnType<typeof setTimeout> | null>(null);
   const open = useRef(false);
+  // Home's UI is coming back, or is back: a return that has begun is never begun again.
+  const returning = useRef(false);
 
   const setPhase = useCallback((next: DissolvePhase) => {
     phaseRef.current = next;
@@ -113,6 +121,7 @@ export function HomeDissolveProvider({ children }: PropsWithChildren) {
   const bringBack = useCallback(() => {
     clear();
     open.current = false;
+    returning.current = true;
     setPhase('idle');
     const duration = reducedRef.current ? REDUCED_FADE_MS : RETURN_MS;
     progress.set(
@@ -130,6 +139,7 @@ export function HomeDissolveProvider({ children }: PropsWithChildren) {
   const dissolve = useCallback(
     (href: Href) => {
       if (phaseRef.current !== 'idle') return;
+      returning.current = false;
       // Home takes touches as soon as it starts to come back, so Begin can be pressed while it is
       // still partly gone. It dissolves what is left of it, not the whole of it again, or it would
       // crawl the last of the way. From a resting Home nothing is gone, and this is the full time.
@@ -162,14 +172,20 @@ export function HomeDissolveProvider({ children }: PropsWithChildren) {
     if (closing.current) clearTimeout(closing.current);
     closing.current = setTimeout(() => {
       closing.current = null;
-      if (phaseRef.current !== 'idle' || progress.get() > 0) bringBack();
+      // Not again if it was begun already: that would start Home's UI over, from where it had got to.
+      if (!returning.current && (phaseRef.current !== 'idle' || progress.get() > 0)) bringBack();
       open.current = false;
     }, CLOSE_GRACE_MS);
   }, [bringBack, progress]);
 
+  const returnHome = useCallback(() => {
+    if (returning.current || (phaseRef.current === 'idle' && progress.get() === 0)) return;
+    bringBack();
+  }, [bringBack, progress]);
+
   const value = useMemo(
-    () => ({ progress, phase, dissolve, sessionOpened, sessionClosed }),
-    [progress, phase, dissolve, sessionOpened, sessionClosed],
+    () => ({ progress, phase, dissolve, sessionOpened, sessionClosed, returnHome }),
+    [progress, phase, dissolve, sessionOpened, sessionClosed, returnHome],
   );
   return <DissolveContext.Provider value={value}>{children}</DissolveContext.Provider>;
 }

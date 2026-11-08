@@ -5,6 +5,8 @@ import { AccessibilityInfo, StyleSheet, Text } from 'react-native';
 import { backgroundSources } from '@/design/generated/backgrounds';
 import { setPlateFlowStep } from '@/design/plateMotion';
 import {
+  lastShownPlate,
+  PLATE_HELD_OPACITY,
   PLATE_LATE_MS,
   resetPlatesForTests,
   usePlatesPending,
@@ -285,7 +287,10 @@ describe('EchoBackground when a screen changes: never a flat colour before the p
     await render(<EchoBackground screen="rhythm" />);
     expect(veil()?.props.source).toBe(backgroundSources.night.intent);
     expect(own().props.source).toBe(backgroundSources.night.rhythm);
-    expect(opacityOf(own())).toBe(0);
+    // Not quite nothing, so that the picture is drawn, and on the GPU, before its dissolve begins.
+    expect(opacityOf(own())).toBe(PLATE_HELD_OPACITY);
+    expect(PLATE_HELD_OPACITY).toBeGreaterThan(0);
+    expect(PLATE_HELD_OPACITY).toBeLessThanOrEqual(0.02);
   });
 
   it('brings its own up over it, softly, when it was late, and then lets the old one go', async () => {
@@ -384,5 +389,104 @@ describe('EchoBackground when a screen changes: never a flat colour before the p
     await draw();
     await redraw(view, <EchoBackground screen="home" overlay={<Loop />} />);
     expect(screen.getByTestId('loop', HIDDEN).props.children).toBe('true');
+  });
+});
+
+describe('EchoBackground over the plate backing: never a flat colour of its own', () => {
+  const HIDDEN = { includeHiddenElements: true };
+  const draw = (node: ReturnType<typeof photos>[number]) => act(async () => node.props.onDisplay());
+  const advance = (ms: number) => act(async () => void (await jest.advanceTimersByTimeAsync(ms)));
+  const photos = () => screen.getAllByTestId('plate', HIDDEN);
+  const flush = () => act(async () => void (await Promise.resolve()));
+
+  it('paints nothing behind its plates, so that the backing beneath the navigator shows through', async () => {
+    await render(<EchoBackground screen="intent" />);
+    const root = screen.getByTestId('drift', HIDDEN).parent;
+    const style = StyleSheet.flatten(root?.props.style as object) as { backgroundColor?: string };
+    expect(style.backgroundColor).toBeUndefined();
+  });
+
+  it('is not the plate on show until it has been drawn', async () => {
+    await render(<EchoBackground screen="intent" />);
+    expect(lastShownPlate()).toBeNull();
+    await draw(photos()[0]!);
+    expect(lastShownPlate()).toEqual({ theme: 'night', screen: 'intent' });
+  });
+
+  it('becomes the plate on show at once when it was to hand, and replaces the old one as it always did', async () => {
+    const first = await render(<EchoBackground screen="intent" />);
+    await draw(photos()[0]!);
+    await first.unmount();
+    await render(<EchoBackground screen="rhythm" />);
+    await advance(PLATE_LATE_MS - 30);
+    await draw(photos()[photos().length - 1]!);
+    expect(lastShownPlate()).toEqual({ theme: 'night', screen: 'rhythm' });
+  });
+
+  it('stays out of the backing while it dissolves in over the old plate, so the dissolve is seen', async () => {
+    const first = await render(<EchoBackground screen="intent" />);
+    await draw(photos()[0]!);
+    await first.unmount();
+    await render(<EchoBackground screen="rhythm" />);
+    await advance(PLATE_LATE_MS + 120);
+    await draw(photos()[photos().length - 1]!);
+    // The backing is what the dissolve goes over. If it showed Rhythm's photograph already, nothing
+    // would be seen to change.
+    expect(lastShownPlate()).toEqual({ theme: 'night', screen: 'intent' });
+    await advance(tokens.motion.standard);
+    expect(lastShownPlate()).toEqual({ theme: 'night', screen: 'rhythm' });
+  });
+
+  it('gives the backing back to the plate beneath it when its screen is left', async () => {
+    await render(
+      <>
+        <EchoBackground screen="home" />
+        <EchoBackground screen="completion" />
+      </>,
+    );
+    const [home, completion] = photos();
+    await draw(home!);
+    await draw(completion!);
+    expect(lastShownPlate()?.screen).toBe('completion');
+  });
+
+  it('is released when it unmounts, and the plate that was beneath it is on show again', async () => {
+    function Both({ completion }: { completion: boolean }) {
+      return (
+        <>
+          <EchoBackground screen="home" />
+          {completion && <EchoBackground screen="completion" />}
+        </>
+      );
+    }
+    const view = await render(<Both completion />);
+    for (const photo of photos()) await draw(photo);
+    expect(lastShownPlate()?.screen).toBe('completion');
+    await view.rerender(
+      <ThemeProvider crossfade={false}>
+        <Both completion={false} />
+      </ThemeProvider>,
+    );
+    await flush();
+    expect(lastShownPlate()?.screen).toBe('home');
+  });
+
+  it('is the plate on show in the new theme once the new theme has been drawn', async () => {
+    await render(<EchoBackground screen="home" />);
+    await draw(photos()[0]!);
+    await act(async () => usePreferences.setState({ theme: 'day' }));
+    // Day lies beneath the fading Night plate; once it is drawn, the backing follows the theme.
+    const day = photos().find((photo) => photo.props.source === backgroundSources.day.home);
+    await draw(day!);
+    expect(lastShownPlate()).toEqual({ theme: 'day', screen: 'home' });
+  });
+
+  it('holds nothing and keeps the backing as it was when its own plate cannot be drawn', async () => {
+    const first = await render(<EchoBackground screen="intent" />);
+    await draw(photos()[0]!);
+    await first.unmount();
+    await render(<EchoBackground screen="rhythm" />);
+    await act(async () => photos()[photos().length - 1]!.props.onError());
+    expect(lastShownPlate()).toEqual({ theme: 'night', screen: 'intent' });
   });
 });

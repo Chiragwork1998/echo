@@ -24,6 +24,11 @@ jest.mock('expo-router', () => ({
     useEffect(effect, [effect]);
   },
 }));
+// Home's own dissolve, which this screen only asks to give Home back (see src/features/home/dissolve).
+const mockReturnHome = jest.fn();
+jest.mock('@/features/home/dissolve', () => ({
+  useHomeDissolve: () => ({ returnHome: mockReturnHome }),
+}));
 jest.mock('@/services/reflection', () => {
   const actual =
     jest.requireActual<typeof import('@/services/reflection')>('@/services/reflection');
@@ -399,5 +404,47 @@ describe('Completion when the entry cannot be read', () => {
       await fireEvent.press(screen.getByRole('button', { name: completionText.retry }));
     });
     expect(await screen.findByText('Saved privately · 12 minutes')).toBeTruthy();
+  });
+});
+
+// The walk (E5): Enter your space cut to the bare photograph, and Home's interface came in 0.6 s
+// later, because it was only given back once the session had been unmounted, on the JS thread, after
+// the pop. It is given back behind the card instead, while the card is on show, so that when the
+// card goes the photograph and Home arrive as one.
+describe('Home’s interface comes back with its photograph', () => {
+  // Fake timers are left on for the rest of the file, as the other tests here do: restoring them
+  // leaves jest-expo's environment without a setTimeout.
+  beforeAll(() => {
+    jest.useFakeTimers();
+  });
+
+  it('is given back behind the card once the card has settled', async () => {
+    await render(<DailyCompletionScreen />);
+    await act(async () => void (await jest.advanceTimersByTimeAsync(tokens.motion.screen - 1)));
+    expect(mockReturnHome).not.toHaveBeenCalled();
+    await act(async () => void (await jest.advanceTimersByTimeAsync(1)));
+    expect(mockReturnHome).toHaveBeenCalledTimes(1);
+  });
+
+  it('is given back at once when the person leaves sooner than that, before the pop', async () => {
+    await render(<DailyCompletionScreen />);
+    await fireEvent.press(cta());
+    expect(mockReturnHome).toHaveBeenCalledTimes(1);
+    expect(jest.mocked(router.dismissTo).mock.invocationCallOrder[0]).toBeGreaterThan(
+      mockReturnHome.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it('is not given back by a card that was left before it settled', async () => {
+    const view = await render(<DailyCompletionScreen />);
+    await view.unmount();
+    await act(async () => void (await jest.advanceTimersByTimeAsync(tokens.motion.screen * 2)));
+    expect(mockReturnHome).not.toHaveBeenCalled();
+  });
+
+  it('is not asked for by onboarding’s Completion, which has no Home beneath it', async () => {
+    await render(<CompletionScreen />);
+    await act(async () => void (await jest.advanceTimersByTimeAsync(tokens.motion.screen * 2)));
+    expect(mockReturnHome).not.toHaveBeenCalled();
   });
 });

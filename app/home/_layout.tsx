@@ -1,11 +1,10 @@
-import { DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+import { Stack, ThemeProvider } from 'expo-router';
 import { useState } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 
 import { EchoBackground } from '@/components/EchoBackground';
 import { BlurSurface } from '@/components/GlassCard';
-import { plateColour } from '@/design/plateColour';
-import { useTheme } from '@/design/theme';
+import { CLEAR_NAVIGATOR, CLEAR_SCREEN } from '@/design/clearScreens';
 import { tokens } from '@/design/tokens';
 import { useReduceMotion } from '@/design/useReduceMotion';
 import { HomeDissolveProvider } from '@/features/home/dissolve';
@@ -14,20 +13,6 @@ import { SESSION_ROUTE } from '@/features/home/sessionRoute';
 import { readWelcomeCandidate } from '@/features/home/today/useStoneArrival';
 import { HomeTabBar } from '@/features/home/tabs/HomeTabBar';
 import { useGate } from '@/state/gate';
-
-// The one screen that wears another plate. Echoes, Patterns and You wear Home's own copy, and
-// Home and the session are transparent over the photograph drawn below.
-const OTHER_PLATE: Record<string, string> = { complete: 'completion' };
-/** Home itself: it draws no photograph, so the one beneath the stack shows through. */
-const TRANSPARENT_ROUTES: readonly string[] = ['index'];
-/**
- * The web navigator paints its theme's background over everything beneath it, so the visual harness
- * would compare Home against a white page. Native honours contentStyle and needs none of this.
- */
-const CLEAR_NAVIGATOR = {
-  ...DefaultTheme,
-  colors: { ...DefaultTheme.colors, background: 'transparent' },
-};
 
 /**
  * Today, Echoes, Patterns and You share one tab bar, drawn above the stack. It shows on those four
@@ -40,7 +25,6 @@ const CLEAR_NAVIGATOR = {
  * target the glass above blurs on Android. Every other screen covers it with a plate of its own.
  */
 export default function HomeLayout() {
-  const { target, colors } = useTheme();
   const reduced = useReduceMotion();
   // The lock panel is opaque and sits above everything: nothing should play behind it.
   const locked = useGate((state) => state.lock.kind === 'locked');
@@ -48,16 +32,15 @@ export default function HomeLayout() {
   const [welcome] = useState(readWelcomeCandidate);
   const stack = (
     <Stack
-      screenOptions={({ route }) => ({
+      screenOptions={{
         headerShown: false,
         animation: 'fade',
         animationDuration: reduced ? tokens.motion.fast : tokens.motion.standard,
-        contentStyle: {
-          backgroundColor: TRANSPARENT_ROUTES.includes(route.name)
-            ? 'transparent'
-            : plateColour(target, OTHER_PLATE[route.name] ?? 'home', colors.textInk),
-        },
-      })}
+        // Every screen is clear. Home and the session draw no photograph and show the one beneath the
+        // stack. The screens that wear a plate of their own, Completion above all, draw it above the
+        // plate backing, which is what shows until it is drawn.
+        contentStyle: CLEAR_SCREEN,
+      }}
     >
       {/* Reached by dissolve, so Home has already melted when it arrives; its fade out is the stack's
           own, so the book goes gently (src/features/home/sessionRoute.ts). */}
@@ -65,16 +48,12 @@ export default function HomeLayout() {
       {/* Breathe is reached the same way, and breathes over the same plate. */}
       <Stack.Screen
         name="breathe"
-        options={{
-          animation: 'none',
-          gestureEnabled: false,
-          contentStyle: { backgroundColor: 'transparent' },
-        }}
+        options={{ animation: 'none', gestureEnabled: false, contentStyle: CLEAR_SCREEN }}
       />
       {/* Rehearse fades in over the session it follows, onto the same plate. */}
       <Stack.Screen
         name="rehearse"
-        options={{ gestureEnabled: false, contentStyle: { backgroundColor: 'transparent' } }}
+        options={{ gestureEnabled: false, contentStyle: CLEAR_SCREEN }}
       />
     </Stack>
   );

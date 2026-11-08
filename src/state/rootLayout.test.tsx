@@ -38,7 +38,7 @@ const NAVIGATOR = 'the-navigator';
 // screen with a plate to be drawn, which is what holds the splash.
 let mockPlates = false;
 let mockSettlePlate: (() => void) | undefined;
-let mockStackOptions: ((input: { route: { name: string } }) => { animation: string }) | undefined;
+let mockStackOptions: { animation: string; contentStyle: { backgroundColor: string } } | undefined;
 const mockLandingRenders = jest.fn();
 
 jest.mock('expo-router', () => {
@@ -63,6 +63,8 @@ jest.mock('expo-router', () => {
     },
     router: { replace: jest.fn() },
     usePathname,
+    ThemeProvider: ({ children }: { children: unknown }) => children,
+    DefaultTheme: { colors: {} },
   };
 });
 
@@ -247,10 +249,10 @@ describe('onboarding’s Landing never shows to someone who has finished', () =>
     useOnboarding.setState({ step: 8, completedAt: 1 });
     await render(<RootLayout />);
     await setGate({ status: { kind: 'ready', resume: '/home' } });
-    expect(mockStackOptions?.({ route: { name: 'home' } }).animation).toBe('none');
+    expect(mockStackOptions?.animation).toBe('none');
     pathname.mockReturnValue('/home');
     await setGate({ lock: { kind: 'unlocked' } });
-    expect(mockStackOptions?.({ route: { name: 'home' } }).animation).toBe('fade');
+    expect(mockStackOptions?.animation).toBe('fade');
   });
 
   it('is not drawn for someone who resumes part way through onboarding either', async () => {
@@ -276,6 +278,42 @@ describe('onboarding’s Landing never shows to someone who has finished', () =>
     pathname.mockReturnValue('/');
     await setGate({ lock: { kind: 'unlocked' } });
     expect(landing()).toBeTruthy();
+  });
+});
+
+describe('a flat colour is never what is on the screen', () => {
+  const ready = { status: { kind: 'ready', resume: '/' } as const };
+  const layers = () =>
+    screen
+      .getAllByTestId(/^(plate-backing|the-navigator)$/, { includeHiddenElements: true })
+      .map((node) => node.props.testID as string);
+
+  it('draws the plate backing beneath the whole navigator, which is drawn above it', async () => {
+    await render(<RootLayout />);
+    await setGate(ready);
+    expect(layers()).toEqual(['plate-backing', 'the-navigator']);
+  });
+
+  it('leaves every screen of the navigator clear, so that the backing is what shows where a photograph is not drawn yet', async () => {
+    await render(<RootLayout />);
+    await setGate(ready);
+    expect(mockStackOptions?.contentStyle).toEqual({ backgroundColor: 'transparent' });
+  });
+
+  it('keeps the backing through a lock and its release, so it never has to be drawn again', async () => {
+    await render(<RootLayout />);
+    await setGate(ready);
+    const before = screen.getByTestId('plate-backing', { includeHiddenElements: true });
+    await setGate({
+      lock: { kind: 'locked', method: 'passcode', failure: null, canDisable: false },
+    });
+    await setGate({ lock: { kind: 'unlocked' } });
+    expect(screen.getByTestId('plate-backing', { includeHiddenElements: true })).toBe(before);
+  });
+
+  it('has no backing while the gate has not resolved: there is no navigator to stand beneath', async () => {
+    await render(<RootLayout />);
+    expect(screen.queryByTestId('plate-backing', { includeHiddenElements: true })).toBeNull();
   });
 });
 

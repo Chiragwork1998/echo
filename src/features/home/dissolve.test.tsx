@@ -35,6 +35,7 @@ function Probe() {
       <Pressable testID="continue" onPress={() => continueDraft('d1')} />
       <Pressable testID="opened" onPress={control.sessionOpened} />
       <Pressable testID="closed" onPress={control.sessionClosed} />
+      <Pressable testID="return" onPress={control.returnHome} />
       {/* Home partly gone, as it is a moment after the session gives it back. */}
       <Pressable testID="partly-gone" onPress={() => control.progress.set(0.64)} />
       <Pressable testID="nearly-gone" onPress={() => control.progress.set(0.99)} />
@@ -153,6 +154,77 @@ describe('pressing Begin while Home is still coming back', () => {
   it('waits for Home to be whole before anything is set on it', () => {
     expect(ARRIVAL_AFTER_IDLE_MS).toBe(920);
     expect(ARRIVAL_AFTER_IDLE_MS).toBeGreaterThan(RETURN_MS);
+  });
+});
+
+describe('giving Home back before the session has closed', () => {
+  // The walk (E5): after Enter your space the bare photograph came in and Home's interface 0.6 s
+  // later. Home's return was only started once the session had been unmounted, after the pop; it is
+  // started here from the card that follows the session, which is on show for some time first.
+  const returns = () => {
+    const reanimated = jest.requireMock('react-native-reanimated');
+    const toZero: number[] = [];
+    jest.spyOn(reanimated, 'withTiming').mockImplementation(((
+      to: number,
+      options: { duration: number },
+    ) => {
+      if (to === 0) toZero.push(options.duration);
+      return to;
+    }) as never);
+    return toZero;
+  };
+
+  async function inSession() {
+    await open();
+    await fireEvent.press(screen.getByTestId('begin'));
+    await tick(DISSOLVE_MS);
+    await fireEvent.press(screen.getByTestId('opened'));
+    await tick(DISSOLVE_MS);
+    expect(phase()).toBe('gone');
+  }
+
+  it('brings Home’s interface back while the session is still in the stack', async () => {
+    await inSession();
+    await fireEvent.press(screen.getByTestId('return'));
+    expect(phase()).toBe('idle');
+  });
+
+  it('is the one return: the session closing after it does not start another', async () => {
+    const toZero = returns();
+    await inSession();
+    await fireEvent.press(screen.getByTestId('return'));
+    expect(toZero).toEqual([RETURN_MS]);
+    await fireEvent.press(screen.getByTestId('closed'));
+    await tick(1000);
+    // A second return would start Home's interface over again, 120 ms later and from where it had got to.
+    expect(toZero).toEqual([RETURN_MS]);
+    expect(phase()).toBe('idle');
+  });
+
+  it('still gives Home back when the session closes and nothing gave it back before', async () => {
+    const toZero = returns();
+    await inSession();
+    await fireEvent.press(screen.getByTestId('closed'));
+    await tick(1000);
+    expect(toZero).toEqual([RETURN_MS]);
+    expect(phase()).toBe('idle');
+  });
+
+  it('does nothing when Home was never dissolved', async () => {
+    const toZero = returns();
+    await open();
+    await fireEvent.press(screen.getByTestId('return'));
+    expect(toZero).toEqual([]);
+    expect(phase()).toBe('idle');
+  });
+
+  it('lets Begin dissolve Home again afterwards, as it does after any return', async () => {
+    await inSession();
+    await fireEvent.press(screen.getByTestId('return'));
+    await fireEvent.press(screen.getByTestId('closed'));
+    await tick(1000);
+    await fireEvent.press(screen.getByTestId('begin'));
+    expect(phase()).toBe('leaving');
   });
 });
 
