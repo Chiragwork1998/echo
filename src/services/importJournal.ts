@@ -10,6 +10,8 @@ import { childUri, type FileReader } from '@/storage/ports';
 import { getRuntime, type Runtime } from '@/storage/runtime';
 import { VaultNotReadyError } from '@/storage/vault';
 
+import { planAdtsPieces, type AdtsLimits } from './adts';
+import { parseWav } from './wav';
 import {
   copyZipItem,
   readZipIndex,
@@ -28,8 +30,11 @@ import {
  * The newest backup format this build reads, and the one exportJournal writes. Any change to what
  * entries.json may hold, a new mood or field included, needs a new version: a build that meets a
  * version above its own says so kindly, where one that met an unknown value would call it damaged.
+ * Every older version stays readable.
+ *
+ * 1: the first. 2: adds `audioDurationSeconds`, the recording's own length.
  */
-export const BACKUP_FORMAT_VERSION = 1;
+export const BACKUP_FORMAT_VERSION = 2;
 const MANIFEST = 'entries.json';
 const ARCHIVE_NAME = 'backup.zip';
 
@@ -65,6 +70,16 @@ const FIELD = {
   durationSeconds: 7 * 24 * 60 * 60,
 } as const;
 
+/** Where a WAV's format is looked for, as transcription looks for it. */
+const WAV_HEAD_BYTES = 4096;
+/** Limits that never cut, so a take is planned as one piece and its frames are counted once. */
+const WHOLE_TAKE: AdtsLimits = {
+  seconds: Infinity,
+  bytes: Infinity,
+  minSeconds: 0,
+  overlapSeconds: 0,
+};
+
 /** A UUID in practice. No dots or slashes, so `audio/<id><extension>` reads only one way. */
 const ID = /^[A-Za-z0-9_-]{1,128}$/;
 const AUDIO_FILE = /^audio\/([A-Za-z0-9_-]{1,128})((?:\.[A-Za-z0-9]{1,10})?)$/;
@@ -80,8 +95,8 @@ const MOODS: Record<Mood, true> = {
 
 const time = z.iso.datetime();
 
-/** One entry exactly as exportJournal writes it: every field present, and no others. */
-const entrySchema = z.strictObject({
+/** The fields of an entry in format 1. */
+const firstFields = {
   id: z.string().regex(ID),
   status: z.enum(['draft', 'committed']),
   createdAt: time,
@@ -96,16 +111,36 @@ const entrySchema = z.strictObject({
   durationSeconds: z.number().min(0).max(FIELD.durationSeconds),
   audioFile: z.string().regex(AUDIO_FILE).nullable(),
   reflection: z.string().max(FIELD.reflection).nullable(),
-});
+};
 
-const backupSchema = z.strictObject({
-  app: z.literal('ECHO'),
-  formatVersion: z.literal(BACKUP_FORMAT_VERSION),
-  exportedAt: time,
-  entries: z.array(entrySchema),
-});
+/** Each entry exactly as exportJournal writes it in that version: every field present, no others. */
+const backupSchema = z.discriminatedUnion('formatVersion', [
+  z.strictObject({
+    app: z.literal('ECHO'),
+    formatVersion: z.literal(1),
+    exportedAt: time,
+    entries: z.array(z.strictObject(firstFields)),
+  }),
+  z.strictObject({
+    app: z.literal('ECHO'),
+    formatVersion: z.literal(2),
+    exportedAt: time,
+    entries: z.array(
+      z.strictObject({
+        ...firstFields,
+        audioDurationSeconds: z.number().min(0).max(FIELD.durationSeconds).nullable(),
+      }),
+    ),
+  }),
+]);
 
-type BackupEntry = z.infer<typeof entrySchema>;
+/**
+ * An entry of either version. The recording's own length is a number, null when the backup says it
+ * is not known, and undefined when the backup is too old to say.
+ */
+type BackupEntry = z.infer<z.ZodObject<typeof firstFields>> & {
+  audioDurationSeconds?: number | null;
+};
 
 export type BackupSummary = {
   /** Kept entries, the ones Echoes lists. */
@@ -262,7 +297,7 @@ async function readBackup(reader: FileReader, limits: BackupLimits): Promise<Par
   const parsed = backupSchema.safeParse(json);
   if (!parsed.success) throw new BackupProblem('damaged');
 
-  const entries = parsed.data.entries;
+  const entries: BackupEntry[] = parsed.data.entries;
   const ids = new Set<string>();
   const audio = new Map<string, ZipItem | null>();
   for (const entry of entries) {
@@ -271,6 +306,10 @@ async function readBackup(reader: FileReader, limits: BackupLimits): Promise<Par
     // A kept entry has the moment and the day it was kept. A draft has neither.
     const kept = entry.status === 'committed';
     if (kept !== (entry.committedAt !== null) || kept !== (entry.localDay !== null)) {
+      throw new BackupProblem('damaged');
+    }
+    // Only a recording has a length of its own.
+    if (entry.audioFile === null && entry.audioDurationSeconds != null) {
       throw new BackupProblem('damaged');
     }
     if (entry.audioFile === null) continue;
@@ -415,15 +454,56 @@ export async function openBackup(
     const extension = AUDIO_FILE.exec(entry.audioFile ?? '')?.[2] ?? '';
     const plain = childUri(directory, `${id}${extension}`);
     const target = childUri(paths.audioDir, `${id}.enc`);
+    let durationSeconds: number | null;
     try {
       if (!(await extract(item, plain))) return null;
+      // The recording's own length, as the backup gives it. A backup that cannot say (one made
+      // before format 2, or a take rescued after a crash) has its file measured, and only a file
+      // that cannot be measured takes the session's length, as every restore did before.
+      durationSeconds =
+        entry.audioDurationSeconds ??
+        (await measure(plain, extension)) ??
+        (entry.durationSeconds > 0 ? entry.durationSeconds : null);
       await vault.sealAudioFile(id, plain, target);
     } finally {
       quietly(() => files.remove(plain));
     }
-    // The export keeps the session's length, not the recording's. They are the same moment.
-    const durationSeconds = entry.durationSeconds > 0 ? entry.durationSeconds : null;
     return { id, target, meta: { extension, durationSeconds, recovered: false } };
+  }
+
+  /**
+   * A recording's length in seconds, read from the plaintext copy without decoding it, as
+   * transcription reads it to cut a long take: a WAV (a live take) from its format and size, and
+   * ADTS (Android's hidden take) frame by frame. Null for anything else, such as the .m4a iOS
+   * records, and for a file that does not read as its kind.
+   */
+  async function measure(uri: string, extension: string): Promise<number | null> {
+    if (extension !== '.wav' && extension !== '.aac') return null;
+    let reader: FileReader;
+    try {
+      reader = files.openReader(uri);
+    } catch {
+      return null;
+    }
+    try {
+      const read = (offset: number, length: number) => reader.read(offset, length);
+      let seconds: number | null = null;
+      if (extension === '.wav') {
+        const info = parseWav(await read(0, Math.min(reader.size, WAV_HEAD_BYTES)), reader.size);
+        if (info && info.sampleRate > 0) {
+          seconds = info.dataBytes / (info.sampleRate * info.channels * 2);
+        }
+      } else {
+        seconds = (await planAdtsPieces(reader.size, WHOLE_TAKE, read))?.seconds ?? null;
+      }
+      return seconds !== null && Number.isFinite(seconds) && seconds <= FIELD.durationSeconds
+        ? seconds
+        : null;
+    } catch {
+      return null;
+    } finally {
+      quietly(() => reader.close());
+    }
   }
 
   /** Proves the sealed entry opens before it is stored, as every entry written here is. */

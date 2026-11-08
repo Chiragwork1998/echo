@@ -10,6 +10,7 @@ import { installRuntime } from '@/storage/runtime';
 import { createTestRuntime, type TestRuntime } from '@/storage/testing/nodePorts';
 
 import { exportJournal } from './exportJournal';
+import { BACKUP_FORMAT_VERSION } from './importJournal';
 import { crc32 } from './zip';
 
 type ZipFile = { name: string; bytes: Buffer; crc: number };
@@ -99,7 +100,7 @@ describe('exportJournal', () => {
     expect(file('audio/voice.m4a')?.bytes.toString()).toBe('original-audio-bytes');
 
     const json = JSON.parse(file('entries.json')?.bytes.toString() ?? '{}');
-    expect(json.formatVersion).toBe(1);
+    expect(json.formatVersion).toBe(BACKUP_FORMAT_VERSION);
     const exported = json.entries.find((item: { id: string }) => item.id === 'text');
     expect(exported).toMatchObject({
       title: 'A title',
@@ -107,9 +108,15 @@ describe('exportJournal', () => {
       moodBefore: 'heavy',
       prompt: 'What is here?',
       reflection: 'A kept reflection',
+      audioFile: null,
+      audioDurationSeconds: null,
     });
     const voice = json.entries.find((item: { id: string }) => item.id === 'voice');
     expect(voice.audioFile).toBe('audio/voice.m4a');
+    // The recording's own length, which is not the session's: this take was 3 seconds of a session
+    // that counted none.
+    expect(voice.audioDurationSeconds).toBe(3);
+    expect(voice.durationSeconds).toBe(0);
 
     const markdown = file('entries.md')?.bytes.toString() ?? '';
     expect(markdown).toContain('Written with मैं and 🌊');
