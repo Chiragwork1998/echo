@@ -73,6 +73,7 @@ type Props = {
 const ENDINGS: Record<ReportResult, { title: string; body: string }> = {
   sent: { title: words.sentTitle, body: words.sentBody },
   kept: { title: words.keptTitle, body: words.keptBody },
+  offline: { title: words.keptTitle, body: words.offlineBody },
   failed: { title: words.failedTitle, body: words.failedBody },
 };
 

@@ -103,8 +103,14 @@ describe('a card report', () => {
     });
   });
 
-  it('names what happened: offline, busy, refused, or no server in this build', async () => {
-    expect(await sendReport(report, offline() as unknown as typeof fetch, tokens)).toBe('offline');
+  it('names what happened: offline, unreachable, busy, missing, refused, or no server in this build', async () => {
+    const thrown = offline() as unknown as typeof fetch;
+    expect(await sendReport(report, thrown, tokens, async () => false)).toBe('offline');
+    expect(await sendReport(report, thrown, tokens, async () => true)).toBe('unreachable');
+    expect(await sendReport(report, thrown, tokens, async () => null)).toBe('unreachable');
+    expect(await sendReport(report, answer(404) as unknown as typeof fetch, tokens)).toBe(
+      'missing',
+    );
     expect(await sendReport(report, answer(503) as unknown as typeof fetch, tokens)).toBe('busy');
     expect(await sendReport(report, answer(429) as unknown as typeof fetch, tokens)).toBe('busy');
     expect(await sendReport(report, answer(400) as unknown as typeof fetch, tokens)).toBe(
@@ -154,6 +160,113 @@ describe('reportCard', () => {
         shelf: memoryShelf(),
       }),
     ).toBe('failed');
+  });
+});
+
+// The production server had no /api/report yet and answered 404. The phone was online, yet the
+// person was told to try again once online, and the report was let go.
+describe('a report the server cannot take yet', () => {
+  const connected = async () => true;
+
+  it('names a server without the report route as missing, not as refusing it', async () => {
+    const send = answer(404, { error: { code: 'NOT_FOUND' } });
+    expect(await sendReport(report, send as unknown as typeof fetch, tokens, connected)).toBe(
+      'missing',
+    );
+  });
+
+  it('is kept on the phone, and the person is told it waits', async () => {
+    const shelf = memoryShelf();
+    const send = answer(404);
+    expect(
+      await reportCard(report, {
+        send: send as unknown as typeof fetch,
+        tokens,
+        shelf,
+        online: connected,
+      }),
+    ).toBe('kept');
+    expect(shelf.held).toEqual([report]);
+  });
+
+  it('keeps waiting while the route is still missing, and goes, once, when it is there', async () => {
+    const shelf = memoryShelf([report]);
+    const missing = answer(404);
+    await sendWaitingReports({
+      send: missing as unknown as typeof fetch,
+      tokens,
+      shelf,
+      online: connected,
+    });
+    expect(shelf.held).toEqual([report]);
+
+    const send = answer(200);
+    await sendWaitingReports({
+      send: send as unknown as typeof fetch,
+      tokens,
+      shelf,
+      online: connected,
+    });
+    await sendWaitingReports({
+      send: send as unknown as typeof fetch,
+      tokens,
+      shelf,
+      online: connected,
+    });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(shelf.held).toEqual([]);
+  });
+});
+
+describe('a report that could not go', () => {
+  it('is said to be offline only when the phone itself says it has no connection', async () => {
+    const shelf = memoryShelf();
+    const send = offline() as unknown as typeof fetch;
+    expect(await reportCard(report, { send, tokens, shelf, online: async () => false })).toBe(
+      'offline',
+    );
+    // Online, or unable to say, a request that did not get through is the server's, not the phone's.
+    expect(await reportCard(report, { send, tokens, shelf, online: async () => true })).toBe(
+      'kept',
+    );
+    expect(await reportCard(report, { send, tokens, shelf, online: async () => null })).toBe(
+      'kept',
+    );
+    expect(shelf.held).toEqual([report, report, report]);
+  });
+});
+
+describe('sending what waits', () => {
+  it('lets go of each report the moment it has gone, so none is sent twice', async () => {
+    const older = cardReport({ reason: 'harmful' });
+    const shelf = memoryShelf([older, report]);
+    let deliver: (response: Response) => void = () => undefined;
+    const send = jest
+      .fn()
+      .mockImplementationOnce(async () => new Response('{}', { status: 200 }))
+      .mockImplementationOnce(() => new Promise<Response>((resolve) => (deliver = resolve)));
+    const sending = sendWaitingReports({
+      send: send as unknown as typeof fetch,
+      tokens,
+      shelf,
+      online: async () => true,
+    });
+    let whileSecondOnItsWay: CardReport[] = [];
+    try {
+      for (let turn = 0; turn < 50 && send.mock.calls.length < 2; turn += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      whileSecondOnItsWay = [...shelf.held];
+    } finally {
+      // Always answered, so that a failure here never leaves the next sends waiting their turn.
+      deliver(new Response('{}', { status: 200 }));
+      await sending;
+    }
+    expect(send).toHaveBeenCalledTimes(2);
+    // The first had gone from the phone while the second was still on its way: an ECHO closed then
+    // would never send the first again.
+    expect(whileSecondOnItsWay).toEqual([report]);
+    expect(shelf.held).toEqual([]);
   });
 });
 

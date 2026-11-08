@@ -148,6 +148,7 @@ describe('reporting a pattern card', () => {
 
   it.each([
     ['kept' as const, words.keptTitle, words.keptBody],
+    ['offline' as const, words.keptTitle, words.offlineBody],
     ['failed' as const, words.failedTitle, words.failedBody],
   ])('says plainly what happened when the report is %s', async (result, title, body) => {
     sent.mockResolvedValue(result satisfies ReportResult);
@@ -156,6 +157,30 @@ describe('reporting a pattern card', () => {
     await fireEvent.press(screen.getByRole('button', { name: words.send }));
     expect(await screen.findByRole('header', { name: title })).toBeTruthy();
     expect(screen.getByText(body)).toBeTruthy();
+  });
+
+  // On a server without the report route the phone was online, and was told to try again once online.
+  it('speaks of the connection only when the phone has none', () => {
+    expect(words.offlineBody).toMatch(/no connection/);
+    for (const line of [words.keptTitle, words.keptBody, words.failedTitle, words.failedBody]) {
+      expect(line).not.toMatch(/connection|online|offline|internet|signal|reached/i);
+    }
+  });
+
+  it('tells the person that a report kept on the phone will still be sent', () => {
+    for (const line of [words.keptBody, words.offlineBody]) {
+      expect(line).toMatch(/waits on this phone and is sent/);
+    }
+  });
+
+  it('marks the card as reported once its report waits on the phone', async () => {
+    sent.mockResolvedValue('offline');
+    await openReport();
+    await fireEvent.press(screen.getByRole('radio', { name: words.reasons.upsetting }));
+    await fireEvent.press(screen.getByRole('button', { name: words.send }));
+    await fireEvent.press(await screen.findByRole('button', { name: words.done }));
+    await waitFor(() => expect(screen.getByText(words.reported)).toBeTruthy());
+    expect(sent).toHaveBeenCalledTimes(1);
   });
 
   it('can try again after a report that could not go', async () => {
