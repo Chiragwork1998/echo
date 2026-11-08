@@ -22,6 +22,7 @@ import { render } from '@/testing/render';
 import { bookCopy } from './bookCopy';
 import { PAGE_TEXT } from './Pages';
 import { FULL, HURRY_MS, SHORT } from './ritual';
+import { CHOOSE_AT_MS } from './Shelf';
 import { VOLUMES } from './volumes';
 
 jest.mock('@/design/haptics');
@@ -38,12 +39,15 @@ jest.mock(
   'react-native-safe-area-context',
   () => jest.requireActual('react-native-safe-area-context/jest/mock').default,
 );
-jest.mock('react-native-reanimated', () => ({
-  ...jest.requireActual('@/testing/reanimatedMock').reanimatedMock,
-  // Resolves to its end at once, as in every other test, and remembers how it was asked to.
-  withTiming: jest.fn((value: unknown) => value),
-  useAnimatedKeyboard: () => ({ height: { get: () => 0 }, state: { get: () => 0 } }),
-}));
+jest.mock('react-native-reanimated', () => {
+  const stand = jest.requireActual('@/testing/reanimatedMock').reanimatedMock;
+  return {
+    ...stand,
+    // Resolves to its end at once, as in every other test (and runs its callback when its time has passed), and remembers how it was asked to.
+    withTiming: jest.fn(stand.withTiming),
+    useAnimatedKeyboard: () => ({ height: { get: () => 0 }, state: { get: () => 0 } }),
+  };
+});
 // Motion is covered by eye. By default the book arrives and opens at once, which is what Reduce Motion
 // does. The ritual's timing is tested with it off.
 let mockReduced = true;
@@ -131,6 +135,21 @@ describe('First Echo at the shelf', () => {
     expect(router.navigate).not.toHaveBeenCalled();
     await fireEvent.press(screen.getByRole('button', { name: copy.firstEcho.cta }));
     await waitFor(() => expect(router.navigate).toHaveBeenCalledTimes(1));
+  });
+
+  it('brings the book as the shelf leaves, and keeps the shelf until its own fade has ended', async () => {
+    mockReduced = false;
+    await render(<JournalSession variant="onboarding" />);
+    // The shelf rolls to the person's volume, and a touch on the centred one chooses it.
+    await tick(3300);
+    await fireEvent.press(volume('your-echo'));
+    await tick(CHOOSE_AT_MS + 20);
+    // The book is drawing, and the shelf is still there with it: no frame of neither.
+    expect(screen.queryByTestId('book-stage', { includeHiddenElements: true })).toBeTruthy();
+    expect(screen.queryByTestId('book-shelf', { includeHiddenElements: true })).toBeTruthy();
+    await tick(400);
+    expect(screen.queryByTestId('book-stage', { includeHiddenElements: true })).toBeTruthy();
+    expect(screen.queryByTestId('book-shelf', { includeHiddenElements: true })).toBeNull();
   });
 
   it('skips the shelf when a draft is being continued', async () => {

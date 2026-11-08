@@ -1,18 +1,21 @@
 // The shelf's small manners: it does not pop when a finger touches or lets go, and a volume chosen and
 // then left is not opened on the screen that is going. The stand-in for Reanimated resolves every
-// animation to its end at once, so this proves what was asked for and when, never the curve.
+// animation to its end at once, so this proves what was asked for and when, never the curve. Its own
+// clock says when an animation has finished, and a phone that is behind it is a `lag`.
 import { act, fireEvent, screen } from '@testing-library/react-native';
 import { withTiming } from 'react-native-reanimated';
 
+import { animationClock } from '@/testing/reanimatedMock';
 import { render } from '@/testing/render';
 
-import { Shelf, useShelfOffset } from './Shelf';
+import { ANIMATION_NET_MS } from './ritual';
+import { CHOOSE_AT_MS, Shelf, useShelfOffset } from './Shelf';
 import { VOLUMES } from './volumes';
 
-jest.mock('react-native-reanimated', () => ({
-  ...jest.requireActual('@/testing/reanimatedMock').reanimatedMock,
-  withTiming: jest.fn((value: unknown) => value),
-}));
+jest.mock('react-native-reanimated', () => {
+  const stand = jest.requireActual('@/testing/reanimatedMock').reanimatedMock;
+  return { ...stand, withTiming: jest.fn(stand.withTiming) };
+});
 let mockReduced = false;
 jest.mock('@/design/useReduceMotion', () => ({ useReduceMotion: () => mockReduced }));
 jest.mock('@/features/journal-session/useScreenReader', () => ({ useScreenReader: () => false }));
@@ -27,9 +30,9 @@ const timings = () =>
     duration: (config as { duration?: number } | undefined)?.duration,
   }));
 
-function Row({ onChoose }: { onChoose: (index: number) => void }) {
+function Row({ onChoose, onLeft }: { onChoose: (index: number) => void; onLeft?: () => void }) {
   const offset = useShelfOffset();
-  return <Shelf initial={YOUR_ECHO} offset={offset} onChoose={onChoose} />;
+  return <Shelf initial={YOUR_ECHO} offset={offset} onChoose={onChoose} onLeft={onLeft} />;
 }
 
 /** A finger going down on the shelf, as PanResponder reads it. */
@@ -57,43 +60,91 @@ const touch = (x: number) => ({
 
 beforeEach(() => {
   mockReduced = false;
+  animationClock.reset();
   jest.useFakeTimers();
   jest.clearAllMocks();
 });
-afterEach(() => jest.useRealTimers());
+afterEach(() => {
+  animationClock.reset();
+  jest.useRealTimers();
+});
 
 describe('choosing a volume', () => {
-  it('opens it once the shelf has left, and only once', async () => {
+  it('asks for the book while the shelf is still leaving, and only once', async () => {
     const onChoose = jest.fn();
     await render(<Row onChoose={onChoose} />);
     await tick(ROLL_MS);
     await fireEvent.press(screen.getByTestId('volume-your-echo'));
-    await tick(OUT_MS - 1);
+    await tick(CHOOSE_AT_MS - 1);
     expect(onChoose).not.toHaveBeenCalled();
     await tick(1);
     expect(onChoose).toHaveBeenCalledTimes(1);
     expect(onChoose).toHaveBeenCalledWith(YOUR_ECHO);
+    // The book is asked for well before the shelf has gone, so that it is drawing as the shelf's last
+    // light leaves: with neither, a slow phone shows the bare studio colour.
+    expect(CHOOSE_AT_MS).toBeLessThan(OUT_MS / 2);
     await tick(1000);
     expect(onChoose).toHaveBeenCalledTimes(1);
   });
 
-  it('does not open it on a screen that has gone: Back within the exit takes it back', async () => {
-    const onChoose = jest.fn();
-    const view = await render(<Row onChoose={onChoose} />);
+  it('says it has left when its own fade has ended, and not before', async () => {
+    const onLeft = jest.fn();
+    await render(<Row onChoose={jest.fn()} onLeft={onLeft} />);
     await tick(ROLL_MS);
     await fireEvent.press(screen.getByTestId('volume-your-echo'));
-    await tick(OUT_MS / 2);
+    await tick(OUT_MS - 1);
+    expect(onLeft).not.toHaveBeenCalled();
+    await tick(1);
+    expect(onLeft).toHaveBeenCalledTimes(1);
+    await tick(5000);
+    expect(onLeft).toHaveBeenCalledTimes(1);
+  });
+
+  it('is there for as long as its fade takes on a phone that is behind the clock', async () => {
+    animationClock.lag = 600;
+    const onLeft = jest.fn();
+    await render(<Row onChoose={jest.fn()} onLeft={onLeft} />);
+    await tick(ROLL_MS);
+    await fireEvent.press(screen.getByTestId('volume-your-echo'));
+    await tick(OUT_MS + 300);
+    expect(onLeft).not.toHaveBeenCalled();
+    await tick(400);
+    expect(onLeft).toHaveBeenCalledTimes(1);
+  });
+
+  it('is let go of, a little after its time, if its fade never says it has ended', async () => {
+    animationClock.lag = 1_000_000;
+    const onLeft = jest.fn();
+    await render(<Row onChoose={jest.fn()} onLeft={onLeft} />);
+    await tick(ROLL_MS);
+    await fireEvent.press(screen.getByTestId('volume-your-echo'));
+    await tick(OUT_MS + ANIMATION_NET_MS - 1);
+    expect(onLeft).not.toHaveBeenCalled();
+    await tick(1);
+    expect(onLeft).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not open it on a screen that has gone: Back as it is chosen takes it back', async () => {
+    const onChoose = jest.fn();
+    const onLeft = jest.fn();
+    const view = await render(<Row onChoose={onChoose} onLeft={onLeft} />);
+    await tick(ROLL_MS);
+    await fireEvent.press(screen.getByTestId('volume-your-echo'));
+    await tick(CHOOSE_AT_MS / 2);
     await view.unmount();
-    await tick(OUT_MS);
+    await tick(OUT_MS + ANIMATION_NET_MS);
     expect(onChoose).not.toHaveBeenCalled();
+    expect(onLeft).not.toHaveBeenCalled();
   });
 
   it('under Reduce Motion opens it at once, with no exit to wait for', async () => {
     mockReduced = true;
     const onChoose = jest.fn();
-    await render(<Row onChoose={onChoose} />);
+    const onLeft = jest.fn();
+    await render(<Row onChoose={onChoose} onLeft={onLeft} />);
     await fireEvent.press(screen.getByTestId('volume-your-echo'));
     expect(onChoose).toHaveBeenCalledTimes(1);
+    expect(onLeft).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -37,12 +37,15 @@ jest.mock(
   'react-native-safe-area-context',
   () => jest.requireActual('react-native-safe-area-context/jest/mock').default,
 );
-jest.mock('react-native-reanimated', () => ({
-  ...jest.requireActual('@/testing/reanimatedMock').reanimatedMock,
-  // Resolves to its end at once, as everywhere else, and remembers how it was asked to.
-  withTiming: jest.fn((value: unknown) => value),
-  useAnimatedKeyboard: () => ({ height: { get: () => 0 }, state: { get: () => 0 } }),
-}));
+jest.mock('react-native-reanimated', () => {
+  const stand = jest.requireActual('@/testing/reanimatedMock').reanimatedMock;
+  return {
+    ...stand,
+    // Resolves to its end at once, as everywhere else (and runs its callback when its time has passed), and remembers how it was asked to.
+    withTiming: jest.fn(stand.withTiming),
+    useAnimatedKeyboard: () => ({ height: { get: () => 0 }, state: { get: () => 0 } }),
+  };
+});
 // The book arrives and opens at once, as it does under Reduce Motion.
 jest.mock('@/design/useReduceMotion', () => ({ useReduceMotion: () => true }));
 jest.mock('@/features/journal', () => ({

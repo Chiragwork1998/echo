@@ -23,6 +23,7 @@ import { clearDialogs } from '@/features/tab-pages/Dialog';
 import { initialOnboarding, useOnboarding } from '@/state/onboarding';
 import { resetPreferences, usePreferences } from '@/state/preferences';
 import { openDialog, renderWithDialogs } from '@/testing/dialogs';
+import { animationClock } from '@/testing/reanimatedMock';
 import { render } from '@/testing/render';
 
 import { CLOSE_REDUCED_MS, FULL, HURRY_MS, SHORT, closeTimeline } from './ritual';
@@ -61,6 +62,11 @@ let journal: Journal;
 
 beforeEach(() => {
   mockReduced = false;
+  // The cover and the book are walked, a frame at a time, as their own animations: the closing follows
+  // them (./useBookClosing), so these are what it is waiting for. Seen straight, the cover lands at
+  // 840 ms and the book is half gone half way through its sink, as ./ritual plans.
+  animationClock.reset();
+  animationClock.stepped = true;
   jest.useFakeTimers();
   jest.clearAllMocks();
   clearDialogs();
@@ -85,14 +91,21 @@ beforeEach(() => {
 });
 afterEach(() => {
   setJournal(null);
+  animationClock.reset();
   jest.restoreAllMocks();
 });
 
-// Async, so that each step of the closing (a promise after a timer) runs before the next timer does.
-const tick = (ms: number) =>
-  act(async () => {
-    await jest.advanceTimersByTimeAsync(ms);
-  });
+// Async, so that each step of the closing (a promise after a timer) runs before the next timer does,
+// and a frame at a time, so that what a step asks of the screen (the book told to sink) is drawn
+// before the next one: the closing follows the book's own animations, which the screen starts.
+const FRAME_MS = 16;
+const tick = async (ms: number) => {
+  for (let left = ms; left > 0; left -= FRAME_MS) {
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(Math.min(FRAME_MS, left));
+    });
+  }
+};
 const field = () => screen.getByLabelText(copy.home.prompt, { includeHiddenElements: true });
 const navigated = () => jest.mocked(router.navigate).mock.calls.map(([path]) => path);
 
@@ -171,6 +184,56 @@ describe('the next screen', () => {
     await tick(closeTimeline(FULL).contactAt + 50);
     expect(cue).toHaveBeenCalledTimes(1);
     expect(cue).toHaveBeenCalledWith('settle');
+  });
+
+  describe('on a phone that is behind the clock', () => {
+    // The UI thread is 800 ms late with every animation the closing plays. The clock says the book is
+    // shut; it is not, and nothing that says it is shut may happen until it is.
+    const LATE = 800;
+    const goAt = () => closeTimeline(FULL).goAt;
+
+    it('does not feel the cover down, or ask for the next screen, before the cover has come down', async () => {
+      await writeEntry();
+      animationClock.lag = LATE;
+      await reflect();
+      await tick(closeTimeline(FULL).contactAt + LATE - 100);
+      expect(cue).not.toHaveBeenCalled();
+      expect(router.navigate).not.toHaveBeenCalled();
+      await tick(200);
+      expect(cue).toHaveBeenCalledTimes(1);
+      expect(cue).toHaveBeenCalledWith('settle');
+    });
+
+    it('keeps the book there until it has sunk, and then asks for the next screen once', async () => {
+      await writeEntry();
+      animationClock.lag = LATE;
+      await reflect();
+      await tick(goAt() + LATE - 100);
+      expect(router.navigate).not.toHaveBeenCalled();
+      await tick(goAt());
+      expect(navigated()).toEqual(['/home/complete']);
+      await tick(3000);
+      expect(router.navigate).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the last leaf until it has turned', async () => {
+      await writeEntry();
+      animationClock.lag = LATE;
+      await reflect();
+      await tick(FULL.close.leaf + LATE - 100);
+      expect(screen.queryByTestId('book-closing-leaf')).not.toBeNull();
+      await tick(200);
+      expect(screen.queryByTestId('book-closing-leaf')).toBeNull();
+    });
+
+    it('is given up on, and the book goes on, if the animations never answer', async () => {
+      await writeEntry();
+      animationClock.lag = 1_000_000;
+      await reflect();
+      await tick(closeTimeline(FULL).endAt + 4 * 1500);
+      expect(navigated()).toEqual(['/home/complete']);
+      expect(cue).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('goes at 180 ms under Reduce Motion, with a single commit and no leaf', async () => {

@@ -1,10 +1,20 @@
 // The order of things as the book shuts, and the time at which the next screen may be asked for.
 // What each part looks like is judged by eye; here is when it happens, and that it always ends.
+// The closing follows the book's own animations: the cover landing, and the book sinking. A phone that
+// is behind the clock is a landing that comes late, and these say nothing happens before it does.
 import { act, renderHook } from '@testing-library/react-native';
 
 import { cue } from '@/design/haptics';
 
-import { CLOSE_REDUCED_MS, FULL, HURRY_MS, SHORT, closeTimeline, type Ritual } from './ritual';
+import {
+  ANIMATION_NET_MS,
+  CLOSE_REDUCED_MS,
+  FULL,
+  HURRY_MS,
+  SHORT,
+  closeTimeline,
+  type Ritual,
+} from './ritual';
 import { useBookClosing } from './useBookClosing';
 
 jest.mock('@/design/haptics');
@@ -31,42 +41,66 @@ async function closing(ritual: Ritual, reduced = false) {
     });
   };
   const hurry = () => act(async () => view.result.current.hurry());
-  return { view, state, begin, hurry, went: () => went };
+  // What the book says: its cover is down, and it has sunk far enough for the next screen.
+  const landed = () => act(async () => view.result.current.landed());
+  const gone = () => act(async () => view.result.current.gone());
+  return { view, state, begin, hurry, landed, gone, went: () => went };
 }
 
 describe('the book shutting', () => {
   it.each([
     ['in full', FULL],
     ['once practised', SHORT],
-  ])('asks for the next screen in the middle of the sink, %s', async (_, ritual) => {
-    const { begin, went, state } = await closing(ritual);
+  ])('goes on from each thing the book says it has done, %s', async (_, ritual) => {
+    const { begin, went, state, landed, gone } = await closing(ritual);
     await begin();
     const t = closeTimeline(ritual);
     expect(state()).toMatchObject({ contact: false, sinking: false, hurry: false });
-    await tick(t.contactAt - 1);
-    expect(state()).toMatchObject({ contact: false });
-    await tick(1);
+    // The clock says the cover is down; the book has not said so.
+    await tick(t.contactAt + 400);
+    expect(state()).toMatchObject({ contact: false, sinking: false });
+    await landed();
     expect(state()).toMatchObject({ contact: true, sinking: false });
     await tick(ritual.close.gap - 1);
     expect(state()).toMatchObject({ sinking: false });
     await tick(1);
     expect(state()).toMatchObject({ sinking: true });
-    await tick(ritual.close.sink / 2 - 1);
+    // Nor does the clock say that the book is gone.
+    await tick(ritual.close.sink + 400);
     expect(went()).toBe(false);
-    await tick(1);
+    await gone();
     expect(went()).toBe(true);
   });
 
   it('is felt once, where the cover lands, and on nothing else', async () => {
-    const { begin } = await closing(FULL);
+    const { begin, landed, gone } = await closing(FULL);
     await begin();
-    await tick(closeTimeline(FULL).contactAt - 1);
+    await tick(closeTimeline(FULL).contactAt + 600);
     expect(cue).not.toHaveBeenCalled();
-    await tick(1);
+    await landed();
     expect(cue).toHaveBeenCalledTimes(1);
     expect(cue).toHaveBeenCalledWith('settle');
+    await tick(FULL.close.gap + 10);
+    await gone();
     await tick(2000);
     expect(cue).toHaveBeenCalledTimes(1);
+  });
+
+  it('is as quick as the book is: a cover that lands early is felt early', async () => {
+    const { begin, landed, state } = await closing(FULL);
+    await begin();
+    await tick(100);
+    await landed();
+    expect(state()).toMatchObject({ contact: true });
+    expect(cue).toHaveBeenCalledTimes(1);
+  });
+
+  it('is not lost if the book says it has landed before it is waited for', async () => {
+    const { begin, landed, state } = await closing(FULL);
+    await landed();
+    await begin();
+    await tick(0);
+    expect(state()).toMatchObject({ contact: true });
   });
 
   it('is begun once: a second Reflect finds the same closing', async () => {
@@ -81,13 +115,13 @@ describe('the book shutting', () => {
   });
 
   it('keeps the closed book still until a question on its cover is answered, then sinks', async () => {
-    const { begin, went, state } = await closing(FULL);
+    const { begin, went, state, landed, gone } = await closing(FULL);
     let answer!: () => void;
     await begin({
       atContact: () => new Promise<void>((resolve) => (answer = resolve)),
       asking: true,
     });
-    await tick(closeTimeline(FULL).contactAt);
+    await landed();
     // Far longer than the book ever rests: it waits.
     await tick(30_000);
     expect(state()).toMatchObject({ contact: true, sinking: false });
@@ -95,64 +129,102 @@ describe('the book shutting', () => {
     await act(async () => answer());
     await tick(FULL.close.gap);
     expect(state()).toMatchObject({ sinking: true });
-    await tick(FULL.close.sink / 2);
+    await gone();
     expect(went()).toBe(true);
   });
 });
 
-describe('a tap that says enough', () => {
-  it('finishes everything together in 300 ms, with no buzz', async () => {
-    const { begin, hurry, went, state } = await closing(FULL);
+describe('a closing that the book does not answer', () => {
+  it('feels the cover down, and goes on, when its landing has not been heard of a little after its time', async () => {
+    const { begin, state } = await closing(FULL);
     await begin();
-    await tick(200);
-    await hurry();
-    expect(state()).toMatchObject({ hurry: true, contact: true, sinking: true });
-    await tick(HURRY_MS - 1);
+    const at = closeTimeline(FULL).contactAt + ANIMATION_NET_MS;
+    await tick(at - 1);
+    expect(state()).toMatchObject({ contact: false });
+    expect(cue).not.toHaveBeenCalled();
+    await tick(1);
+    expect(state()).toMatchObject({ contact: true });
+    expect(cue).toHaveBeenCalledTimes(1);
+    expect(cue).toHaveBeenCalledWith('settle');
+  });
+
+  it('asks for the next screen when the sink has not been heard of a little after its time', async () => {
+    const { begin, went, state, landed } = await closing(FULL);
+    await begin();
+    await landed();
+    await tick(FULL.close.gap);
+    expect(state()).toMatchObject({ sinking: true });
+    await tick(FULL.close.sink + ANIMATION_NET_MS - 1);
     expect(went()).toBe(false);
     await tick(1);
     expect(went()).toBe(true);
-    await tick(3000);
-    expect(cue).not.toHaveBeenCalled();
   });
 
-  it('does not ask the question: the closing it hurried never reached the cover being down', async () => {
-    const { begin, hurry } = await closing(FULL);
-    const atContact = jest.fn(async () => undefined);
-    await begin({ atContact, asking: true });
-    await tick(300);
-    await hurry();
-    await tick(5000);
-    expect(atContact).not.toHaveBeenCalled();
-  });
-
-  it('is not taken from a person who is answering the book', async () => {
-    const { view, begin, hurry, state } = await closing(FULL);
-    await begin({ atContact: () => new Promise<void>(() => undefined), asking: true });
-    await tick(closeTimeline(FULL).contactAt);
-    expect(view.result.current.isHolding()).toBe(true);
-    await hurry();
-    expect(state()).toMatchObject({ hurry: false, sinking: false });
-  });
-
-  it('can be made only once, and does nothing before the closing has begun', async () => {
-    const { view, begin, hurry, went } = await closing(FULL);
-    await hurry();
-    expect(view.result.current.closing).toBeNull();
-    await begin();
-    await hurry();
-    await hurry();
-    await tick(HURRY_MS);
-    expect(went()).toBe(true);
-  });
-});
-
-describe('a closing that cannot finish', () => {
   it('lets the session go on when the screen is taken down in the middle of it', async () => {
     const { view, begin, went } = await closing(FULL);
     await begin();
     await tick(100);
     await view.unmount();
     await act(async () => undefined);
+    expect(went()).toBe(true);
+  });
+});
+
+describe('a tap that says enough', () => {
+  it('finishes everything together, with no buzz, and goes on when the hurried book is gone', async () => {
+    const { begin, hurry, went, state, gone } = await closing(FULL);
+    await begin();
+    await tick(200);
+    await hurry();
+    expect(state()).toMatchObject({ hurry: true, contact: true, sinking: true });
+    // However long the book takes about it, the next screen waits for it.
+    await tick(HURRY_MS + 500);
+    expect(went()).toBe(false);
+    await gone();
+    expect(went()).toBe(true);
+    await tick(3000);
+    expect(cue).not.toHaveBeenCalled();
+  });
+
+  it('goes on anyway when the hurried book is never heard of', async () => {
+    const { begin, hurry, went } = await closing(FULL);
+    await begin();
+    await hurry();
+    await tick(HURRY_MS + ANIMATION_NET_MS - 1);
+    expect(went()).toBe(false);
+    await tick(1);
+    expect(went()).toBe(true);
+  });
+
+  it('does not ask the question: the closing it hurried never reached the cover being down', async () => {
+    const { begin, hurry, gone, landed } = await closing(FULL);
+    const atContact = jest.fn(async () => undefined);
+    await begin({ atContact, asking: true });
+    await tick(300);
+    await hurry();
+    await landed();
+    await gone();
+    await tick(5000);
+    expect(atContact).not.toHaveBeenCalled();
+  });
+
+  it('is not taken from a person who is answering the book', async () => {
+    const { view, begin, hurry, state, landed } = await closing(FULL);
+    await begin({ atContact: () => new Promise<void>(() => undefined), asking: true });
+    await landed();
+    expect(view.result.current.isHolding()).toBe(true);
+    await hurry();
+    expect(state()).toMatchObject({ hurry: false, sinking: false });
+  });
+
+  it('can be made only once, and does nothing before the closing has begun', async () => {
+    const { view, begin, hurry, went, gone } = await closing(FULL);
+    await hurry();
+    expect(view.result.current.closing).toBeNull();
+    await begin();
+    await hurry();
+    await hurry();
+    await gone();
     expect(went()).toBe(true);
   });
 });

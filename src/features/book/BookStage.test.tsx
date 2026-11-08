@@ -2,17 +2,23 @@
 // screen is drawn, and resolves every animation to its end at once, so these prove which layers are
 // there and which branch of the motion is chosen, never the curves. The curves are pure functions
 // (./standing.test) and are judged by eye, frame by frame.
+//
+// What the opening does when the animation is behind the clock is proved with the stand-in's own
+// clock (src/testing/reanimatedMock): `lag` is a UI thread that finishes every animation late, and
+// `stepped` walks the cover to where it is going, so that what follows its progress can be seen.
 import { act, screen } from '@testing-library/react-native';
 import type { ComponentProps, ReactElement } from 'react';
 import { StyleSheet } from 'react-native';
 
 import { cue } from '@/design/haptics';
 import { ThemeProvider } from '@/design/theme';
+import { tokens } from '@/design/tokens';
+import { animationClock } from '@/testing/reanimatedMock';
 import { render } from '@/testing/render';
 
 import { BookStage } from './BookStage';
 import type { ClosingState } from './useBookClosing';
-import { FULL, SHORT } from './ritual';
+import { FULL, HURRY_MS, SHORT } from './ritual';
 import { VOLUMES } from './volumes';
 
 jest.mock('@/design/haptics');
@@ -56,10 +62,14 @@ const tick = (ms: number) => act(() => void jest.advanceTimersByTime(ms));
 
 beforeEach(() => {
   mockReduced = false;
+  animationClock.reset();
   jest.useFakeTimers();
   jest.clearAllMocks();
 });
-afterEach(() => jest.useRealTimers());
+afterEach(() => {
+  animationClock.reset();
+  jest.useRealTimers();
+});
 
 describe('the book under Reduce Motion', () => {
   beforeEach(() => {
@@ -165,19 +175,37 @@ describe('the cover as an object', () => {
     expect(leaves()).toHaveLength(0);
   });
 
-  it('keeps the count of leaves it had when the cover began to swing', async () => {
-    await render(book({ start: true, echoes: 1 }));
-    expect(leaves()).toHaveLength(1);
-    await tick(FULL.rise + 50);
-    // The count arrives late, while the cover is swinging: the leaves already turning stay as they are.
-    await redraw({ start: true, echoes: 9 });
-    expect(leaves()).toHaveLength(1);
-  });
+  describe('as the cover is walked', () => {
+    beforeEach(() => {
+      animationClock.stepped = true;
+    });
 
-  it('takes the count as it is until the cover begins to swing', async () => {
-    await render(book({ start: true, echoes: 1 }));
-    await redraw({ start: true, echoes: 9 });
-    expect(leaves()).toHaveLength(3);
+    it('keeps the count of leaves it had when the cover began to swing', async () => {
+      await render(book({ start: true, echoes: 1 }));
+      expect(leaves()).toHaveLength(1);
+      await tick(FULL.rise + 50);
+      // The count arrives late, while the cover is swinging: the leaves already turning stay as they are.
+      await redraw({ start: true, echoes: 9 });
+      expect(leaves()).toHaveLength(1);
+    });
+
+    it('takes the count as it is until the cover begins to swing', async () => {
+      await render(book({ start: true, echoes: 1 }));
+      await redraw({ start: true, echoes: 9 });
+      expect(leaves()).toHaveLength(3);
+    });
+
+    it('takes it when the cover begins to move, however late that is', async () => {
+      animationClock.lag = 800;
+      await render(book({ start: true, echoes: 1 }));
+      // The clock says the swing has begun; the cover has not moved: the count is still free.
+      await tick(FULL.rise + 400);
+      await redraw({ start: true, echoes: 9 });
+      expect(leaves()).toHaveLength(3);
+      await tick(600);
+      await redraw({ start: true, echoes: 1 });
+      expect(leaves()).toHaveLength(3);
+    });
   });
 
   it('draws the board and its leaves without a texture of their own', async () => {
@@ -188,15 +216,17 @@ describe('the cover as an object', () => {
 });
 
 describe('the unseating of the cover', () => {
-  // The board starts from rest: it has left the page a little after the swing begins.
-  const unseat = (ritual: typeof FULL, first: number) => first + Math.round(ritual.cover * 0.14);
+  // Felt where the cover itself first leaves the page, read from the cover and not from the clock:
+  // the stand-in walks it there, a frame at a time.
+  beforeEach(() => {
+    animationClock.stepped = true;
+  });
 
   it('is felt once, as a tick, where the board first leaves the page and not before', async () => {
     await render(book({ start: true }));
-    const at = unseat(FULL, FULL.rise);
-    await tick(at - 1);
+    await tick(FULL.rise - 1);
     expect(cue).not.toHaveBeenCalled();
-    await tick(2);
+    await tick(40);
     expect(cue).toHaveBeenCalledTimes(1);
     expect(cue).toHaveBeenCalledWith('tick');
     await tick(FULL.cover + 100);
@@ -205,10 +235,19 @@ describe('the unseating of the cover', () => {
 
   it('follows the ritual: First Echo\u2019s swing starts after its own, shorter, arrival', async () => {
     await render(book({ start: true, entrance: 'forward', ritual: SHORT }));
-    const at = unseat(SHORT, SHORT.forward);
-    await tick(at - 2);
+    await tick(SHORT.forward - 1);
     expect(cue).not.toHaveBeenCalled();
-    await tick(3);
+    await tick(40);
+    expect(cue).toHaveBeenCalledWith('tick');
+  });
+
+  it('is as late as the cover is: a UI thread that is behind the clock is not felt before it moves', async () => {
+    animationClock.lag = 600;
+    await render(book({ start: true }));
+    await tick(FULL.rise + 500);
+    expect(cue).not.toHaveBeenCalled();
+    await tick(200);
+    expect(cue).toHaveBeenCalledTimes(1);
     expect(cue).toHaveBeenCalledWith('tick');
   });
 
@@ -224,6 +263,125 @@ describe('the unseating of the cover', () => {
     await render(book({ start: true, hurry: true }));
     await tick(FULL.rise + FULL.cover);
     expect(cue).not.toHaveBeenCalled();
+  });
+});
+
+describe('the opening ends when the cover has swung, not when the clock says so', () => {
+  const total = FULL.rise + FULL.cover;
+  const layers = ['book-hinge', 'book-lining', 'book-cover-shadow', 'book-page-sheen'];
+
+  it('keeps the hinge, its lining, its shadow, the sheen and the leaves until the cover has finished', async () => {
+    // A UI thread that is 900 ms behind: the clock says the ritual is over, and the cover is still swinging.
+    animationClock.lag = 900;
+    const onOpened = jest.fn();
+    await render(book({ start: true, echoes: 9, onOpened }));
+    await tick(total + 600);
+    await redraw({ start: true, echoes: 9, onOpened });
+    expect(onOpened).not.toHaveBeenCalled();
+    for (const id of layers) expect(drawn(id)).toBeTruthy();
+    expect(leaves().length).toBeGreaterThan(0);
+    // The cover lands, and only then is it taken away.
+    await tick(400);
+    await redraw({ start: true, echoes: 9, onOpened });
+    expect(onOpened).toHaveBeenCalledTimes(1);
+    for (const id of layers) expect(drawn(id)).toBeNull();
+    expect(leaves()).toHaveLength(0);
+  });
+
+  it('is told of it once, and not before the page has been uncovered', async () => {
+    const onOpened = jest.fn();
+    await render(book({ start: true, onOpened }));
+    await tick(total - 1);
+    expect(onOpened).not.toHaveBeenCalled();
+    await tick(20);
+    expect(onOpened).toHaveBeenCalledTimes(1);
+    await tick(5000);
+    expect(onOpened).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens by itself, a little after the ritual is over, if the animation never says it is done', async () => {
+    animationClock.lag = 1_000_000;
+    const onOpened = jest.fn();
+    await render(book({ start: true, onOpened }));
+    await tick(total + 1400);
+    expect(onOpened).not.toHaveBeenCalled();
+    await tick(200);
+    expect(onOpened).toHaveBeenCalledTimes(1);
+    await redraw({ start: true, onOpened });
+    expect(drawn('book-hinge')).toBeNull();
+  });
+
+  it('keeps the cover while a tap hurries it, until the hurried swing has finished', async () => {
+    animationClock.lag = 500;
+    const onOpened = jest.fn();
+    await render(book({ start: true, onOpened }));
+    await tick(300);
+    await redraw({ start: true, hurry: true, onOpened });
+    await tick(HURRY_MS + 200);
+    expect(onOpened).not.toHaveBeenCalled();
+    expect(drawn('book-hinge')).toBeTruthy();
+    await tick(400);
+    // The swing that was cancelled by the tap did not count as finished: once, and softly.
+    expect(onOpened).toHaveBeenCalledTimes(1);
+    expect(cue).not.toHaveBeenCalled();
+  });
+
+  it('under Reduce Motion is open when its fade has finished', async () => {
+    mockReduced = true;
+    animationClock.lag = 500;
+    const onOpened = jest.fn();
+    await render(book({ start: true, onOpened }));
+    await tick(tokens.motion.fast + 200);
+    expect(onOpened).not.toHaveBeenCalled();
+    await tick(400);
+    expect(onOpened).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the head of the page', () => {
+  beforeEach(() => {
+    animationClock.stepped = true;
+  });
+  const watched = (seen: boolean[], lag = 0) => {
+    animationClock.lag = lag;
+    return (
+      <ThemeProvider crossfade={false}>
+        <BookStage
+          entrance="rise"
+          start
+          riseFrom={600}
+          ritual={FULL}
+          hurry={false}
+          volume={VOLUMES[0]!}
+          surface="vellum"
+          width={355}
+          height={416}
+        >
+          {(_open, headed) => {
+            seen.push(headed);
+            return null;
+          }}
+        </BookStage>
+      </ThemeProvider>
+    );
+  };
+
+  it('arrives once the cover has swung well off the page', async () => {
+    const seen: boolean[] = [];
+    await render(watched(seen));
+    await tick(FULL.rise + FULL.cover * 0.6);
+    expect(seen.at(-1)).toBe(false);
+    await tick(FULL.cover * 0.2);
+    expect(seen.at(-1)).toBe(true);
+  });
+
+  it('is as late as the cover is, however late that is', async () => {
+    const seen: boolean[] = [];
+    await render(watched(seen, 700));
+    await tick(FULL.rise + FULL.cover * 0.8);
+    expect(seen.at(-1)).toBe(false);
+    await tick(700);
+    expect(seen.at(-1)).toBe(true);
   });
 });
 
@@ -331,5 +489,98 @@ describe('the book shutting', () => {
     await redraw({ start: true, closing: shutting({ contact: true, sinking: true }) });
     await tick(3000);
     expect(cue).not.toHaveBeenCalled();
+  });
+});
+
+describe('the book shutting follows its own animations, not the clock', () => {
+  // The cover is walked down and the book is walked out, a frame at a time, so that what the stage
+  // reports from them is seen at the moment it is true.
+  beforeEach(() => {
+    animationClock.stepped = true;
+  });
+  const shutting = (patch: Partial<ClosingState> = {}): ClosingState => ({
+    ritual: FULL,
+    hurry: false,
+    contact: false,
+    sinking: false,
+    reduced: false,
+    asking: false,
+    ...patch,
+  });
+  const landing = FULL.close.coverAt + FULL.close.cover;
+  const open = async (props: Props = {}) => {
+    await render(book({ start: true, ...props }));
+    await tick(FULL.rise + FULL.cover + 100);
+  };
+
+  it('says the cover has landed when its own descent has ended', async () => {
+    const onLanded = jest.fn();
+    await open();
+    await redraw({ start: true, closing: shutting(), onLanded });
+    await tick(landing - 40);
+    expect(onLanded).not.toHaveBeenCalled();
+    await tick(80);
+    expect(onLanded).toHaveBeenCalledTimes(1);
+    await tick(5000);
+    expect(onLanded).toHaveBeenCalledTimes(1);
+  });
+
+  it('says it later when the UI thread is late: the clock does not land the cover', async () => {
+    const onLanded = jest.fn();
+    await open();
+    animationClock.lag = 700;
+    await redraw({ start: true, closing: shutting(), onLanded });
+    await tick(landing + 400);
+    expect(onLanded).not.toHaveBeenCalled();
+    await tick(400);
+    expect(onLanded).toHaveBeenCalledTimes(1);
+  });
+
+  it('says the book is gone when it has sunk half way, however late that is', async () => {
+    const onGone = jest.fn();
+    await open();
+    animationClock.lag = 500;
+    await redraw({
+      start: true,
+      closing: shutting({ contact: true, sinking: true }),
+      onGone,
+    });
+    await tick(FULL.close.sink / 2 + 300);
+    expect(onGone).not.toHaveBeenCalled();
+    await tick(400);
+    expect(onGone).toHaveBeenCalledTimes(1);
+  });
+
+  it('says it at half way, and not when the sink is only begun', async () => {
+    const onGone = jest.fn();
+    await open();
+    await redraw({
+      start: true,
+      closing: shutting({ contact: true, sinking: true }),
+      onGone,
+    });
+    await tick(FULL.close.sink / 2 - 40);
+    expect(onGone).not.toHaveBeenCalled();
+    await tick(80);
+    expect(onGone).toHaveBeenCalledTimes(1);
+  });
+
+  it('says it when the hurried book has sunk, all the way, and the cover has landed with it', async () => {
+    const onGone = jest.fn();
+    const onLanded = jest.fn();
+    await open();
+    await redraw({ start: true, closing: shutting(), onLanded, onGone });
+    await tick(100);
+    await redraw({
+      start: true,
+      closing: shutting({ hurry: true, contact: true, sinking: true }),
+      onLanded,
+      onGone,
+    });
+    await tick(HURRY_MS / 2);
+    expect(onGone).not.toHaveBeenCalled();
+    await tick(HURRY_MS / 2 + 40);
+    expect(onGone).toHaveBeenCalledTimes(1);
+    expect(onLanded).toHaveBeenCalledTimes(1);
   });
 });

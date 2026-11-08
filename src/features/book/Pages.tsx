@@ -23,6 +23,7 @@ import Animated, {
   Easing,
   ReduceMotion,
   interpolate,
+  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -40,7 +41,7 @@ import { InscribedName, nameType } from './InscribedName';
 import { LeftStack } from './LeftStack';
 import { linesOf, measuredText, pageCount, pageOfLine } from './pagination';
 import { Sheet, type PaperLook } from './paper';
-import { HURRY_MS } from './ritual';
+import { ANIMATION_NET_MS, HURRY_MS } from './ritual';
 import { closingLeafOpacity, leafGeometry } from './standing';
 import type { ClosingState } from './useBookClosing';
 import type { Volume } from './volumes';
@@ -336,14 +337,25 @@ export function Pages({
   useEffect(() => {
     if (!leafOn) return;
     const duration = leafHurry ? HURRY_MS : leafMs;
+    const gone = () => setLeafGone(true);
+    // The leaf is taken away when its own turn has ended, not when the clock says it should have: a
+    // phone that is behind would show the page blank, and the cover down, with the leaf still in the air.
+    const turned = (finished?: boolean) => {
+      'worklet';
+      if (finished) runOnJS(gone)();
+    };
     shut.set(
-      withTiming(1, {
-        duration,
-        easing: leafHurry ? Easing.out(Easing.cubic) : Easing.inOut(Easing.cubic),
-        reduceMotion: ReduceMotion.Never,
-      }),
+      withTiming(
+        1,
+        {
+          duration,
+          easing: leafHurry ? Easing.out(Easing.cubic) : Easing.inOut(Easing.cubic),
+          reduceMotion: ReduceMotion.Never,
+        },
+        turned,
+      ),
     );
-    const timer = setTimeout(() => setLeafGone(true), duration);
+    const timer = setTimeout(gone, duration + ANIMATION_NET_MS);
     return () => clearTimeout(timer);
   }, [leafOn, leafHurry, leafMs, shut]);
   const shutAngle = useAnimatedStyle(() => ({

@@ -6,6 +6,7 @@ import Animated, {
   ReduceMotion,
   cancelAnimation,
   interpolate,
+  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withSequence,
@@ -24,6 +25,7 @@ import { useScreenReader } from '@/features/journal-session/useScreenReader';
 
 import { bookCopy } from './bookCopy';
 import { BookCover } from './CoverArt';
+import { ANIMATION_NET_MS } from './ritual';
 import { Ribbon } from './Ribbon';
 import { BOOK_W, STEP, VOLUMES, centred, volumeIndex, type Volume } from './volumes';
 
@@ -36,14 +38,22 @@ const ROLL_MS = 3200;
 const SETTLE = { stiffness: 266, damping: 28, mass: 1 } as const;
 const GLOW = { stiffness: 230, damping: 19, mass: 1 } as const;
 const OUT_MS = 320;
+/**
+ * The book is asked for this far into the shelf's exit, while the shelf is still there, so that it is
+ * mounted and drawing as the shelf's last light goes: asked for at the end, a slow phone showed the bare
+ * studio colour between the two (190 ms on the walked emulator).
+ */
+export const CHOOSE_AT_MS = 100;
 /** The ribbon on a shelf volume: the stage's ribbon at 4 pt wide, its tail tucked into the shut book. */
 const RIBBON_W = 4;
 
 type Props = {
   /** Where the roll ends and the shelf rests: the person's own volume, or the journal. */
   initial: number;
-  /** A volume was chosen. The shelf has already begun to leave. */
+  /** A volume was chosen. The shelf has already begun to leave, and goes on leaving as the book comes. */
   onChoose: (index: number) => void;
+  /** The shelf has finished leaving: when its own fade has ended, and nothing of it is drawn. */
+  onLeft?: () => void;
   /** Where the shelf rests moves, so the backdrop can follow. */
   offset: SharedValue<number>;
 };
@@ -105,7 +115,7 @@ function Scene({
  * The shelf. Swipe to roll along it; tap the centred volume to choose it. Every volume is also a
  * button with its name, so a screen reader or a keyboard chooses without a gesture.
  */
-export function Shelf({ initial, onChoose, offset }: Props) {
+export function Shelf({ initial, onChoose, onLeft, offset }: Props) {
   const { width } = useWindowDimensions();
   const reduced = useReduceMotion();
   const screenReader = useScreenReader();
@@ -117,15 +127,19 @@ export function Shelf({ initial, onChoose, offset }: Props) {
   const drag = useRef({ start: 0 });
   const leaving = useRef(false);
   const chooseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const leftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const here = useRef(true);
 
   // A volume chosen and then left (Back within the exit) must not arrive on the screen that is going.
   // A separate effect, so that the roll's early return under Reduce Motion cannot skip it.
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    here.current = true;
+    return () => {
+      here.current = false;
       if (chooseTimer.current) clearTimeout(chooseTimer.current);
-    },
-    [],
-  );
+      if (leftTimer.current) clearTimeout(leftTimer.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (reduced) {
@@ -171,19 +185,38 @@ export function Shelf({ initial, onChoose, offset }: Props) {
     if (leaving.current) return;
     leaving.current = true;
     setAt(index);
+    let said = false;
+    const left = () => {
+      if (said || !here.current) return;
+      said = true;
+      if (leftTimer.current) clearTimeout(leftTimer.current);
+      onLeft?.();
+    };
     if (reduced) {
       out.set(1);
       onChoose(index);
+      left();
       return;
     }
+    // The shelf has left when its own fade has ended, which a phone that is behind the clock reaches
+    // late; and the book is asked for well before that, so that there is never a frame of neither.
+    const faded = (finished?: boolean) => {
+      'worklet';
+      if (finished) runOnJS(left)();
+    };
     out.set(
-      withTiming(1, {
-        duration: OUT_MS,
-        easing: Easing.in(Easing.cubic),
-        reduceMotion: ReduceMotion.Never,
-      }),
+      withTiming(
+        1,
+        {
+          duration: OUT_MS,
+          easing: Easing.in(Easing.cubic),
+          reduceMotion: ReduceMotion.Never,
+        },
+        faded,
+      ),
     );
-    chooseTimer.current = setTimeout(() => onChoose(index), OUT_MS);
+    chooseTimer.current = setTimeout(() => onChoose(index), CHOOSE_AT_MS);
+    leftTimer.current = setTimeout(left, OUT_MS + ANIMATION_NET_MS);
   };
 
   // The handlers read the drag only when a finger moves, never while rendering.
