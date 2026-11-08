@@ -90,7 +90,7 @@
         "expo-notifications",
         {
           "icon": "./assets/app/notification-icon.png",
-          "color": "#13263A"
+          "color": "#E8CCA0"
         }
       ],
       "expo-asset",
