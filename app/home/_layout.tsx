@@ -1,4 +1,5 @@
 import { DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+import { useState } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 
 import { EchoBackground } from '@/components/EchoBackground';
@@ -9,6 +10,8 @@ import { tokens } from '@/design/tokens';
 import { useReduceMotion } from '@/design/useReduceMotion';
 import { HomeDissolveProvider } from '@/features/home/dissolve';
 import { NightHomeLoop } from '@/features/home/NightHomeLoop';
+import { SESSION_ROUTE } from '@/features/home/sessionRoute';
+import { readWelcomeCandidate } from '@/features/home/today/useStoneArrival';
 import { HomeTabBar } from '@/features/home/tabs/HomeTabBar';
 import { useGate } from '@/state/gate';
 
@@ -41,6 +44,8 @@ export default function HomeLayout() {
   const reduced = useReduceMotion();
   // The lock panel is opaque and sits above everything: nothing should play behind it.
   const locked = useGate((state) => state.lock.kind === 'locked');
+  // Home's first look after onboarding wakes the river slowly. Decided as Home first appears.
+  const [welcome] = useState(readWelcomeCandidate);
   const stack = (
     <Stack
       screenOptions={({ route }) => ({
@@ -54,15 +59,9 @@ export default function HomeLayout() {
         },
       })}
     >
-      {/* Reached by dissolve, so it swaps in with no animation and no screen colour of its own. */}
-      <Stack.Screen
-        name="session"
-        options={{
-          animation: 'none',
-          gestureEnabled: false,
-          contentStyle: { backgroundColor: 'transparent' },
-        }}
-      />
+      {/* Reached by dissolve, so Home has already melted when it arrives; its fade out is the stack's
+          own, so the book goes gently (src/features/home/sessionRoute.ts). */}
+      <Stack.Screen name="session" options={SESSION_ROUTE} />
       {/* Breathe is reached the same way, and breathes over the same plate. */}
       <Stack.Screen
         name="breathe"
@@ -83,7 +82,12 @@ export default function HomeLayout() {
     <HomeDissolveProvider>
       <View style={styles.root}>
         <BlurSurface
-          backdrop={<EchoBackground screen="home" overlay={<NightHomeLoop suspended={locked} />} />}
+          backdrop={
+            <EchoBackground
+              screen="home"
+              overlay={<NightHomeLoop suspended={locked} welcome={welcome} />}
+            />
+          }
         >
           {Platform.OS === 'web' ? (
             <ThemeProvider value={CLEAR_NAVIGATOR}>{stack}</ThemeProvider>

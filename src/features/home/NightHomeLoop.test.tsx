@@ -1,7 +1,14 @@
 import { act, screen } from '@testing-library/react-native';
 import { AccessibilityInfo, AppState, StyleSheet } from 'react-native';
 
-import { NIGHT_LOOP_COVER_GRACE_MS, NIGHT_LOOP_SOURCE, plateCoverRect } from '@/design/nightLoop';
+import {
+  NIGHT_LOOP_COVER_GRACE_MS,
+  NIGHT_LOOP_REVEAL_MS,
+  NIGHT_LOOP_SOURCE,
+  NIGHT_LOOP_WELCOME_DELAY_MS,
+  NIGHT_LOOP_WELCOME_REVEAL_MS,
+  plateCoverRect,
+} from '@/design/nightLoop';
 import { ThemeProvider } from '@/design/theme';
 import { usePreferences } from '@/state/preferences';
 import { resetVideoPlayers, videoPlayers } from '@/testing/expoVideoMock';
@@ -16,7 +23,7 @@ jest.mock('expo-router', () => ({ usePathname: () => mockPath }));
 
 type StateHandler = (state: string) => void;
 let appState: StateHandler | undefined;
-type Props = { suspended?: boolean };
+type Props = { suspended?: boolean; welcome?: boolean };
 
 beforeAll(() => {
   jest.useFakeTimers();
@@ -100,12 +107,30 @@ describe('who gets a player', () => {
     expect(videoPlayers).toHaveLength(0);
   });
 
-  it('lets go of the loop when the theme moves to Day', async () => {
+  it('plays on through the fade to Day, and lets go of the loop when Night is gone', async () => {
     const view = await mount();
     expect(hasSurface()).toBe(true);
     await act(async () => usePreferences.setState({ theme: 'day' }));
     await show(view);
+    // The Night plate fades out over 900 ms with the loop in it: not swapped for the still at once.
+    expect(hasSurface()).toBe(true);
+    expect(player()?.playing).toBe(true);
+    await advance(899);
+    expect(hasSurface()).toBe(true);
+    await advance(1);
     expect(hasSurface()).toBe(false);
+  });
+
+  it('keeps the same player when Night comes back inside the fade', async () => {
+    const view = await mount();
+    await act(async () => usePreferences.setState({ theme: 'day' }));
+    await show(view);
+    await advance(300);
+    await act(async () => usePreferences.setState({ theme: 'night' }));
+    await show(view);
+    await advance(2000);
+    expect(hasSurface()).toBe(true);
+    expect(videoPlayers).toHaveLength(1);
   });
 });
 
@@ -227,6 +252,58 @@ describe('the still stays until the loop is really there', () => {
     } finally {
       video.useVideoPlayer = made;
     }
+  });
+});
+
+describe('the loop wakes slowly the first time Home is ever seen', () => {
+  const timings = () => {
+    const reanimated = jest.requireMock('react-native-reanimated');
+    const log: { delay: number[]; duration: number[] } = { delay: [], duration: [] };
+    jest.spyOn(reanimated, 'withDelay').mockImplementation(((at: number, value: unknown) => {
+      log.delay.push(at);
+      return value;
+    }) as never);
+    jest.spyOn(reanimated, 'withTiming').mockImplementation(((
+      _to: number,
+      options: { duration: number },
+    ) => {
+      log.duration.push(options.duration);
+      return 1;
+    }) as never);
+    return log;
+  };
+
+  it('appears in 700 ms, as soon as its first frame has rendered, as it always has', async () => {
+    const log = timings();
+    await mount();
+    await act(async () => video().props.onFirstFrameRender());
+    expect(log.duration).toEqual([NIGHT_LOOP_REVEAL_MS]);
+    expect(log.delay).toEqual([]);
+  });
+
+  it('in the welcome appears over 1800 ms, and not before it has been up for 300 ms', async () => {
+    const log = timings();
+    await mount({ welcome: true });
+    await advance(100);
+    await act(async () => video().props.onFirstFrameRender());
+    expect(log.duration).toEqual([NIGHT_LOOP_WELCOME_REVEAL_MS]);
+    expect(NIGHT_LOOP_WELCOME_REVEAL_MS).toBe(1800);
+    // Only what is left of the 300 ms is waited.
+    expect(log.delay).toEqual([NIGHT_LOOP_WELCOME_DELAY_MS - 100]);
+  });
+
+  it('never holds Home back: a first frame that is late simply starts the reveal late', async () => {
+    const log = timings();
+    await mount({ welcome: true });
+    await advance(NIGHT_LOOP_WELCOME_DELAY_MS + 250);
+    await act(async () => video().props.onFirstFrameRender());
+    expect(log.duration).toEqual([NIGHT_LOOP_WELCOME_REVEAL_MS]);
+    expect(log.delay).toEqual([]);
+  });
+
+  it('leaves the loop itself alone: the same muted, mixing, looping player', async () => {
+    await mount({ welcome: true });
+    expect(player()).toMatchObject({ muted: true, loop: true, audioMixingMode: 'mixWithOthers' });
   });
 });
 

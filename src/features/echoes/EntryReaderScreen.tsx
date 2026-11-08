@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Svg, { Path, Rect } from 'react-native-svg';
 
@@ -14,6 +15,7 @@ import {
   Surface,
   usePlateText,
 } from '@/features/tab-pages/parts';
+import { Resolve } from '@/features/tab-pages/Resolve';
 import { TabPage } from '@/features/tab-pages/TabPage';
 import { detail, ownWords, question, textAction } from '@/features/tab-pages/textStyles';
 
@@ -193,37 +195,46 @@ function PageSkeleton() {
 export function EntryReaderScreen({ id }: { id: string | null }) {
   const { view, retry, deleteState, confirmDelete, back } = useEntryReader(id);
 
+  // One page throughout: the skeleton stands where the words will be, and they arrive in its place.
+  let title: string = echoesCopy.readerTitle;
+  let subtitle: string | undefined;
+  let content: ReactNode[] = [];
   if (view.kind === 'entry') {
-    const { title, subtitle } = heading(view.entry);
-    return (
-      <TabPage title={title} subtitle={subtitle} tabBar={false} onBack={back}>
-        <Words entry={view.entry} />
-        <Recording entry={view.entry} />
-        <DeleteAction state={deleteState} onPress={confirmDelete} />
-      </TabPage>
-    );
-  }
-
-  if (view.kind === 'unreadable') {
-    return (
-      <TabPage title={echoesCopy.unreadable} tabBar={false} onBack={back}>
-        <Quiet>{echoesCopy.unreadableBody}</Quiet>
-        <DeleteAction state={deleteState} onPress={confirmDelete} />
-      </TabPage>
-    );
+    ({ title, subtitle } = heading(view.entry));
+    content = [
+      <Words key="words" entry={view.entry} />,
+      <Recording key="recording" entry={view.entry} />,
+      <DeleteAction key="delete" state={deleteState} onPress={confirmDelete} />,
+    ];
+  } else if (view.kind === 'unreadable') {
+    title = echoesCopy.unreadable;
+    content = [
+      <Quiet key="quiet">{echoesCopy.unreadableBody}</Quiet>,
+      <DeleteAction key="delete" state={deleteState} onPress={confirmDelete} />,
+    ];
+  } else if (view.kind === 'error') {
+    content = [
+      <Notice key="error" message={echoesCopy.readerError} onAction={() => void retry()} />,
+    ];
   }
 
   return (
-    <TabPage title={echoesCopy.readerTitle} tabBar={false} onBack={back}>
-      {view.kind === 'loading' && <PageSkeleton />}
-      {view.kind === 'error' && (
-        <Notice message={echoesCopy.readerError} onAction={() => void retry()} />
-      )}
+    <TabPage title={title} subtitle={subtitle} tabBar={false} onBack={back}>
+      <Resolve
+        ready={view.kind !== 'loading'}
+        skeleton={<PageSkeleton />}
+        each
+        style={styles.stack}
+      >
+        {content}
+      </Resolve>
     </TabPage>
   );
 }
 
 const styles = StyleSheet.create({
+  // The page's own rhythm, kept for what Resolve now wraps.
+  stack: { gap: tokens.space[24] },
   page: {
     gap: tokens.space[16],
     paddingHorizontal: tokens.space[24],

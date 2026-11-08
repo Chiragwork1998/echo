@@ -112,7 +112,7 @@ export function IntentScreen() {
       header={
         <OnboardingHeader
           step={STEP}
-          onBack={back ? () => router.navigate(back as never) : undefined}
+          onBack={back ? () => router.dismissTo(back as never) : undefined}
         />
       }
       footer={

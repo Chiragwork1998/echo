@@ -1,5 +1,5 @@
-import { router } from 'expo-router';
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { BackHandler, ScrollView, StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
@@ -12,6 +12,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PrimaryCTA } from '@/components/PrimaryCTA';
 import { useLayout } from '@/design/layout';
+import { holdTheme } from '@/design/themeHold';
+import { tokens } from '@/design/tokens';
+import { useReduceMotion } from '@/design/useReduceMotion';
 import { useMorning } from '@/features/become/morning';
 import { useHomeDissolve } from '@/features/home/dissolve';
 import { Wash } from '@/features/journal-session/Wash';
@@ -70,20 +73,28 @@ function qaStart(): { stage: Stage | null; plus: PlusState | null } {
   }
 }
 
-/** Each stage settles in over the plate. Reduce Motion: a plain fade, which this already is. */
-function Settle({ children }: { children: ReactNode }) {
+/**
+ * Each stage settles in over the plate. Reduce Motion: a plain fade of 180 ms. `leaving` takes it away
+ * the same way, over 320 ms (180), where a stage is let go of and not cut: Begin, onto the practice.
+ */
+function Settle({ children, leaving = false }: { children: ReactNode; leaving?: boolean }) {
+  const reduced = useReduceMotion();
   const shown = useSharedValue(0);
   useEffect(() => {
     shown.set(
-      withTiming(1, {
-        duration: STAGE_MS,
-        easing: Easing.bezier(0.22, 1, 0.36, 1),
+      withTiming(leaving ? 0 : 1, {
+        duration: reduced ? tokens.motion.fast : leaving ? tokens.motion.standard : STAGE_MS,
+        easing: leaving ? Easing.inOut(Easing.quad) : Easing.bezier(0.22, 1, 0.36, 1),
         reduceMotion: ReduceMotion.Never,
       }),
     );
-  }, [shown]);
+  }, [leaving, reduced, shown]);
   const style = useAnimatedStyle(() => ({ opacity: shown.get() }));
-  return <Animated.View style={[styles.fill, style]}>{children}</Animated.View>;
+  return (
+    <Animated.View pointerEvents={leaving ? 'none' : 'auto'} style={[styles.fill, style]}>
+      {children}
+    </Animated.View>
+  );
 }
 
 /**
@@ -97,6 +108,10 @@ export function BreatheScreen() {
     sessionOpened();
     return sessionClosed;
   }, [sessionOpened, sessionClosed]);
+  // The theme must not change under a practice, as it must not under the writing session: a phone
+  // that follows the sun, switching at dusk mid-breath, would swap the plate and its colour in view.
+  // The hold follows focus, so it never outlives the screen's turn at the front of the stack.
+  useFocusEffect(useCallback(() => holdTheme(), []));
 
   const [start] = useState(qaStart);
   const actualPlus = usePlus();
@@ -128,11 +143,29 @@ export function BreatheScreen() {
   const minutes = practice ? openingLength(practice, prefs.minutes[practice.id], plus.isPlus) : 0;
   const pace = plus.isPlus || paceIsFree(prefs.pace) ? prefs.pace : DEFAULT_PACE;
 
+  // Begin lets the Before screen go (it fades away over the plate) and only then hands over to the
+  // practice, which comes up over the bare plate: neither the screen nor the practice is cut.
+  const [beginning, setBeginning] = useState(false);
+  const beginTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (beginTimer.current) clearTimeout(beginTimer.current);
+    },
+    [],
+  );
+  const reduced = useReduceMotion();
   const begin = () => {
-    if (!practice) return;
+    if (!practice || beginning) return;
     updatePractice({ begun: prefs.begun + 1 });
     const timeline = compile(practice, { minutes, pace });
-    setStage({ kind: 'during', practice, timeline, checked: false, run: Date.now() });
+    setBeginning(true);
+    beginTimer.current = setTimeout(
+      () => {
+        setStage({ kind: 'during', practice, timeline, checked: false, run: Date.now() });
+        setBeginning(false);
+      },
+      reduced ? tokens.motion.fast : tokens.motion.standard,
+    );
   };
 
   const ended = (end: PracticeEnd) => {
@@ -161,6 +194,7 @@ export function BreatheScreen() {
   };
 
   const back = useCallback(() => {
+    if (beginning) return;
     switch (stage.kind) {
       case 'feelings':
         return leave();
@@ -178,7 +212,7 @@ export function BreatheScreen() {
       case 'during':
         return; // The practice's own End handles it.
     }
-  }, [leave, stage]);
+  }, [beginning, leave, stage]);
 
   useEffect(() => {
     if (stage.kind === 'during') return;
@@ -203,13 +237,14 @@ export function BreatheScreen() {
         voice={prefs.voice}
         first={first}
         onEnd={ended}
+        eased
       />
     );
   }
 
   return (
     <View style={styles.fill}>
-      <Settle key={content}>
+      <Settle key={content} leaving={beginning}>
         {(stage.kind === 'feelings' || stage.kind === 'before') && (
           // The scrolling begins below the status bar, as on the tab pages and the onboarding screens,
           // so words scrolled up go out of sight there and never pass under the clock. At rest the

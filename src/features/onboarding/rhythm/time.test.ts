@@ -2,7 +2,9 @@ import {
   angleToMinutes,
   clockText,
   crossesHour,
+  followTarget,
   formatTime,
+  GLIDE_FROM,
   minutesToAngle,
   nearestAngle,
   parseTime,
@@ -74,6 +76,32 @@ describe('the 24-hour face, noon at the top', () => {
     const at = snapMinutes(angleToMinutes(pointToAngle(0, 100)));
     const after = snapMinutes(angleToMinutes(pointToAngle(-step, 100)));
     expect([before, at, after].map(formatTime)).toEqual(['23:55', '00:00', '00:05']);
+  });
+});
+
+describe('followTarget', () => {
+  it('puts the handle under a finger that is near it, with no glide', () => {
+    expect(followTarget(142.5, 21 * 60 + 35)).toEqual({ angle: 143.75, glide: false });
+    expect(followTarget(142.5, 21 * 60 + 25)).toEqual({ angle: 141.25, glide: false });
+  });
+
+  it('carries the handle round, the short way, to a finger that is far from it', () => {
+    const far = followTarget(142.5, 8 * 60);
+    expect(far.angle).toBe(300);
+    expect(far.glide).toBe(true);
+    // The other way round it would be 202.5 degrees.
+    expect(Math.abs(far.angle - 142.5)).toBeLessThan(180);
+  });
+
+  it('crosses noon the short way, and without a glide when the finger is just past it', () => {
+    expect(followTarget(359, 12 * 60 + 5)).toEqual({ angle: 361.25, glide: false });
+    expect(followTarget(1, 11 * 60 + 55)).toEqual({ angle: -1.25, glide: false });
+  });
+
+  it('glides only past the threshold', () => {
+    expect(GLIDE_FROM).toBe(20);
+    expect(followTarget(0, 12 * 60 + 80).glide).toBe(false);
+    expect(followTarget(0, 12 * 60 + 85).glide).toBe(true);
   });
 });
 

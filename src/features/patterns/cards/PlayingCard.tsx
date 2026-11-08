@@ -16,10 +16,9 @@ import { Icon } from '@/components/Icon';
 import { cue } from '@/design/haptics';
 import { tokens } from '@/design/tokens';
 import { useReduceMotion } from '@/design/useReduceMotion';
-import { Grain, usePaperLook } from '@/features/book/paper';
 import type { PatternCard } from '@/services/patterns';
 
-import { CardBack, FOIL, GildedEdge } from './CardBack';
+import { CardBack, FaceGround, FOIL, GildedEdge, WindowLine } from './CardBack';
 import { hash, SCENES, sceneFor } from './scenes';
 
 /** A playing card: 2.5 by 3.5 inches. */
@@ -29,11 +28,15 @@ const RADIUS = tokens.radius.medium;
 const GOLD = tokens.color.night.accentWarm;
 const NAVY = '#0A1526';
 const STAR = '#FFF4DF';
-/** Gilt on paper: Day's warm accent, which reads as gold leaf on the book's cream. */
-const GILT = tokens.color.day.accentWarm;
-/** The scene's window on the face, inset from the card's edge. */
-const WINDOW_INSET = 34;
-const WINDOW_TOP = 42;
+/** Gold on navy: the foil's warm middle, for the indices, the rule and the foot. */
+const INDEX_GOLD = '#D9B877';
+const RULE_GOLD = '#C9A463';
+/** The name in cream ink, the person's line in a soft gold, both on navy. */
+const NAME_INK = '#F4EEE2';
+const LINE_INK = 'rgba(228,206,160,0.86)';
+/** The scene's window, inset from the card's edge so the corner indices sit outside it. */
+const WINDOW_INSET = 44;
+const WINDOW_TOP = 46;
 /** Between a screen change and the atmosphere: long enough to watch it turn, short of slow. */
 const FLIP_MS = 760;
 const FADE_MS = tokens.motion.fast;
@@ -114,6 +117,13 @@ function Constellation({ seed, size }: { seed: string; size: number }) {
   const stars = useMemo(() => constellation(seed, size), [seed, size]);
   return (
     <Svg width={size} height={size} style={styles.overlay} pointerEvents="none">
+      <Defs>
+        <RadialGradient id="pc-halo" cx="50%" cy="50%" rx="50%" ry="50%">
+          <Stop offset={0} stopColor={STAR} stopOpacity={0.5} />
+          <Stop offset={0.45} stopColor={GOLD} stopOpacity={0.16} />
+          <Stop offset={1} stopColor={GOLD} stopOpacity={0} />
+        </RadialGradient>
+      </Defs>
       {stars.slice(1).map((star, i) => {
         const from = stars[i] ?? star;
         return (
@@ -130,7 +140,7 @@ function Constellation({ seed, size }: { seed: string; size: number }) {
         );
       })}
       {stars.map((star, i) => (
-        <Circle key={`g${i}`} cx={star.x} cy={star.y} r={star.r * 3.4} fill={GOLD} opacity={0.18} />
+        <Circle key={`g${i}`} cx={star.x} cy={star.y} r={star.r * 4.2} fill="url(#pc-halo)" />
       ))}
       {stars.map((star, i) => (
         <Circle key={`s${i}`} cx={star.x} cy={star.y} r={star.r} fill={STAR} />
@@ -139,59 +149,65 @@ function Constellation({ seed, size }: { seed: string; size: number }) {
   );
 }
 
-/** A corner index on paper: the card's numeral over ECHO's suit, the cairn. The far one is turned. */
-function Index({ number, ink, far = false }: { number: number; ink: string; far?: boolean }) {
+/** A corner index in foil: the card's numeral over ECHO's suit, the cairn. The far one is turned. */
+function Index({ number, far = false }: { number: number; far?: boolean }) {
   return (
     <View pointerEvents="none" style={[styles.index, far ? styles.indexFar : styles.indexNear]}>
-      <EchoText variant="bodyM" style={[styles.rank, { color: ink }]} maxFontSizeMultiplier={1}>
+      <EchoText variant="bodyM" style={styles.rank} maxFontSizeMultiplier={1}>
         {numeral(number)}
       </EchoText>
-      <Icon name="cairn-filled" size={12} color={ink} />
+      <Icon name="cairn-filled" size={12} color={INDEX_GOLD} />
     </View>
   );
 }
 
 /**
- * The face, made of the book's own paper: a painted scene set in it like a window, with the card's
- * own constellation in its sky; the pattern's name in Cormorant italic; a line in the person's own
- * words; and the days they wrote them. Corner indices, as on a playing card, with the cairn as suit.
+ * The face: the same navy, linen and foil as the back, so the card is one object. The painted scene
+ * sits in a foil mount with its own constellation; under it the pattern's name in Cormorant italic,
+ * a line in the person's own words, and the days they wrote them. Corner indices in foil, as on a
+ * playing card, with the cairn as suit. The scene is the only light thing on the card.
  */
 function Face({ card, number, width }: { card: PatternCard; number: number; width: number }) {
-  const paper = usePaperLook('paper');
+  const height = width * CARD_RATIO;
   const quote = card.evidence[0]?.quote;
   const span = daySpan(card.evidence.map((item) => item.date));
   const foot = [span, 'ECHO'].filter(Boolean).join('  ·  ');
-  const window = width - WINDOW_INSET * 2;
+  const size = width - WINDOW_INSET * 2;
   return (
-    <View style={[styles.face, { backgroundColor: paper.fill }]}>
-      <Grain look={paper} />
-      <LinearGradient
-        pointerEvents="none"
-        colors={[
-          'rgba(255,252,244,0.5)',
-          'rgba(255,252,244,0)',
-          'rgba(90,70,48,0)',
-          'rgba(90,70,48,0.1)',
-        ]}
-        locations={[0, 0.3, 0.7, 1]}
-        style={StyleSheet.absoluteFill}
+    <View style={styles.face}>
+      <FaceGround
+        width={width}
+        height={height}
+        radius={RADIUS}
+        window={{ x: WINDOW_INSET, y: WINDOW_TOP, size }}
       />
-      <Index number={number} ink={paper.ink} />
-      <Index number={number} ink={paper.ink} far />
-      <View style={[styles.window, { width: window, height: window }]}>
+      <Index number={number} />
+      <Index number={number} far />
+      <View style={[styles.window, { width: size, height: size }]}>
         <Image
           source={SCENES[sceneFor(card)]}
-          style={{ width: window, height: window }}
+          style={{ width: size, height: size }}
           resizeMode="cover"
           accessible={false}
         />
-        <Constellation seed={card.name} size={window} />
-        <View pointerEvents="none" style={styles.windowLine} />
+        <LinearGradient
+          pointerEvents="none"
+          colors={[
+            'rgba(5,11,23,0.28)',
+            'rgba(5,11,23,0)',
+            'rgba(5,11,23,0)',
+            'rgba(5,11,23,0.34)',
+          ]}
+          locations={[0, 0.18, 0.72, 1]}
+          style={StyleSheet.absoluteFill}
+        />
+        <Constellation seed={card.name} size={size} />
+        <WindowLine size={size} />
       </View>
-      <View style={styles.words}>
+      <View style={[styles.words, { top: WINDOW_TOP + size + 6 }]}>
         <EchoText
           variant="displayM"
-          style={[styles.name, { color: paper.ink }]}
+          style={styles.name}
           numberOfLines={2}
           maxFontSizeMultiplier={1.1}
         >
@@ -200,7 +216,7 @@ function Face({ card, number, width }: { card: PatternCard; number: number; widt
         {quote ? (
           <EchoText
             variant="bodyL"
-            style={[styles.quote, { color: paper.muted }]}
+            style={styles.quote}
             numberOfLines={2}
             maxFontSizeMultiplier={1.1}
           >
@@ -212,16 +228,11 @@ function Face({ card, number, width }: { card: PatternCard; number: number; widt
           <View style={styles.diamond} />
           <View style={styles.hair} />
         </View>
-        <EchoText
-          variant="caption"
-          style={[styles.foot, { color: paper.muted }]}
-          numberOfLines={1}
-          maxFontSizeMultiplier={1}
-        >
+        <EchoText variant="caption" style={styles.foot} numberOfLines={1} maxFontSizeMultiplier={1}>
           {foot}
         </EchoText>
       </View>
-      <GildedEdge width={width} height={width * CARD_RATIO} radius={RADIUS} id="pc-face-edge" />
+      <GildedEdge width={width} height={height} radius={RADIUS} id="pc-face-edge" />
     </View>
   );
 }
@@ -442,44 +453,37 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   index: { position: 'absolute', alignItems: 'center', gap: 2, minWidth: 20 },
-  indexNear: { top: 11, left: 10 },
-  indexFar: { bottom: 11, right: 10, transform: [{ rotate: '180deg' }] },
+  indexNear: { top: 19, left: 19 },
+  indexFar: { bottom: 19, right: 19, transform: [{ rotate: '180deg' }] },
   rank: {
     fontFamily: 'CormorantGaramond_500Medium',
     fontSize: 17,
     lineHeight: 19,
     letterSpacing: 0.4,
+    color: INDEX_GOLD,
   },
   window: {
     position: 'absolute',
     top: WINDOW_TOP,
     left: WINDOW_INSET,
-    borderRadius: 3,
+    borderRadius: 2,
     overflow: 'hidden',
     backgroundColor: NAVY,
-  },
-  windowLine: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderRadius: 3,
-    borderWidth: 1,
-    borderColor: 'rgba(184,149,90,0.8)',
   },
   words: {
     position: 'absolute',
     left: 30,
     right: 30,
-    bottom: 22,
+    bottom: 18,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   name: {
     fontFamily: 'CormorantGaramond_400Regular_Italic',
     fontSize: 27,
     lineHeight: 31,
     textAlign: 'center',
+    color: NAME_INK,
   },
   quote: {
     fontFamily: 'CormorantGaramond_400Regular_Italic',
@@ -487,6 +491,7 @@ const styles = StyleSheet.create({
     lineHeight: 21,
     textAlign: 'center',
     marginTop: 6,
+    color: LINE_INK,
   },
   divider: {
     flexDirection: 'row',
@@ -496,11 +501,11 @@ const styles = StyleSheet.create({
     marginTop: 12,
     marginBottom: 9,
   },
-  hair: { flex: 1, height: 0.75, backgroundColor: GILT },
+  hair: { flex: 1, height: 0.75, backgroundColor: RULE_GOLD, opacity: 0.8 },
   diamond: {
     width: 4,
     height: 4,
-    backgroundColor: GILT,
+    backgroundColor: INDEX_GOLD,
     transform: [{ rotate: '45deg' }],
   },
   foot: {
@@ -509,5 +514,6 @@ const styles = StyleSheet.create({
     lineHeight: 13,
     letterSpacing: 2,
     textAlign: 'center',
+    color: RULE_GOLD,
   },
 });

@@ -19,7 +19,7 @@ export function PlaceholderStep(props: { screen: ScreenId; title: string; cta: s
       header={
         <OnboardingHeader
           step={onboardingSteps.indexOf(screen) + 1}
-          onBack={back ? () => router.navigate(back as never) : undefined}
+          onBack={back ? () => router.dismissTo(back as never) : undefined}
         />
       }
       footer={<PrimaryCTA label={cta} onPress={() => next && router.navigate(next as never)} />}

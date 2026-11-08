@@ -137,6 +137,19 @@ describe('reporting a pattern card', () => {
     ).toBeTruthy();
   });
 
+  it('goes on showing its ending, not the long form, while it leaves', async () => {
+    sent.mockResolvedValue('sent');
+    await openReport();
+    await fireEvent.press(screen.getByRole('radio', { name: words.reasons.harmful }));
+    await fireEvent.press(screen.getByRole('button', { name: words.send }));
+    await screen.findByRole('header', { name: words.sentTitle });
+    await fireEvent.press(screen.getByRole('button', { name: words.done }));
+    // The sheet is on its way out, hidden from everyone, and still the short ending it was.
+    expect(screen.getByText(words.sentBody, { includeHiddenElements: true })).toBeTruthy();
+    expect(screen.queryByRole('radio', { name: words.reasons.harmful, hidden: true })).toBeNull();
+    expect(screen.queryByText(words.privacy, { includeHiddenElements: true })).toBeNull();
+  });
+
   it('names no lens when the card did not say which it used', async () => {
     sent.mockResolvedValue('sent');
     await openReport('Guilty about resting');

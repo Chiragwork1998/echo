@@ -10,16 +10,33 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { create } from 'zustand';
 
+import { EASE } from '@/design/ease';
 import { useLayout } from '@/design/layout';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 import { useReduceMotion } from '@/design/useReduceMotion';
+import { qa } from '@/testing/qa';
 
 import { EchoText } from './EchoText';
 
-// Long enough to read a short line and to hear it, short enough to stay out of the way.
-const DWELL_MS = 2800;
-const RISE = 8;
+// Long enough to read the line and to hear it, short enough to stay out of the way: 48 ms a
+// character on top of a beat, never under 2.2 seconds and never over 4.2.
+const DWELL_MIN_MS = 2200;
+const DWELL_MAX_MS = 4200;
+const DWELL_BEAT_MS = 1400;
+const DWELL_PER_CHARACTER_MS = 48;
+/** How long a line stays, once it has arrived. */
+export const dwellFor = (message: string): number =>
+  Math.min(
+    DWELL_MAX_MS,
+    Math.max(DWELL_MIN_MS, DWELL_BEAT_MS + DWELL_PER_CHARACTER_MS * message.length),
+  );
+// It arrives from just below and settles; it leaves by lifting a little, as breath leaves.
+const RISE = 10;
+const LIFT = -6;
+const FADE_IN_MS = 240;
+const FADE_OUT_MS = 320;
+const MOVE_MS = 480;
 /**
  * Clear of the primary CTA and of the tab bar. The CTA is 56 pt tall and sits 18 pt above the safe
  * bottom, so it ends 74 pt up. The Night tab bar ends 83 pt up. The toast rests above both.
@@ -38,6 +55,9 @@ export function showToast(message: string): void {
   useToasts.setState({ toast: { id: ++nextId, message } });
 }
 
+// The visual harness says its own lines through this. `qa.enabled` is only ever true there.
+if (qa.enabled) (window as unknown as { __echoToast?: typeof showToast }).__echoToast = showToast;
+
 /** Removes the toast now. Tests use it to start clean. */
 export function clearToast(): void {
   useToasts.setState({ toast: null });
@@ -53,28 +73,43 @@ function ToastView({ id, message }: { id: number; message: string }) {
   const insets = useSafeAreaInsets();
   const reduced = useReduceMotion();
   const shown = useSharedValue(0);
-  // Reduce Motion: opacity only, and no longer than a button press. Otherwise a slow fade and rise.
-  const ms = reduced ? tokens.motion.fast : tokens.motion.standard;
+  const y = useSharedValue(reduced ? 0 : RISE);
 
   useEffect(() => {
     void AccessibilityInfo.announceForAccessibility(message);
-    const timing = {
-      duration: ms,
-      easing: Easing.out(Easing.cubic),
-      reduceMotion: ReduceMotion.Never,
-    };
-    shown.set(withTiming(1, timing));
-    const leave = setTimeout(() => shown.set(withTiming(0, timing)), ms + DWELL_MS);
-    const remove = setTimeout(() => dismiss(id), ms + DWELL_MS + ms);
+    // Reduce Motion: the line fades and nothing travels, in no more than a button press.
+    const inMs = reduced ? tokens.motion.fast : MOVE_MS;
+    const outMs = reduced ? tokens.motion.fast : MOVE_MS;
+    const never = { reduceMotion: ReduceMotion.Never };
+    shown.set(
+      withTiming(1, {
+        ...never,
+        duration: reduced ? tokens.motion.fast : FADE_IN_MS,
+        easing: Easing.out(Easing.cubic),
+      }),
+    );
+    if (!reduced) y.set(withTiming(0, { ...never, duration: MOVE_MS, easing: EASE }));
+    const leaveAt = inMs + dwellFor(message);
+    const leave = setTimeout(() => {
+      shown.set(
+        withTiming(0, {
+          ...never,
+          duration: reduced ? tokens.motion.fast : FADE_OUT_MS,
+          easing: Easing.out(Easing.cubic),
+        }),
+      );
+      if (!reduced) y.set(withTiming(LIFT, { ...never, duration: MOVE_MS, easing: EASE }));
+    }, leaveAt);
+    const remove = setTimeout(() => dismiss(id), leaveAt + outMs);
     return () => {
       clearTimeout(leave);
       clearTimeout(remove);
     };
-  }, [id, message, ms, shown]);
+  }, [id, message, reduced, shown, y]);
 
   const animated = useAnimatedStyle(() => ({
     opacity: shown.get(),
-    transform: reduced ? [] : [{ translateY: (1 - shown.get()) * RISE }],
+    transform: reduced ? [] : [{ translateY: y.get() }],
   }));
 
   return (

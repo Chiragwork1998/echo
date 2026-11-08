@@ -1,10 +1,20 @@
-import { Fragment } from 'react';
+import { Fragment, useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
+import Animated, {
+  ReduceMotion,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withTiming,
+} from 'react-native-reanimated';
 
+import { EASE } from '@/design/ease';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
+import { useReduceMotion } from '@/design/useReduceMotion';
 import type { EntrySummary } from '@/features/journal';
 import { Heading, Loading, Surface } from '@/features/tab-pages/parts';
+import { ArriveInOrder } from '@/features/tab-pages/Resolve';
 
 import { echoesCopy } from './echoesCopy';
 import { monthKey, monthTitle } from './entryFacts';
@@ -37,35 +47,81 @@ type Props = {
   waiting?: boolean;
 };
 
+/** A search that answers inside this never dims the list at all. */
+const DIM_AFTER_MS = 400;
+const DIMMED = 0.6;
+/** When the archive first opens from its skeleton, the first rows arrive this far apart. */
+const ROW_STEP_MS = 40;
+const ROWS_THAT_ARRIVE = 8;
+
 /**
  * The archive: one piece of glass for each month, a hairline between its echoes. Rows left waiting
- * on a search are dimmed, cannot be touched, and are hidden from screen readers, which hear that the
- * search is running instead.
+ * on a search are dimmed (only if the answer takes more than 400 ms, and gently), cannot be touched,
+ * and are hidden from screen readers, which hear that the search is running instead. The list is
+ * one tree whether it waits or not, so the months are never torn down and drawn again.
  */
 export function EchoesList({ rows, onOpen, waiting = false }: Props) {
-  const list = (
+  const reduced = useReduceMotion();
+  const dim = useSharedValue(1);
+  useEffect(() => {
+    dim.set(
+      waiting
+        ? withDelay(
+            DIM_AFTER_MS,
+            withTiming(DIMMED, {
+              duration: reduced ? tokens.motion.fast : tokens.motion.standard,
+              easing: EASE,
+              reduceMotion: ReduceMotion.Never,
+            }),
+          )
+        : withTiming(1, {
+            duration: tokens.motion.fast,
+            easing: EASE,
+            reduceMotion: ReduceMotion.Never,
+          }),
+    );
+  }, [dim, reduced, waiting]);
+  const dimmed = useAnimatedStyle(() => ({ opacity: dim.get() }));
+
+  let index = 0;
+  return (
     <View
-      style={[styles.months, waiting && styles.waiting]}
-      pointerEvents={waiting ? 'none' : 'auto'}
-      accessibilityElementsHidden={waiting}
-      importantForAccessibility={waiting ? 'no-hide-descendants' : 'auto'}
+      accessible={waiting}
+      accessibilityLabel={waiting ? echoesCopy.searching : undefined}
+      accessibilityState={waiting ? { busy: true } : undefined}
+      accessibilityLiveRegion={waiting ? 'polite' : 'none'}
     >
-      {byMonth(rows).map((month) => (
-        <View key={month.key || 'undated'} style={styles.month}>
-          {month.title ? <Heading>{month.title}</Heading> : null}
-          <Surface>
-            {month.rows.map((entry, index) => (
-              <Fragment key={entry.id}>
-                {index > 0 && <Between />}
-                <EntryRow entry={entry} onOpen={onOpen} />
-              </Fragment>
-            ))}
-          </Surface>
-        </View>
-      ))}
+      <Animated.View
+        style={[styles.months, dimmed]}
+        pointerEvents={waiting ? 'none' : 'auto'}
+        accessibilityElementsHidden={waiting}
+        importantForAccessibility={waiting ? 'no-hide-descendants' : 'auto'}
+      >
+        {byMonth(rows).map((month) => {
+          const first = index;
+          return (
+            <View key={month.key || 'undated'} style={styles.month}>
+              {month.title ? (
+                <ArriveInOrder index={first} step={ROW_STEP_MS} cap={ROWS_THAT_ARRIVE}>
+                  <Heading>{month.title}</Heading>
+                </ArriveInOrder>
+              ) : null}
+              <Surface>
+                {month.rows.map((entry, row) => (
+                  <Fragment key={entry.id}>
+                    {row > 0 && <Between />}
+                    <ArriveInOrder index={index++} step={ROW_STEP_MS} cap={ROWS_THAT_ARRIVE}>
+                      <EntryRow entry={entry} onOpen={onOpen} />
+                    </ArriveInOrder>
+                  </Fragment>
+                ))}
+              </Surface>
+            </View>
+          );
+        })}
+      </Animated.View>
     </View>
   );
-  return waiting ? <Loading label={echoesCopy.searching}>{list}</Loading> : list;
 }
 
 const WIDTHS = ['72%', '58%', '66%'] as const;
@@ -89,7 +145,6 @@ export function EchoesSkeleton() {
 const styles = StyleSheet.create({
   months: { gap: tokens.space[32] },
   month: { gap: tokens.space[12] },
-  waiting: { opacity: 0.5 },
   between: {
     height: StyleSheet.hairlineWidth,
     marginLeft: ROW_TEXT_INSET,

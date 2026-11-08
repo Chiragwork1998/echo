@@ -14,6 +14,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EchoBackground } from '@/components/EchoBackground';
 import { EchoText } from '@/components/EchoText';
 import { OneLineLabel } from '@/components/OneLineLabel';
+import { EASE } from '@/design/ease';
+import { holdTheme } from '@/design/themeHold';
+import { tokens } from '@/design/tokens';
 import { usePlateFrame, usePlatePoint } from '@/design/usePlatePoint';
 import { useReduceMotion } from '@/design/useReduceMotion';
 import { BreathingSky } from '@/features/breathe/BreathingSky';
@@ -79,7 +82,7 @@ function Line({ text, leaving, size }: { text: string; leaving: boolean; size: n
     shown.set(
       withTiming(leaving ? 0 : 1, {
         duration: leaving ? OUT_MS : IN_MS,
-        easing: leaving ? Easing.in(Easing.quad) : Easing.bezier(0.22, 1, 0.36, 1),
+        easing: leaving ? Easing.in(Easing.quad) : EASE,
         reduceMotion: ReduceMotion.Never,
       }),
     );
@@ -126,6 +129,10 @@ export function RehearseScreen() {
   const plate = usePlatePoint();
   const ink = useSkyInk();
   const screenReader = useScreenReader();
+  const reduced = useReduceMotion();
+  // The book under this screen holds the theme until it is let go of, on blur; this holds it from
+  // the moment this opens, so the hold never lapses between the two.
+  useEffect(() => holdTheme(), []);
   const [pinned] = useState(qaStage);
   const [phrases] = useState(() => phrasesOf(heldRehearsal() ?? (pinned ? QA_WORDS : '')));
   const [stage, setStage] = useState<Stage>(
@@ -133,6 +140,8 @@ export function RehearseScreen() {
   );
   const [phrase, setPhrase] = useState(pinned?.phrase ?? -1);
   const [leaving, setLeaving] = useState(false);
+  // The feel line goes as every other line does: it fades out, and the next waits for it.
+  const [feelLeaving, setFeelLeaving] = useState(false);
   const [skipShown, setSkipShown] = useState(false);
   const finished = useRef(false);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -188,7 +197,10 @@ export function RehearseScreen() {
     sound,
     voice: false,
     screenReader: false,
-    onDone: () => setStage('go'),
+    onDone: () => {
+      setFeelLeaving(true);
+      later(OUT_MS + GAP_MS, () => setStage('go'));
+    },
   });
   const { start, level } = run;
   useEffect(() => {
@@ -223,8 +235,20 @@ export function RehearseScreen() {
     return () => subscription.remove();
   }, [finish]);
 
-  const dark = useSharedValue(0);
   const skip = skipShown || screenReader;
+  // Skip comes up when the screen is touched, and goes quietly when it is not. It is out of reach and
+  // unannounced the moment it is hidden, whatever its opacity is still doing.
+  const skipFade = useSharedValue(0);
+  useEffect(() => {
+    skipFade.set(
+      withTiming(skip ? 1 : 0, {
+        duration: reduced ? tokens.motion.fast : skip ? 450 : 350,
+        easing: skip ? EASE : Easing.inOut(Easing.quad),
+        reduceMotion: ReduceMotion.Never,
+      }),
+    );
+  }, [reduced, skip, skipFade]);
+  const skipStyle = useAnimatedStyle(() => ({ opacity: skipFade.get() }));
   const top = plate(0, WORDS_AT).y;
   const current =
     stage === 'words' ? phrases[phrase] : stage === 'feel' ? becomeCopy.feel : becomeCopy.go;
@@ -241,33 +265,30 @@ export function RehearseScreen() {
         style={StyleSheet.absoluteFill}
         testID="rehearse-sky"
       />
-      <BreathingSky level={level} dark={dark} word={null} tide={false} />
+      <BreathingSky level={level} word={null} tide={false} />
       <Wash kind="sky" visible style={styles.wash} />
       <View pointerEvents="none" style={[styles.words, { top: top - 70 }]}>
         {current !== undefined && (
           <Line
             key={`${stage}-${phrase}`}
             text={current}
-            leaving={stage === 'words' && leaving}
+            leaving={(stage === 'words' && leaving) || (stage === 'feel' && feelLeaving)}
             size={stage === 'words' ? 28 : 26}
           />
         )}
       </View>
-      <View
+      <Animated.View
         pointerEvents={skip ? 'box-none' : 'none'}
         accessibilityElementsHidden={!skip}
         importantForAccessibility={skip ? 'auto' : 'no-hide-descendants'}
-        style={[
-          styles.bottom,
-          { bottom: insets.bottom + CONTROLS.aboveEdge, opacity: skip ? 1 : 0 },
-        ]}
+        style={[styles.bottom, { bottom: insets.bottom + CONTROLS.aboveEdge }, skipStyle]}
       >
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={becomeCopy.skip}
           onPress={finish}
           hitSlop={8}
-          style={styles.skip}
+          style={({ pressed }) => [styles.skip, { opacity: pressed ? 0.6 : 1 }]}
           testID="rehearse-skip"
         >
           <OneLineLabel
@@ -278,7 +299,7 @@ export function RehearseScreen() {
             {becomeCopy.skip}
           </OneLineLabel>
         </Pressable>
-      </View>
+      </Animated.View>
     </View>
   );
 }

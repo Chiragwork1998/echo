@@ -66,10 +66,14 @@ jest.mock('expo-keep-awake', () => ({
   activateKeepAwakeAsync: jest.fn(async () => undefined),
   deactivateKeepAwake: jest.fn(async () => undefined),
 }));
-jest.mock('expo-router', () => ({
-  router: { push: jest.fn(), navigate: jest.fn(), dismissTo: jest.fn(), replace: jest.fn() },
-  usePathname: () => '/home/breathe',
-}));
+jest.mock('expo-router', () => {
+  const { useEffect } = jest.requireActual('react');
+  return {
+    router: { push: jest.fn(), navigate: jest.fn(), dismissTo: jest.fn(), replace: jest.fn() },
+    usePathname: () => '/home/breathe',
+    useFocusEffect: (effect: () => void | (() => void)) => useEffect(effect, [effect]),
+  };
+});
 jest.mock(
   'react-native-safe-area-context',
   () => jest.requireActual('react-native-safe-area-context/jest/mock').default,
@@ -102,6 +106,8 @@ async function beginSettle() {
   const view = await render(<BreatheScreen />);
   await fireEvent.press(screen.getByTestId('feeling-settle'));
   await fireEvent.press(screen.getByRole('button', { name: breatheCopy.begin }));
+  // The Before screen lets go (320 ms), and the practice begins.
+  await advance(400);
   await advance(20_000);
   // The breath is playing on the loop’s own clock.
   expect(loops().some((player) => player.sounding)).toBe(true);

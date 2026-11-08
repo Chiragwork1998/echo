@@ -1,4 +1,4 @@
-import { useEffect, useId } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { StyleSheet } from 'react-native';
 import Animated, {
   Easing,
@@ -23,20 +23,21 @@ import Svg, {
   Stop,
 } from 'react-native-svg';
 
+import { EASE } from '@/design/ease';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 import { useReduceMotion } from '@/design/useReduceMotion';
 
-import { FLATTEN, type Point } from './geometry';
+import { FLATTEN, REACH, type Point, type Water } from './geometry';
+import { IMPACT_DELAY, impactAt, standingDelay } from './impact';
 
 const AnimatedEllipse = Animated.createAnimatedComponent(Ellipse);
 const AnimatedG = Animated.createAnimatedComponent(G);
 
 // A ring leaves the stone's edge, spreads and thins, and is gone before it reaches REACH. Three
-// rings share one slow cycle, so one is always on its way out while the next is being born.
+// rings share one slow cycle (the mood's own pace, in WATER), so one is always on its way out while
+// the next is being born. The very first leaves when a stone is chosen: see ImpactRing.
 const RING_COUNT = 3;
-const CYCLE = 5600;
-const REACH = 44;
 const RING_OPACITY = 0.95;
 const RING_STROKE = { from: 1.7, to: 0.9 };
 // Reduced Motion keeps the same three rings, still, as in the golden.
@@ -71,7 +72,13 @@ const GLINT = {
   coreScale: 0.9,
 };
 const PAD = 8;
-const TWINKLE = 2600;
+// A stone's glow comes up fast and decelerating; when another stone is chosen it goes slowly, so the
+// old rings are seen spreading and fading, never cut. Under Reduce Motion it is a plain short fade.
+const FADE_IN = tokens.motion.standard;
+const FADE_OUT = tokens.motion.atmosphere;
+const FADE_OUT_EASING = Easing.inOut(Easing.sin);
+// The impact ring is finished (and unmounted) a moment after its animation ends.
+const IMPACT_GRACE = 80;
 
 type Props = {
   /** Centre of the stone on screen. */
@@ -80,12 +87,17 @@ type Props = {
   rx: number;
   ry: number;
   active: boolean;
+  /** How the water answers this stone: its pace, and the ring sent out when it is chosen. */
+  water: Water;
 };
 
-type RingProps = { cx: number; cy: number; rx: number; ry: number; index: number; run: boolean };
+type RingProps = { cx: number; cy: number; rx: number; ry: number; run: boolean };
 
-/** One expanding ring. Its radius, opacity and weight all follow the same slow progress value. */
-function Ring({ cx, cy, rx, ry, index, run }: RingProps) {
+/**
+ * One expanding ring of the standing set. Its radius, opacity and weight all follow the same slow
+ * progress value, which repeats every `cycle` ms after `delay`.
+ */
+function Ring({ cx, cy, rx, ry, run, cycle, delay }: RingProps & { cycle: number; delay: number }) {
   const { colors } = useTheme();
   const progress = useSharedValue(0);
   useEffect(() => {
@@ -93,10 +105,10 @@ function Ring({ cx, cy, rx, ry, index, run }: RingProps) {
     progress.set(0);
     progress.set(
       withDelay(
-        (index * CYCLE) / RING_COUNT,
+        delay,
         withRepeat(
           withTiming(1, {
-            duration: CYCLE,
+            duration: cycle,
             easing: Easing.out(Easing.quad),
             reduceMotion: ReduceMotion.System,
           }),
@@ -107,7 +119,7 @@ function Ring({ cx, cy, rx, ry, index, run }: RingProps) {
     );
     // Cancel only: rings left mid-spread fade out with their group rather than vanishing.
     return () => cancelAnimation(progress);
-  }, [run, index, progress]);
+  }, [run, delay, cycle, progress]);
 
   const animatedProps = useAnimatedProps(() => {
     const p = progress.get();
@@ -132,15 +144,68 @@ function Ring({ cx, cy, rx, ry, index, run }: RingProps) {
   );
 }
 
+/**
+ * The stone has been chosen, and the water answers once: a single ring leaves its rim, spreads as
+ * far as the mood allows and is gone, then the standing rings take over. It is mounted afresh for
+ * every choice, and takes itself away when it has faded.
+ */
+function ImpactRing({ cx, cy, rx, ry, water }: Omit<RingProps, 'run'> & { water: Water }) {
+  const { colors } = useTheme();
+  const progress = useSharedValue(0);
+  const [gone, setGone] = useState(false);
+  const { impact } = water;
+  useEffect(() => {
+    progress.set(
+      withDelay(
+        IMPACT_DELAY,
+        withTiming(1, {
+          duration: impact.ms,
+          easing: Easing.out(Easing.cubic),
+          reduceMotion: ReduceMotion.System,
+        }),
+      ),
+    );
+    const timer = setTimeout(() => setGone(true), IMPACT_DELAY + impact.ms + IMPACT_GRACE);
+    return () => {
+      cancelAnimation(progress);
+      clearTimeout(timer);
+    };
+  }, [impact.ms, progress]);
+
+  const animatedProps = useAnimatedProps(() => impactAt(progress.get(), impact, rx, ry));
+  if (gone) return null;
+  return (
+    <AnimatedEllipse
+      testID="stone-impact"
+      cx={cx}
+      cy={cy}
+      rx={rx}
+      ry={ry}
+      fill="none"
+      stroke={colors.textPrimary}
+      strokeOpacity={0}
+      animatedProps={animatedProps}
+    />
+  );
+}
+
 /** Two glint groups that brighten in turn, so the water seems to catch the light, never flash. */
-function Glints({ cx, cy, rx, ry, run, glow }: Omit<RingProps, 'index'> & { glow: string }) {
+function Glints({
+  cx,
+  cy,
+  rx,
+  ry,
+  run,
+  twinkle: pace,
+  glow,
+}: Omit<RingProps, 'index'> & { twinkle: number; glow: string }) {
   const twinkle = useSharedValue(0);
   useEffect(() => {
     if (!run) return;
     twinkle.set(
       withRepeat(
         withTiming(1, {
-          duration: TWINKLE,
+          duration: pace,
           easing: Easing.inOut(Easing.sin),
           reduceMotion: ReduceMotion.System,
         }),
@@ -149,7 +214,7 @@ function Glints({ cx, cy, rx, ry, run, glow }: Omit<RingProps, 'index'> & { glow
       ),
     );
     return () => cancelAnimation(twinkle);
-  }, [run, twinkle]);
+  }, [run, pace, twinkle]);
   const first = useAnimatedProps(() => ({ opacity: 0.55 + 0.45 * twinkle.get() }));
   const second = useAnimatedProps(() => ({ opacity: 1 - 0.45 * twinkle.get() }));
   return (
@@ -166,13 +231,7 @@ function Glints({ cx, cy, rx, ry, run, glow }: Omit<RingProps, 'index'> & { glow
             const y = cy + (ry + offset * FLATTEN) * Math.sin(radians);
             return (
               <G key={angle}>
-                <Circle
-                  cx={x}
-                  cy={y}
-                  r={size * 3.6}
-                  fill={GLINT.halo}
-                  opacity={GLINT.haloOpacity}
-                />
+                <Circle cx={x} cy={y} r={size * 3.6} fill={`url(#${glow}glint)`} />
                 <Circle cx={x} cy={y} r={size * GLINT.coreScale} fill={GLINT.core} />
               </G>
             );
@@ -185,10 +244,12 @@ function Glints({ cx, cy, rx, ry, run, glow }: Omit<RingProps, 'index'> & { glow
 
 /**
  * The heart of the screen: the chosen stone's glow, and rings of water spreading slowly from it.
- * Decorative, so it is hidden from screen readers and from touches. With Reduce Motion on, the rings
- * and glints stay still.
+ * When a stone is chosen the water answers once with a ring that leaves its rim, then the standing
+ * rings follow at the mood's own pace. When another stone is chosen these fade slowly, so they are
+ * seen spreading, not cut. Decorative, so it is hidden from screen readers and from touches. With
+ * Reduce Motion on, the rings and glints stay still, as in the golden.
  */
-export function StoneRipple({ at, rx, ry, active }: Props) {
+export function StoneRipple({ at, rx, ry, active, water }: Props) {
   const { colors } = useTheme();
   const reduced = useReduceMotion();
   const id = `glow${useId().replaceAll(':', '')}`;
@@ -196,11 +257,12 @@ export function StoneRipple({ at, rx, ry, active }: Props) {
   useEffect(() => {
     presence.set(
       withTiming(active ? 1 : 0, {
-        duration: tokens.motion.screen,
-        reduceMotion: ReduceMotion.System,
+        duration: reduced ? tokens.motion.fast : active ? FADE_IN : FADE_OUT,
+        easing: active ? EASE : FADE_OUT_EASING,
+        reduceMotion: ReduceMotion.Never,
       }),
     );
-  }, [active, presence]);
+  }, [active, reduced, presence]);
   const breath = useSharedValue(1);
   useEffect(() => {
     if (!active || reduced) return;
@@ -218,11 +280,23 @@ export function StoneRipple({ at, rx, ry, active }: Props) {
     return () => cancelAnimation(breath);
   }, [active, reduced, breath]);
 
+  // A stone newly chosen gets its own impact ring, keyed by how many it has had. One that is chosen
+  // when the screen opens (a saved choice) has nothing to answer, so it has none.
+  const [wasActive, setWasActive] = useState(active);
+  const [impacts, setImpacts] = useState(0);
+  if (active !== wasActive) {
+    setWasActive(active);
+    if (active) setImpacts(impacts + 1);
+  }
+  const answered = impacts > 0 && !reduced;
+
   const group = useAnimatedStyle(() => ({ opacity: presence.get() }));
   const halo = useAnimatedProps(() => ({ opacity: breath.get() }));
 
-  const spreadX = REACH + PAD;
-  const spreadY = REACH * FLATTEN + PAD;
+  // Room for the furthest any ring spreads (a heavy stone's impact goes past the standing reach).
+  const reach = Math.max(REACH, water.impact.reach);
+  const spreadX = reach + PAD;
+  const spreadY = reach * FLATTEN + PAD;
   const width = (rx + spreadX) * 2;
   const height = (ry + spreadY) * 2;
   const cx = width / 2;
@@ -291,9 +365,21 @@ export function StoneRipple({ at, rx, ry, active }: Props) {
               />
             ))
           : Array.from({ length: RING_COUNT }, (_, index) => (
-              <Ring key={index} cx={cx} cy={cy} rx={rx} ry={ry} index={index} run={run} />
+              <Ring
+                key={index}
+                cx={cx}
+                cy={cy}
+                rx={rx}
+                ry={ry}
+                run={run}
+                cycle={water.cycle}
+                delay={standingDelay(index, water, answered)}
+              />
             ))}
-        <Glints cx={cx} cy={cy} rx={rx} ry={ry} run={run} glow={id} />
+        {answered ? (
+          <ImpactRing key={impacts} cx={cx} cy={cy} rx={rx} ry={ry} water={water} />
+        ) : null}
+        <Glints cx={cx} cy={cy} rx={rx} ry={ry} run={run} twinkle={water.twinkle} glow={id} />
       </Svg>
     </Animated.View>
   );

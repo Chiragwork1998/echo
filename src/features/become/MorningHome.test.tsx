@@ -5,6 +5,7 @@ import { Dimensions } from 'react-native';
 import { copy } from '@/content/copy';
 import { breatheCopy } from '@/features/breathe/breatheCopy';
 import { HomeScreen } from '@/features/home/screens/HomeScreen';
+import { useStoneMemory } from '@/features/home/today/stoneMemory';
 import { useHomeSummary, type HomeSummary } from '@/features/journal';
 import { DEFAULT_PRACTICE, usePreferences } from '@/state/preferences';
 import { render } from '@/testing/render';
@@ -49,6 +50,7 @@ const summary: HomeSummary = {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  useStoneMemory.getState().reset();
   mockMorning = true;
   jest.mocked(useHomeSummary).mockReturnValue(summary);
   usePreferences.setState({ theme: 'night', practice: DEFAULT_PRACTICE });

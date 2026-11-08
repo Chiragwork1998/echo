@@ -1,5 +1,6 @@
 import { resetBookOwner } from '@/features/book/owner';
 import { notifyJournalChanged } from '@/features/journal/api';
+import { useStoneMemory } from '@/features/home/today/stoneMemory';
 import { sqlJournalFor } from '@/features/journal/runtime';
 import { bootApp } from '@/state/gate';
 import { resetOnboarding } from '@/state/onboarding';
@@ -36,6 +37,8 @@ export async function deleteAllLocal(): Promise<DeleteAllResult> {
   resetPreferences();
   // The name's sealed record went with the key; this forgets the copy held while the app runs.
   resetBookOwner();
+  // The cairns Home remembers seeing belong to the journal that is gone.
+  useStoneMemory.getState().reset();
   notifyJournalChanged();
   await bootApp();
   return { ok: true };

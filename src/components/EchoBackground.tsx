@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
@@ -32,35 +32,6 @@ function Plate({ screen, theme }: { screen: ScreenId; theme: ThemeName }) {
 }
 
 /**
- * The plate of the theme that has just been left, laid over the new one and fading away. It starts
- * fully opaque, so that the first frame of a change is still the old screen.
- */
-function LeavingPlate({
-  screen,
-  theme,
-  ms,
-  onGone,
-}: {
-  screen: ScreenId;
-  theme: ThemeName;
-  ms: number;
-  onGone: () => void;
-}) {
-  const opacity = useSharedValue(1);
-  useEffect(() => {
-    opacity.set(withTiming(0, { duration: ms, easing: GLIDE, reduceMotion: ReduceMotion.Never }));
-    const gone = setTimeout(onGone, ms);
-    return () => clearTimeout(gone);
-  }, [ms, onGone, opacity]);
-  const style = useAnimatedStyle(() => ({ opacity: opacity.get() }));
-  return (
-    <Animated.View style={[StyleSheet.absoluteFill, style]} pointerEvents="none">
-      <Plate screen={screen} theme={theme} />
-    </Animated.View>
-  );
-}
-
-/**
  * The art-directed plate for a screen. Plates are fully graded: per their export contract they are
  * centred, drawn with cover, and never tinted, overlaid, or blended at runtime. Two things move it:
  *
@@ -69,11 +40,13 @@ function LeavingPlate({
  *   as it fades, and the next one settles from 0.985. Reduce Motion drops the scale and keeps the
  *   fade.
  * - Theme. A change of theme cross-fades the two complete plates over 900 ms (180 ms with Reduce
- *   Motion). The plate is never blended with a colour: one image simply gives way to the other.
+ *   Motion). The plate is never blended with a colour: one image simply gives way to the other. Day
+ *   lies beneath and Night over it, and one value, how much of Night there is, carries the pair, so a
+ *   change that is reversed in the middle goes back from where it had reached and never jumps.
  *
- * `overlay` is drawn on the plate of the theme that is current, and beneath one that is leaving. It
- * is how Night Home comes alive (D-009): the loop lies over the still, so a Day plate fading out
- * above it still covers it, and the still beneath is the poster until the loop's first frame.
+ * `overlay` belongs to Night and travels with it: it is how Night Home comes alive (D-009). The loop
+ * lies over the still, in the same fading group, so it fades with the plate it is part of and the
+ * still beneath is the poster until the loop's first frame. At rest only one plate is mounted.
  */
 export function EchoBackground({ screen, overlay }: { screen: ScreenId; overlay?: ReactNode }) {
   const { target } = useTheme();
@@ -95,15 +68,30 @@ export function EchoBackground({ screen, overlay }: { screen: ScreenId; overlay?
   }, [scale, scaleTarget]);
   const drift = useAnimatedStyle(() => ({ transform: [{ scale: scale.get() }] }));
 
-  // The theme this plate shows, and the one it has just left, which fades away over it.
-  const [shown, setShown] = useState(target);
-  const [leaving, setLeaving] = useState<{ theme: ThemeName; key: number } | null>(null);
-  if (shown !== target) {
-    setLeaving({ theme: shown, key: (leaving?.key ?? 0) + 1 });
-    setShown(target);
-  }
+  // How much of Night there is: 1 is the Night plate, whole, over Day; 0 is Day alone.
+  const night = useSharedValue(target === 'night' ? 1 : 0);
+  // The theme alone on the screen. Null while a change is under way, and both plates are drawn.
+  const [settled, setSettled] = useState<ThemeName | null>(target);
+  if (settled !== null && settled !== target) setSettled(null);
   const fadeMs = reduced ? tokens.motion.fast : tokens.motion.atmosphere;
-  const settle = useCallback(() => setLeaving(null), []);
+  // Nothing is changing when the plate first appears, so the first run starts no fade and no timer.
+  const changing = useRef(false);
+  useEffect(() => {
+    if (!changing.current) {
+      changing.current = true;
+      return;
+    }
+    night.set(
+      withTiming(target === 'night' ? 1 : 0, {
+        duration: fadeMs,
+        easing: GLIDE,
+        reduceMotion: ReduceMotion.Never,
+      }),
+    );
+    const done = setTimeout(() => setSettled(target), fadeMs);
+    return () => clearTimeout(done);
+  }, [fadeMs, night, target]);
+  const nightStyle = useAnimatedStyle(() => ({ opacity: night.get() }));
 
   return (
     <View
@@ -112,17 +100,18 @@ export function EchoBackground({ screen, overlay }: { screen: ScreenId; overlay?
       importantForAccessibility="no-hide-descendants"
       pointerEvents="none"
     >
-      <Animated.View style={[StyleSheet.absoluteFill, drift]}>
-        <Plate screen={screen} theme={target} />
-        {overlay}
-        {leaving && (
-          <LeavingPlate
-            key={leaving.key}
-            screen={screen}
-            theme={leaving.theme}
-            ms={fadeMs}
-            onGone={settle}
-          />
+      <Animated.View testID="drift" style={[StyleSheet.absoluteFill, drift]}>
+        {settled !== 'night' && <Plate screen={screen} theme="day" />}
+        {settled !== 'day' && (
+          // Android fades a group's children one by one unless it is told they are one picture, and
+          // the loop over the still would then show the still through itself.
+          <Animated.View
+            style={[StyleSheet.absoluteFill, nightStyle]}
+            needsOffscreenAlphaCompositing
+          >
+            <Plate screen={screen} theme="night" />
+            {overlay}
+          </Animated.View>
         )}
       </Animated.View>
     </View>

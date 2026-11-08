@@ -1,24 +1,16 @@
 import { router } from 'expo-router';
-import { useEffect, useState, type PropsWithChildren } from 'react';
+import { useState, type PropsWithChildren } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import Animated, {
-  Easing,
-  ReduceMotion,
-  useAnimatedStyle,
-  useSharedValue,
-  withDelay,
-  withTiming,
-} from 'react-native-reanimated';
 
 import { EchoText } from '@/components/EchoText';
 import { useLayout } from '@/design/layout';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
-import { useReduceMotion } from '@/design/useReduceMotion';
 import { breatheCopy } from '@/features/breathe/breatheCopy';
 import { dateLabel } from '@/features/echoes/entryFacts';
 import { keepTogether } from '@/features/tab-pages/keepTogether';
 import { Rule, Surface, TextAction } from '@/features/tab-pages/parts';
+import { Reveal } from '@/features/tab-pages/Reveal';
 import {
   detail,
   prose,
@@ -35,12 +27,8 @@ import { patternsCopy } from './patternsCopy';
 const { cards: words } = patternsCopy;
 
 const PAGE = tokens.space[24];
-const REVEAL_MS = 560;
-const FADE_MS = 240;
-const REVEAL_RISE = 10;
 /** The reading of a card just turned waits for the turn to pass its middle. */
 const TURN_SETTLE_MS = 420;
-const EASE = Easing.bezier(0.22, 1, 0.36, 1);
 /** Where an opening quotation mark hangs, so the quoted words line up with the prose. */
 const HANG = 9;
 // A reading of the person's own words wears the faint warmth Completion's reflection card has.
@@ -48,29 +36,6 @@ const WARMTH = { night: 'rgba(250,196,100,0.05)', day: 'rgba(240,215,170,0.07)' 
 
 /** A playing card held at a comfortable size: never wider than this, on any phone. */
 const CARD_MAX = 340;
-
-/** One gentle rise and fade as a card arrives. Under Reduce Motion, the fade alone. */
-function Reveal({ children, delay = 0 }: PropsWithChildren<{ delay?: number }>) {
-  const reduced = useReduceMotion();
-  const shown = useSharedValue(0);
-  useEffect(() => {
-    shown.set(
-      withDelay(
-        reduced ? 0 : delay,
-        withTiming(1, {
-          duration: reduced ? FADE_MS : REVEAL_MS,
-          easing: EASE,
-          reduceMotion: ReduceMotion.Never,
-        }),
-      ),
-    );
-  }, [delay, reduced, shown]);
-  const style = useAnimatedStyle(() => ({
-    opacity: shown.value,
-    transform: [{ translateY: reduced ? 0 : (1 - shown.value) * REVEAL_RISE }],
-  }));
-  return <Animated.View style={style}>{children}</Animated.View>;
-}
 
 /** A part of the card, spoken as one piece: its name, then its words. */
 function Part({ spoken, children }: PropsWithChildren<{ spoken: string }>) {

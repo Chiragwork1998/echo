@@ -3,7 +3,10 @@ import { AccessibilityInfo, Dimensions } from 'react-native';
 
 import { render } from '@/testing/render';
 
-import { clearToast, showToast, ToastHost } from './Toast';
+import { useReduceMotion } from '@/design/useReduceMotion';
+import { reanimatedMock } from '@/testing/reanimatedMock';
+
+import { clearToast, dwellFor, showToast, ToastHost } from './Toast';
 
 jest.mock(
   'react-native-safe-area-context',
@@ -13,6 +16,10 @@ jest.mock(
 const MESSAGE = 'We’ll meet you at 9:30 PM.';
 const NEXT = 'We’ll meet you at 8:00 AM.';
 const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility');
+const timing = jest.spyOn(reanimatedMock, 'withTiming');
+
+jest.mock('@/design/useReduceMotion', () => ({ useReduceMotion: jest.fn(() => false) }));
+const reduced = useReduceMotion as jest.Mock;
 
 beforeAll(() => {
   jest.useFakeTimers();
@@ -23,6 +30,8 @@ beforeEach(() => {
   Dimensions.set({ window: metrics, screen: metrics });
   announce.mockReset();
   announce.mockImplementation(() => undefined);
+  reduced.mockReturnValue(false);
+  timing.mockClear();
 });
 
 afterEach(async () => {
@@ -87,5 +96,52 @@ describe('Toast', () => {
     const bottom = style.find((part) => part.bottom !== undefined)?.bottom;
     // The jest safe-area mock has no inset. The CTA ends 74 pt above it, the Night tab bar 83.
     expect(bottom).toBeGreaterThan(83);
+  });
+
+  it('stays longer for a longer line: a beat and 48 ms a character, between 2.2 and 4.2 seconds', () => {
+    expect(dwellFor('x'.repeat(10))).toBe(2200);
+    expect(dwellFor('x'.repeat(40))).toBe(1400 + 48 * 40);
+    expect(dwellFor('x'.repeat(60))).toBe(4200);
+    expect(dwellFor('x'.repeat(200))).toBe(4200);
+  });
+
+  it.each([
+    [10, 2200],
+    [60, 4200],
+    [200, 4200],
+  ])('a line of %i characters arrives, stays %i ms, and leaves', async (length, dwell) => {
+    const line = 'x'.repeat(length);
+    await render(<ToastHost />);
+    await act(async () => showToast(line));
+    // 480 ms to arrive, the dwell, then 480 ms to lift away.
+    await wait(480 + dwell + 479);
+    expect(screen.queryByText(line)).toBeTruthy();
+    await wait(1);
+    expect(screen.queryByText(line)).toBeNull();
+  });
+
+  it('arrives over 240 ms of opacity and 480 of rise, and leaves over 320 and 480', async () => {
+    await render(<ToastHost />);
+    await act(async () => showToast(MESSAGE));
+    const asked = () =>
+      timing.mock.calls.map((call) => ((call as unknown[])[1] as { duration: number }).duration);
+    expect(asked().sort((a, b) => a - b)).toEqual([240, 480]);
+    timing.mockClear();
+    await wait(480 + dwellFor(MESSAGE));
+    expect(asked().sort((a, b) => a - b)).toEqual([320, 480]);
+  });
+
+  it('under Reduce Motion fades in 180 ms with the same dwell, and nothing travels', async () => {
+    reduced.mockReturnValue(true);
+    await render(<ToastHost />);
+    await act(async () => showToast(MESSAGE));
+    const asked = () =>
+      timing.mock.calls.map((call) => ((call as unknown[])[1] as { duration: number }).duration);
+    expect(asked()).toEqual([180]);
+    await wait(180 + dwellFor(MESSAGE) + 179);
+    expect(screen.queryByText(MESSAGE)).toBeTruthy();
+    await wait(1);
+    expect(screen.queryByText(MESSAGE)).toBeNull();
+    expect(asked()).toEqual([180, 180]);
   });
 });

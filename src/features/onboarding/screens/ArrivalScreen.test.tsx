@@ -4,6 +4,7 @@ import { AccessibilityInfo, BackHandler, Dimensions, StyleSheet } from 'react-na
 
 import { copy } from '@/content/copy';
 import { cue } from '@/design/haptics';
+import { WATER } from '@/features/onboarding/arrival/geometry';
 import { initialOnboarding, useOnboarding, type Mood } from '@/state/onboarding';
 import { render } from '@/testing/render';
 
@@ -11,7 +12,7 @@ import { ArrivalScreen } from './ArrivalScreen';
 
 jest.mock('@/design/haptics');
 jest.mock('expo-router', () => ({
-  router: { navigate: jest.fn() },
+  router: { navigate: jest.fn(), dismissTo: jest.fn() },
   // Runs the effect once on mount, as a focused screen would.
   useFocusEffect: (effect: () => void | (() => void)) => {
     const { useEffect } = jest.requireActual<typeof import('react')>('react');
@@ -70,7 +71,7 @@ describe('ArrivalScreen', () => {
     expect(router.navigate).not.toHaveBeenCalled();
   });
 
-  it('selects one stone at a time, stores it, and cues a tick', async () => {
+  it('selects one stone at a time, stores it, and answers with the cue for that mood', async () => {
     await render(<ArrivalScreen />);
     await fireEvent.press(radio(UNSETTLED!));
     expect(useOnboarding.getState().mood).toBe('unsettled');
@@ -78,13 +79,29 @@ describe('ArrivalScreen', () => {
     expect(radio(UNSETTLED!)).toBeChecked();
     expect(radio(LIGHT!)).not.toBeSelected();
     expect(cue).toHaveBeenCalledTimes(1);
-    expect(cue).toHaveBeenCalledWith('tick');
+    expect(cue).toHaveBeenLastCalledWith('tick');
 
     await fireEvent.press(radio(HEAVY!));
     expect(useOnboarding.getState().mood).toBe('heavy');
     expect(radio(HEAVY!)).toBeChecked();
     expect(radio(UNSETTLED!)).not.toBeChecked();
     expect(cue).toHaveBeenCalledTimes(2);
+    expect(cue).toHaveBeenLastCalledWith('settle');
+  });
+
+  it.each([
+    ['light', 'fine'],
+    ['steady', 'tick'],
+    ['unsettled', 'tick'],
+    ['heavy', 'settle'],
+    ['numb', 'fine'],
+  ] as const)('cues %s once, as %s, from the table in WATER', async (mood, name) => {
+    await render(<ArrivalScreen />);
+    const label = Object.keys(VALUES).find((key) => VALUES[key] === mood)!;
+    await fireEvent.press(radio(label));
+    expect(cue).toHaveBeenCalledTimes(1);
+    expect(cue).toHaveBeenCalledWith(name);
+    expect(WATER[mood].haptic).toBe(name);
   });
 
   it('stores the right value for every stone', async () => {
@@ -95,12 +112,13 @@ describe('ArrivalScreen', () => {
     }
   });
 
-  it('does not buzz when the chosen stone is pressed again', async () => {
+  it('does not buzz or send a second ring when the chosen stone is pressed again', async () => {
     await render(<ArrivalScreen />);
     await fireEvent.press(radio(NUMB!));
     await fireEvent.press(radio(NUMB!));
     expect(cue).toHaveBeenCalledTimes(1);
     expect(radio(NUMB!)).toBeChecked();
+    expect(screen.getAllByTestId('stone-impact', { includeHiddenElements: true })).toHaveLength(1);
   });
 
   it('enables the CTA after a choice and goes to the First Echo step', async () => {
@@ -139,7 +157,7 @@ describe('ArrivalScreen', () => {
     expect(screen.queryByRole('button', { name: 'Back' })).toBeNull();
   });
 
-  it('sends the system back button to Privacy', async () => {
+  it('sends the system back button to Privacy, returning to it rather than opening it again', async () => {
     const handlers: (() => boolean)[] = [];
     jest.spyOn(BackHandler, 'addEventListener').mockImplementation((_event, handler) => {
       handlers.push(handler as () => boolean);
@@ -148,7 +166,8 @@ describe('ArrivalScreen', () => {
     await render(<ArrivalScreen />);
     expect(handlers).toHaveLength(1);
     expect(handlers[0]!()).toBe(true);
-    expect(router.navigate).toHaveBeenCalledWith('/onboarding/privacy');
+    expect(router.dismissTo).toHaveBeenCalledWith('/onboarding/privacy');
+    expect(router.navigate).not.toHaveBeenCalled();
   });
 });
 
@@ -198,6 +217,47 @@ describe('ArrivalScreen ripple', () => {
     await render(<ArrivalScreen />);
     const visible = drawnEllipses().filter((ellipse) => (ellipse.strokeOpacity ?? 0) > 0);
     expect(visible).toHaveLength(0);
+  });
+
+  const impacts = () => screen.queryAllByTestId('stone-impact', { includeHiddenElements: true });
+
+  it('sends one ring from the stone that is chosen, and from no other', async () => {
+    await render(<ArrivalScreen />);
+    expect(impacts()).toHaveLength(0);
+    await fireEvent.press(radio(HEAVY!));
+    expect(impacts()).toHaveLength(1);
+    await fireEvent.press(radio(LIGHT!));
+    // The heavy stone's ring is still finishing as the light stone's leaves.
+    expect(impacts()).toHaveLength(2);
+  });
+
+  it('sends no ring for the mood the person had already chosen when they came back', async () => {
+    useOnboarding.setState({ mood: 'heavy' });
+    await render(<ArrivalScreen />);
+    expect(impacts()).toHaveLength(0);
+  });
+
+  it("draws the golden's three still rings and sends no ring when Reduce Motion is on", async () => {
+    jest.mocked(AccessibilityInfo.isReduceMotionEnabled).mockResolvedValue(true);
+    await render(<ArrivalScreen />);
+    await waitFor(() => expect(drawnEllipses().length).toBeGreaterThan(0));
+    await fireEvent.press(radio(UNSETTLED!));
+    expect(impacts()).toHaveLength(0);
+    // The cue is not motion: it still plays.
+    expect(cue).toHaveBeenCalledWith('tick');
+  });
+});
+
+describe('ArrivalScreen press highlight', () => {
+  it("follows each stone's elliptical outline, not a box with round ends", async () => {
+    await render(<ArrivalScreen />);
+    const presses = screen.getAllByTestId('stone-press', { includeHiddenElements: true });
+    expect(presses).toHaveLength(5);
+    for (const press of presses) {
+      const style = StyleSheet.flatten(press.props.style);
+      expect(style.borderRadius).toBe('50%');
+      expect(style.width).toBeGreaterThan(style.height as number);
+    }
   });
 });
 

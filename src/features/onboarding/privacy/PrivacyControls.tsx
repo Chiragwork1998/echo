@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Platform, StyleSheet, View, type StyleProp, type TextStyle } from 'react-native';
 
 import { EchoText } from '@/components/EchoText';
 import { SoftScrim } from '@/components/SoftScrim';
 import { ToggleRow } from '@/components/ToggleRow';
 import { copy } from '@/content/copy';
-import { cue } from '@/design/haptics';
 import { useTheme } from '@/design/theme';
 import { verifyLockAvailable } from '@/services/biometric';
 import { useOnboarding, type OnboardingState } from '@/state/onboarding';
@@ -17,8 +16,6 @@ const ROW_INSET = 2;
 const CAPTION_TOP = 14;
 const CAPTION = { fontSize: 10, lineHeight: 14, letterSpacing: 1.5, opacity: 0.78 } as const;
 const HINT_GAP = 8;
-// The knob's spring starts when the choice is stored and passes the middle of its travel about now.
-const KNOB_MIDDLE_MS = 45;
 // The plates' snow glints through small type, unlike the goldens' smooth snow, so notes get a
 // feathered patch behind them. Day's is stronger: its snow is sunlit.
 const SCRIM_ALPHA = { day: 0.36, night: 0.3 } as const;
@@ -60,39 +57,14 @@ function Note({
 }
 
 /**
- * A switch's haptic belongs to its knob: it lands as the knob crosses the middle of its travel, a
- * moment after the choice is stored, and it never outlives the screen.
+ * The two privacy switches and the encryption note beneath them. Each switch makes its own click as
+ * its knob crosses the middle (SwitchTrack), so this screen only stores the choice.
  */
-function useKnobCue() {
-  const mounted = useRef(false);
-  const pending = useRef(new Set<ReturnType<typeof setTimeout>>());
-  useEffect(() => {
-    const timers = pending.current;
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-      timers.forEach((timer) => clearTimeout(timer));
-      timers.clear();
-    };
-  }, []);
-  return useCallback((on: boolean) => {
-    if (!mounted.current) return;
-    const timer = setTimeout(() => {
-      pending.current.delete(timer);
-      cue(on ? 'on' : 'off');
-    }, KNOB_MIDDLE_MS);
-    pending.current.add(timer);
-  }, []);
-}
-
-/** The two privacy switches and the encryption note beneath them. */
 export function PrivacyControls() {
   const { biometricLock, privateBackup } = useOnboarding((state) => state.privacy);
   const update = useOnboarding((state) => state.update);
   const [unavailable, setUnavailable] = useState(false);
   const checking = useRef(false);
-
-  const crossMiddle = useKnobCue();
 
   // Read at the moment of the change, so two quick taps never write stale values.
   const setPrivacy = useCallback(
@@ -106,7 +78,6 @@ export function PrivacyControls() {
       if (checking.current) return;
       if (!next) {
         setPrivacy({ biometricLock: false });
-        crossMiddle(false);
         return;
       }
       checking.current = true;
@@ -121,18 +92,16 @@ export function PrivacyControls() {
         return;
       }
       setPrivacy({ biometricLock: true });
-      crossMiddle(true);
     },
-    [setPrivacy, crossMiddle],
+    [setPrivacy],
   );
 
   // Cloud backup has no backend yet. The choice is stored, and nothing is sent or claimed.
   const changeBackup = useCallback(
     (next: boolean) => {
       setPrivacy({ privateBackup: next });
-      crossMiddle(next);
     },
-    [setPrivacy, crossMiddle],
+    [setPrivacy],
   );
 
   return (

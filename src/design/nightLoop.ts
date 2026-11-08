@@ -21,6 +21,15 @@ export const NIGHT_LOOP_PLATE = { width: 1290, height: 2796 } as const;
 export const NIGHT_LOOP_REVEAL_MS = 700;
 
 /**
+ * The first time Home ever appears the river wakes slowly, out of the still, while the heading is
+ * read: the reveal is longer, and does not begin until Home has been up for a moment. The loop is
+ * only revealed more slowly, never edited (D-009), and it never holds Home back: if its first frame
+ * is late the reveal simply starts late.
+ */
+export const NIGHT_LOOP_WELCOME_REVEAL_MS = 1800;
+export const NIGHT_LOOP_WELCOME_DELAY_MS = 300;
+
+/**
  * How long a screen that covers the plate gets to finish fading in before the loop pauses behind it.
  * Pausing earlier would freeze the river under a screen that is still half transparent.
  */
