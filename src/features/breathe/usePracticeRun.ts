@@ -7,8 +7,9 @@ import { qa } from '@/testing/qa';
 import {
   createPlayer,
   enterBreathAudio,
+  fadeOutAndRelease,
   rampVolume,
-  releasePlayer,
+  releaseAfter,
   restoreJournalAudio,
   type BreathPlayer,
 } from './audio';
@@ -23,6 +24,11 @@ import { useBreathAwake } from './useBreathAwake';
 /** A loop fades in and out over this long, so it never ticks as it starts or stops. */
 const LOOP_FADE_MS = 120;
 const CLOSE_FADE_MS = 1200;
+/**
+ * After a practice runs to its end, a bell or a line still sounding is let finish before its player
+ * is freed: longer than the longest bell (7.5 s) and the longest line (8.8 s).
+ */
+const RING_OUT_MS = 10_000;
 /** The breath sound dips this low while the voice speaks, and comes back after. */
 const UNDER_VOICE = 0.35;
 const DUCK_MS = 400;
@@ -113,6 +119,8 @@ export function usePracticeRun({
   const status = useRef<RunStatus>('idle');
   const captionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stopRamps = useRef<(() => void)[]>([]);
+  /** Where the practice ended, kept once its sound has gone. */
+  const endedAt = useRef<number | null>(null);
   const settings = useRef({ sound, voice, screenReader, onDone, pace });
   useEffect(() => {
     settings.current = { sound, voice, screenReader, onDone, pace };
@@ -235,22 +243,45 @@ export function usePracticeRun({
   const elapsedNow = useCallback(() => {
     const pinned = pinnedElapsed();
     if (pinned !== null) return pinned;
+    if (endedAt.current !== null) return endedAt.current;
     const current = sounding.current;
     if (!current) return 0;
     const segment = timeline.current.segments[current.segment];
     return (segment?.startMs ?? 0) + current.clock.elapsedMs() - current.offset;
   }, []);
 
+  /**
+   * Lets every sound of the practice go, and frees every player: on Android a player left to the
+   * garbage collector plays on, into the journal and the background. After a practice runs to its end
+   * the breath fades out slowly and a closing bell rings out. Cut short, everything stops at once,
+   * without a click. Whatever the screen does next cannot cut these fades short.
+   */
+  const silence = useCallback((ending: 'natural' | 'cut') => {
+    stopRamps.current.forEach((stop) => stop());
+    stopRamps.current = [];
+    sounding.current?.clock.dispose();
+    sounding.current = null;
+    const natural = ending === 'natural';
+    loops.current.forEach((player) =>
+      fadeOutAndRelease(player, natural ? CLOSE_FADE_MS : LOOP_FADE_MS),
+    );
+    for (const group of [bells, voices]) {
+      group.current.forEach((player) =>
+        natural ? releaseAfter(player, RING_OUT_MS) : fadeOutAndRelease(player, LOOP_FADE_MS),
+      );
+    }
+    for (const group of [loops, bells, voices]) group.current.clear();
+  }, []);
+
   const finish = useCallback(() => {
     status.current = 'done';
     setAwake(false);
-    const player = sounding.current?.clock.player;
-    // The last breath out ends quietly: the loop fades rather than stops, and its clock stops with it.
-    if (player) stopRamps.current.push(rampVolume(player, 0, CLOSE_FADE_MS, () => pause(player)));
-    else sounding.current?.clock.pause();
+    endedAt.current = elapsedNow();
+    // The last breath out ends quietly: the loop fades rather than stops.
+    silence('natural');
     setView((current) => ({ ...current, status: 'done', word: null }));
     settings.current.onDone?.();
-  }, []);
+  }, [elapsedNow, silence]);
 
   // The frame loop reads the latest tick through a ref, so it never holds on to an old one.
   const tickRef = useRef<() => void>(() => undefined);
@@ -312,19 +343,14 @@ export function usePracticeRun({
     });
   }, [begin, schedule]);
 
+  /** Cuts the practice short: nothing more moves, rings or is said. */
   const release = useCallback(() => {
     if (frame.current !== null) cancelAnimationFrame(frame.current);
     frame.current = null;
     if (captionTimer.current) clearTimeout(captionTimer.current);
-    stopRamps.current.forEach((stop) => stop());
-    stopRamps.current = [];
-    sounding.current?.clock.dispose();
-    sounding.current = null;
-    for (const group of [loops, bells, voices]) {
-      group.current.forEach((player) => releasePlayer(player));
-      group.current.clear();
-    }
-  }, []);
+    captionTimer.current = null;
+    silence('cut');
+  }, [silence]);
 
   /** Ends now, wherever the practice is. The sound stops and nothing more is said. */
   const stop = useCallback(() => {

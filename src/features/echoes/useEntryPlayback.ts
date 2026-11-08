@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 
 import { openEntryAudio } from '@/features/journal';
+import { stopAndRelease } from '@/services/audioPlayers';
 import { loadAudio } from '@/services/nativeModules';
 
 export type PlaybackState = 'idle' | 'loading' | 'playing' | 'paused' | 'error';
@@ -55,7 +56,8 @@ export function useEntryPlayback(entryId: string) {
         player,
         stop: () => {
           listener.remove();
-          player.remove();
+          // Silenced and freed now: on Android a player only removed plays on after the page has gone.
+          stopAndRelease(player);
           release();
         },
       };

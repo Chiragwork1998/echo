@@ -9,7 +9,7 @@ import { render } from '@/testing/render';
 import { echoesCopy } from './echoesCopy';
 import { EntryReaderScreen } from './EntryReaderScreen';
 
-const mockPlayer = { play: jest.fn(), pause: jest.fn(), remove: jest.fn() };
+const mockPlayer = { play: jest.fn(), pause: jest.fn(), remove: jest.fn(), release: jest.fn() };
 let mockStatus: (status: { didJustFinish: boolean }) => void = () => undefined;
 const mockAudio = {
   setAudioModeAsync: jest.fn(async () => undefined),
@@ -159,7 +159,7 @@ describe('EntryReaderScreen audio', () => {
 
     await act(async () => mockStatus({ didJustFinish: true }));
     await waitFor(() => expect(release).toHaveBeenCalledTimes(1));
-    expect(mockPlayer.remove).toHaveBeenCalled();
+    expect(mockPlayer.release).toHaveBeenCalledTimes(1);
     expect(await screen.findByRole('button', { name: /Play recording/ })).toBeTruthy();
   });
 
@@ -172,6 +172,12 @@ describe('EntryReaderScreen audio', () => {
     await waitFor(() => expect(mockPlayer.play).toHaveBeenCalled());
     await view.unmount();
     expect(release).toHaveBeenCalledTimes(1);
+    // On Android remove() alone leaves the recording playing after the page has gone.
+    expect(mockPlayer.pause).toHaveBeenCalled();
+    expect(mockPlayer.release).toHaveBeenCalledTimes(1);
+    expect(mockPlayer.pause.mock.invocationCallOrder.at(-1) ?? 0).toBeLessThan(
+      mockPlayer.release.mock.invocationCallOrder[0] ?? 0,
+    );
   });
 
   it('says so, and offers another try, when the recording cannot be opened', async () => {

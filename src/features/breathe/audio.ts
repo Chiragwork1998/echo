@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 
+import { stopAndRelease } from '@/services/audioPlayers';
 import { loadAudio } from '@/services/nativeModules';
 
 type ExpoAudio = typeof import('expo-audio');
@@ -75,12 +76,31 @@ export function createPlayer(source: number, loop: boolean): BreathPlayer | null
   }
 }
 
+/** Silences a player and frees it, now. */
 export function releasePlayer(player: BreathPlayer | null | undefined): void {
+  stopAndRelease(player);
+}
+
+/**
+ * Lets a player go without a click: one that is sounding fades to silence over `ms`, then stops and
+ * is freed. One that is silent is freed at once.
+ */
+export function fadeOutAndRelease(player: BreathPlayer | null | undefined, ms: number): void {
+  if (!player) return;
+  let sounding = false;
   try {
-    player?.remove();
+    sounding = player.playing && player.volume > 0;
   } catch {
-    // Already gone.
+    // Released.
   }
+  if (!sounding) return releasePlayer(player);
+  rampVolume(player, 0, ms, () => releasePlayer(player));
+}
+
+/** A bell or a line that may still be sounding rings out for `ms` before its player is freed. */
+export function releaseAfter(player: BreathPlayer | null | undefined, ms: number): void {
+  if (!player) return;
+  setTimeout(() => releasePlayer(player), ms);
 }
 
 const RAMP_STEP_MS = 25;
