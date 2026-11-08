@@ -79,10 +79,14 @@ function DialTime({
 }) {
   const [shown, setShown] = useState(start);
   const written = useClockText(shown);
+  // The UI thread says that the handle has moved, and JS looks where it is. A message that carried
+  // the time would arrive late on a busy thread, and every one queued behind it would write a time the
+  // handle had passed: the number was seen reading 11:30 PM with the handle near 8:30 AM.
+  const catchUp = useCallback(() => setShown(snapMinutes(angleToMinutes(angle.get()))), [angle]);
   useAnimatedReaction(
     () => snapMinutes(angleToMinutes(angle.get())),
     (now, was) => {
-      if (now !== was) runOnJS(setShown)(now);
+      if (now !== was) runOnJS(catchUp)();
     },
   );
   return (

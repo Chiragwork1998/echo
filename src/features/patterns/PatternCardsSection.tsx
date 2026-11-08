@@ -142,6 +142,21 @@ export function PatternCardsSection({ entries }: { entries: readonly EntrySummar
   // arrive, so the sky is never bare between the two.
   const handing = useHandOver(cards.reading, saved?.readAt, HAND_OVER_MS);
 
+  // Whether the skeleton is what the consent gave way to. The consent is cut at the person's word, so
+  // a skeleton that began from nothing would leave the sky bare for the frames it takes to start.
+  const [seen, setSeen] = useState({
+    asking: cards.asking,
+    reading: cards.reading,
+    afterConsent: false,
+  });
+  if (seen.asking !== cards.asking || seen.reading !== cards.reading) {
+    setSeen({
+      asking: cards.asking,
+      reading: cards.reading,
+      afterConsent: cards.reading && (seen.afterConsent || (seen.asking && !cards.asking)),
+    });
+  }
+
   if (!cards.loaded) return null;
 
   const text = notice ? noticeText(notice, hasCards) : null;
@@ -171,7 +186,8 @@ export function PatternCardsSection({ entries }: { entries: readonly EntrySummar
         ))}
 
       {/* Each of these takes the place of the one before it, so each arrives (rising a little, 320 ms)
-          instead of cutting in. */}
+          instead of cutting in. The skeleton that follows the consent is there at once: the consent
+          has gone in that very frame, and what replaces it must already be on the glass. */}
       {cards.asking && (
         <Reveal duration={tokens.motion.standard}>
           <ConsentPanel
@@ -183,7 +199,7 @@ export function PatternCardsSection({ entries }: { entries: readonly EntrySummar
       )}
 
       {cards.reading && (
-        <Reveal duration={tokens.motion.standard}>
+        <Reveal duration={tokens.motion.standard} skip={seen.afterConsent}>
           <Reading />
         </Reveal>
       )}

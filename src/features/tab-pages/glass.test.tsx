@@ -5,7 +5,7 @@ import { GlassCard } from '@/components/GlassCard';
 import { ThemeProvider } from '@/design/theme';
 import { useReduceMotion } from '@/design/useReduceMotion';
 import { glassAncestors, mostFadedGlass } from '@/testing/glass';
-import { reanimatedMock } from '@/testing/reanimatedMock';
+import { animationClock, reanimatedMock } from '@/testing/reanimatedMock';
 
 import { Notice, Surface } from './parts';
 import { ArriveInOrder, Bars, Resolve } from './Resolve';
@@ -226,5 +226,95 @@ describe('what arrives over glass', () => {
     );
     expect(mostFadedGlass()).toBe(1);
     expect(screen.getByText('At rest')).toBeTruthy();
+  });
+});
+
+// The walk (v9): glass that arrived was seen empty, gone for one frame, then back with its words
+// (a locked card, the consent panel). Reanimated gives a view the first values of the animated styles
+// it has when it mounts; a style that is swapped in afterwards brings none, so the view is drawn plain
+// (full opacity) until the UI thread's first word, then hidden by it, then shown. An arrival finds
+// out that there is glass in it a moment after it mounts, and used to swap one style for another then.
+describe('glass arriving, frame by frame', () => {
+  const FRAME = 16;
+  beforeEach(() => {
+    animationClock.stepped = true;
+  });
+  afterEach(() => animationClock.reset());
+
+  /** What is seen of the glass each frame: whole (W), not there (.), or part of the way (?). */
+  async function timeline(
+    tree: (ready: boolean) => React.ReactElement,
+    frames = 50,
+    first = true,
+    start = false,
+  ) {
+    const view = await render(themed(tree(start)));
+    if (!start) await view.rerender(themed(tree(first)));
+    const seen: string[] = [];
+    const look = () => {
+      const glass = glassAncestors();
+      const fade = glass.length ? mostFadedGlass() : 0;
+      seen.push(fade === 1 ? 'W' : fade === 0 ? '.' : '?');
+    };
+    // The first frame, as it was committed, and then each frame after it.
+    look();
+    for (let frame = 0; frame < frames; frame += 1) {
+      await advance(FRAME);
+      await view.rerender(themed(tree(first)));
+      look();
+    }
+    return seen.join('');
+  }
+
+  it('a Reveal brings glass in whole, once, and it never blinks: not there, then whole', async () => {
+    const tree = () => (
+      <Reveal>
+        <Surface>
+          <Text>On the glass</Text>
+        </Surface>
+      </Reveal>
+    );
+    expect(await timeline(tree, 50, true, true)).toMatch(/^\.*W+$/);
+  });
+
+  it('Resolve brings a glass block in whole, one item after another, with no blink', async () => {
+    const page = (ready: boolean) => (
+      <Resolve ready={ready} skeleton={<Text>Skeleton</Text>} each>
+        <Surface key="a">
+          <Text>First</Text>
+        </Surface>
+      </Resolve>
+    );
+    expect(await timeline(page, 50, true, false)).toMatch(/^\.*W+$/);
+  });
+
+  it('a skeleton’s glass is whole once its bars begin, and stays whole', async () => {
+    const bars = () => (
+      <Bars immediate>
+        <Surface>
+          <Text>Bars</Text>
+        </Surface>
+      </Bars>
+    );
+    expect(await timeline(bars, 20, true, true)).toMatch(/^\.*W+$/);
+  });
+
+  it('the words on the glass fade in as it arrives, and only they', async () => {
+    const tree = () => (
+      <Reveal>
+        <Surface>
+          <Text>On the glass</Text>
+        </Surface>
+      </Reveal>
+    );
+    const view = await render(themed(tree()));
+    const fades: number[] = [];
+    for (let frame = 0; frame < 40; frame += 1) {
+      await advance(FRAME);
+      await view.rerender(themed(tree()));
+      fades.push(fadeOf('On the glass'));
+    }
+    expect(fades.at(-1)).toBe(1);
+    expect(fades).toEqual([...fades].sort((a, b) => a - b));
   });
 });

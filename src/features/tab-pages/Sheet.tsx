@@ -383,8 +383,13 @@ function Stage({
   const room = useKeyboardRoom();
   // Android reports the keyboard without the navigation bar it also covers.
   const under = Platform.OS === 'android' ? bottom : 0;
+  // The visual harness has no keyboard, so it reserves the room of one by name. That is a plain
+  // function, and the worklet below runs on the UI thread, where a function that is not a worklet
+  // does not exist (calling it kills the app): it is read here, as the sheet is drawn, and the worklet
+  // is given the number.
+  const reserved = qaKeyboardHeight();
   const ground = useAnimatedStyle(() => {
-    const height = Math.max(room.get(), qaKeyboardHeight());
+    const height = Math.max(room.get(), reserved);
     return {
       paddingBottom: height <= 0 ? 0 : Math.max(0, height + under + KEYBOARD_GAP - resting),
     };

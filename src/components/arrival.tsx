@@ -37,6 +37,20 @@ export function useGlassAware(fade: SharedValue<number>) {
   return { glass, arrival };
 }
 
+/**
+ * The opacity of a view that arrives, from how far the arrival has come (0 to 1). With glass in it
+ * the view is whole from the moment it moves and hidden before that, and only what is written on the
+ * glass fades; without, it fades itself. The view has one animated style for its whole life and this
+ * is what it reads: a view that is given a different animated style after it has mounted is drawn
+ * with none of the new style's first values, which is full opacity, for a frame (the walk, v9: glass
+ * seen empty, gone, then back with its words).
+ */
+export function arrivalOpacity(progress: number, glass: boolean): number {
+  'worklet';
+  if (!glass) return progress;
+  return progress > 0 ? 1 : 0;
+}
+
 function Faded({
   fade,
   style,

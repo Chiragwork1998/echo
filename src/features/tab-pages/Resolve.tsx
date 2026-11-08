@@ -19,7 +19,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { ArrivalContext, useGlassAware } from '@/components/arrival';
+import { ArrivalContext, arrivalOpacity, useGlassAware } from '@/components/arrival';
 import { EASE } from '@/design/ease';
 import { tokens } from '@/design/tokens';
 import { useReduceMotion } from '@/design/useReduceMotion';
@@ -95,12 +95,12 @@ export function Bars({ children, immediate = false }: PropsWithChildren<{ immedi
     );
   }, [reduced, shown, visible]);
   const { glass, arrival } = useGlassAware(shown);
-  const fade = useAnimatedStyle(() => ({ opacity: shown.get() }));
-  // Glass is drawn whole while the bars are on their way, and not at all before they are.
-  const whole = useAnimatedStyle(() => ({ opacity: shown.get() > 0 ? 1 : 0 }));
+  // Glass is drawn whole while the bars are on their way, and not at all before they are. One style
+  // for the view's whole life: see arrivalOpacity.
+  const fade = useAnimatedStyle(() => ({ opacity: arrivalOpacity(shown.get(), glass) }));
   return (
     <ArrivalContext.Provider value={arrival}>
-      <Animated.View style={glass ? whole : fade}>{children}</Animated.View>
+      <Animated.View style={fade}>{children}</Animated.View>
     </ArrivalContext.Provider>
   );
 }
@@ -157,20 +157,17 @@ export function Rise({
     return () => clearTimeout(over);
   }, [delay, duration, moving, placed, reduced, shown]);
   const { glass, arrival } = useGlassAware(shown);
-  const motion = useAnimatedStyle(() => ({
-    opacity: shown.get(),
-    transform: [{ translateY: reduced ? 0 : (1 - shown.get()) * distance }],
-  }));
   // A block with glass in it is whole from the moment it moves, and rises with no fade: the words on
-  // the glass are what fade in.
-  const block = useAnimatedStyle(() => ({
-    opacity: shown.get() > 0 ? 1 : 0,
+  // the glass are what fade in. It is the same style either way (see arrivalOpacity): the glass is
+  // found a moment after the block mounts, and a view given another animated style by then flashes.
+  const motion = useAnimatedStyle(() => ({
+    opacity: arrivalOpacity(shown.get(), glass),
     transform: [{ translateY: reduced ? 0 : (1 - shown.get()) * distance }],
   }));
   return (
     <ArrivingContext.Provider value={busy}>
       <ArrivalContext.Provider value={arrival}>
-        <Animated.View onLayout={onLayout} style={[style, glass ? block : motion]}>
+        <Animated.View onLayout={onLayout} style={[style, motion]}>
           {children}
         </Animated.View>
       </ArrivalContext.Provider>
@@ -204,9 +201,8 @@ function Leaving({ afterLayout = false, children }: PropsWithChildren<{ afterLay
     );
   }, [gone, placed]);
   const { glass, arrival } = useGlassAware(gone);
-  const fade = useAnimatedStyle(() => ({ opacity: gone.get() }));
   // Glass is held whole under the arrival while its bars fade, and cut once they are gone.
-  const whole = useAnimatedStyle(() => ({ opacity: gone.get() > 0 ? 1 : 0 }));
+  const fade = useAnimatedStyle(() => ({ opacity: arrivalOpacity(gone.get(), glass) }));
   return (
     <ArrivalContext.Provider value={arrival}>
       <Animated.View
@@ -214,7 +210,7 @@ function Leaving({ afterLayout = false, children }: PropsWithChildren<{ afterLay
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
         onLayout={onLayout}
-        style={[styles.leaving, glass ? whole : fade]}
+        style={[styles.leaving, fade]}
       >
         <BarsContext.Provider value>{children}</BarsContext.Provider>
       </Animated.View>
