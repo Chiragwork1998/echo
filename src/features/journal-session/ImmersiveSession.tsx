@@ -465,24 +465,28 @@ export function ImmersiveSession({
 
       <Wash
         kind="ground"
+        quiet
         visible={(quiet.visible && pageOpen && !shelf) || notice !== null}
         style={[styles.ground, span]}
       />
 
       <Animated.View pointerEvents="box-none" style={[styles.bottom, lift]}>
         {notice !== null && (
-          <View style={styles.notice} accessibilityLiveRegion="polite">
-            <View style={[styles.dot, { backgroundColor: colors.accentWarm }]} />
-            <EchoText
-              variant="bodyL"
-              serif
-              accessibilityRole="alert"
-              maxFontSizeMultiplier={1.5}
-              style={[styles.noticeText, { color: ink.text }, ink.shadow]}
-            >
-              {notice}
-            </EchoText>
-          </View>
+          // A line that appears because the state changed comes up, while its shade does.
+          <Arrive>
+            <View style={styles.notice} accessibilityLiveRegion="polite">
+              <View style={[styles.dot, { backgroundColor: colors.accentWarm }]} />
+              <EchoText
+                variant="bodyL"
+                serif
+                accessibilityRole="alert"
+                maxFontSizeMultiplier={1.5}
+                style={[styles.noticeText, { color: ink.text }, ink.shadow]}
+              >
+                {notice}
+              </EchoText>
+            </View>
+          </Arrive>
         )}
         <QuietControls
           visible={quiet.visible && pageOpen && !shelf}

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet } from 'react-native';
 import Animated, {
   Easing,
@@ -11,6 +11,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
+import { tokens } from '@/design/tokens';
 import { useReduceMotion } from '@/design/useReduceMotion';
 
 import { CARET, LIGHT, useSkyInk } from './sky';
@@ -18,6 +19,14 @@ import { CARET, LIGHT, useSkyInk } from './sky';
 const APPEAR_MS = 1100;
 const CARET_BEAT_MS = 1050;
 const LIGHT_BEAT_MS = 2300;
+/** The light takes up its breath over this long, and lets it go over that. */
+const BREATHE_IN_MS = 700;
+const BREATHE_OUT_MS = 900;
+/** The light glides to its new place (the words arrived, or were shown or hidden). */
+const SLIDE_MS = 600;
+/** How bright the resting light is. */
+const REST = 0.34;
+const HOUSE = Easing.bezier(0.22, 1, 0.36, 1);
 
 type Props = {
   /** A soft caret waiting to be written with, or the small light that breathes while recording. */
@@ -40,8 +49,20 @@ export function Beacon({ kind, visible, live = false, x, y }: Props) {
   const { glow } = useSkyInk();
   const presence = useSharedValue(0);
   const beat = useSharedValue(0);
+  // The light only: 0 is the resting light and 1 the breathing one. The light is the only mark on
+  // the sky while someone speaks, so going from one to the other is a blend and never a step.
+  const mix = useSharedValue(0);
+  const slide = useSharedValue(y - LIGHT / 2);
   const caret = kind === 'caret';
-  const pulsing = !reduced && (caret || live);
+  // The breath runs on while the light lets it go, so nothing drops from wherever it was.
+  const [lingering, setLingering] = useState(live);
+  if (live && !lingering) setLingering(true);
+  useEffect(() => {
+    if (live) return;
+    const timer = setTimeout(() => setLingering(false), BREATHE_OUT_MS);
+    return () => clearTimeout(timer);
+  }, [live]);
+  const pulsing = !reduced && (caret || live || lingering);
 
   useEffect(() => {
     presence.set(
@@ -52,6 +73,28 @@ export function Beacon({ kind, visible, live = false, x, y }: Props) {
       }),
     );
   }, [presence, reduced, visible]);
+
+  useEffect(() => {
+    if (caret) return;
+    mix.set(
+      withTiming(live ? 1 : 0, {
+        duration: reduced ? tokens.motion.fast : live ? BREATHE_IN_MS : BREATHE_OUT_MS,
+        easing: HOUSE,
+        reduceMotion: ReduceMotion.Never,
+      }),
+    );
+  }, [caret, live, mix, reduced]);
+
+  useEffect(() => {
+    if (caret) return;
+    slide.set(
+      withTiming(y - LIGHT / 2, {
+        duration: reduced ? 0 : SLIDE_MS,
+        easing: HOUSE,
+        reduceMotion: ReduceMotion.Never,
+      }),
+    );
+  }, [caret, reduced, slide, y]);
 
   useEffect(() => {
     if (!pulsing) {
@@ -69,25 +112,32 @@ export function Beacon({ kind, visible, live = false, x, y }: Props) {
 
   const style = useAnimatedStyle(() => {
     const b = beat.get();
-    // A caret dims almost to nothing between beats. The light only ever softens.
-    const floor = caret ? 0.12 : live ? 0.5 : 0.34;
-    const level = pulsing ? floor + (1 - floor) * b : live ? 0.9 : caret ? 0.85 : floor;
+    // A caret dims almost to nothing between beats.
+    if (caret) {
+      return { opacity: presence.get() * (pulsing ? 0.12 + 0.88 * b : 0.85), transform: [] };
+    }
+    const m = mix.get();
+    const breath = reduced ? 0.9 : 0.5 + 0.5 * b;
     return {
-      opacity: presence.get() * level,
-      transform: caret ? [] : [{ scale: pulsing ? 0.85 + 0.45 * b : 1 }],
+      opacity: presence.get() * (REST + (breath - REST) * m),
+      transform: [
+        { translateY: slide.get() },
+        { scale: reduced ? 1 : 1 + (0.85 + 0.45 * b - 1) * m },
+      ],
     };
   });
 
   return (
     <Animated.View
       pointerEvents="none"
+      testID="beacon"
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
       style={[
         caret ? styles.caret : styles.light,
         {
           left: caret ? x : x - LIGHT / 2,
-          top: caret ? y : y - LIGHT / 2,
+          top: caret ? y : 0,
           backgroundColor: glow,
           boxShadow: caret ? `0 0 10px 1px ${glow}` : `0 0 18px 4px ${glow}`,
         },

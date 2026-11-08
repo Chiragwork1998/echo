@@ -38,6 +38,8 @@ export type PracticeEnd = {
   finished: boolean;
   /** Rounds breathed, so a practice barely begun is not counted. */
   rounds: number;
+  /** How dark the screen was left, 0 to 1, for a screen that follows to lift it rather than cut. */
+  dark?: number;
 };
 
 type Props = {
@@ -97,7 +99,9 @@ export function PracticeView(props: Props) {
       setEnded(true);
       const rounds = run.timeline.current.segments.reduce((sum, s) => sum + s.rounds, 0);
       // A practice that ends in the dark stays dark until it is touched.
-      if (!run.timeline.current.endsInDark) onEndRef.current({ finished: true, rounds });
+      if (!run.timeline.current.endsInDark) {
+        onEndRef.current({ finished: true, rounds, dark: dark.get() });
+      }
     },
   });
   const { view, level, start } = run;
@@ -154,8 +158,8 @@ export function PracticeView(props: Props) {
     const rounds = now.moment?.round ?? 0;
     const finished = now.status === 'done';
     if (!finished) stop();
-    onEndRef.current({ finished, rounds });
-  }, [stop]);
+    onEndRef.current({ finished, rounds, dark: dark.get() });
+  }, [dark, stop]);
 
   const touch = () => {
     // A practice that has gone dark and quiet at its end opens onto what comes after.

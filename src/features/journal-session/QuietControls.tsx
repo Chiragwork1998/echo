@@ -13,11 +13,11 @@ import { copy } from '@/content/copy';
 import { tokens } from '@/design/tokens';
 import { useReduceMotion } from '@/design/useReduceMotion';
 
+import { Arrive } from './Arrive';
 import { sessionCopy } from './sessionCopy';
 import { CONTROLS, useSkyInk } from './sky';
+import { QUIET_FADE } from './Wash';
 
-const COME_MS = 900;
-const GO_MS = 160;
 const SIDE = 22;
 
 type Props = {
@@ -95,7 +95,7 @@ export function QuietControls({
   useEffect(() => {
     shown.set(
       withTiming(visible ? 1 : 0, {
-        duration: reduced ? tokens.motion.instant : visible ? COME_MS : GO_MS,
+        duration: reduced ? tokens.motion.instant : visible ? QUIET_FADE.come : QUIET_FADE.go,
         easing: Easing.out(Easing.quad),
         reduceMotion: ReduceMotion.Never,
       }),
@@ -124,14 +124,18 @@ export function QuietControls({
       </View>
       <View style={[styles.slot, styles.end]}>
         {canReflect && (
-          <Word
-            label={copy.firstEcho.cta}
-            onPress={onReflect}
-            strong
-            busy={reflecting}
-            disabled={reflecting}
-            testID="quiet-reflect"
-          />
+          // Reflect comes when the take is sealed, inside a row that may already be showing: it
+          // comes up with the house curve rather than appearing whole beside a Write still fading.
+          <Arrive testID="quiet-reflect-arrive">
+            <Word
+              label={copy.firstEcho.cta}
+              onPress={onReflect}
+              strong
+              busy={reflecting}
+              disabled={reflecting}
+              testID="quiet-reflect"
+            />
+          </Arrive>
         )}
       </View>
     </Animated.View>

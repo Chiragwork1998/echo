@@ -121,7 +121,7 @@ describe('a practice running', () => {
     expect(activateKeepAwakeAsync).toHaveBeenCalledWith(BREATH_KEEP_AWAKE_TAG);
     expect(deactivateKeepAwake).not.toHaveBeenCalled();
     await advance(62_000, 2000);
-    expect(onEnd).toHaveBeenCalledWith({ finished: true, rounds: 6 });
+    expect(onEnd).toHaveBeenCalledWith({ finished: true, rounds: 6, dark: expect.any(Number) });
     expect(deactivateKeepAwake).toHaveBeenCalledWith(BREATH_KEEP_AWAKE_TAG);
   });
 

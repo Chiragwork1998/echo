@@ -377,7 +377,11 @@ export function Pages({
           style={StyleSheet.absoluteFill}
         >
           <Head look={look} metrics={metrics} volume={volume} />
-          <ArrivalFade arrival={arrival} style={[styles.fill, { opacity: hidden ? 0 : 1 }]}>
+          <ArrivalFade
+            arrival={arrival}
+            filled={!concealed && value.length > 0}
+            style={[styles.fill, { opacity: hidden ? 0 : 1 }]}
+          >
             <Animated.View
               testID="page-words"
               style={[styles.fill, veiled]}

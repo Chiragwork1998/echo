@@ -21,7 +21,8 @@ export function ArriveFirst({
   onArrived,
   onLeave,
 }: {
-  onArrived: () => void;
+  /** The screen is handed on to the book. `dark` is how dark Arrive left it, 0 to 1. */
+  onArrived: (dark: number) => void;
   onLeave: () => void;
 }) {
   const plus = usePlus();
@@ -46,7 +47,7 @@ export function ArriveFirst({
     const { practice, updatePractice } = usePreferences.getState();
     updatePractice(afterArrive(practice, end.finished, deviceClock.localDay(new Date())));
     await restoreJournalAudio();
-    onArrived();
+    onArrived(end.dark ?? 0);
   };
   const leave = async () => {
     await restoreJournalAudio();

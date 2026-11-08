@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { router } from 'expo-router';
-import { AccessibilityInfo, AppState, BackHandler } from 'react-native';
+import { AccessibilityInfo, AppState, BackHandler, StyleSheet } from 'react-native';
 
 import { JOURNAL_AUDIO_MODE } from '@/features/breathe/audio';
 import { JournalSession } from '@/features/journal-session/JournalSession';
@@ -14,6 +14,8 @@ import {
 } from '@/features/journal';
 import { DEFAULT_PRACTICE, usePreferences } from '@/state/preferences';
 import { render } from '@/testing/render';
+
+import { RECEDE_AFTER_MS } from '@/features/breathe/PracticeView';
 
 import { becomeCopy } from './becomeCopy';
 import { holdRehearsal, heldRehearsal, releaseRehearsal } from './rehearsal';
@@ -153,6 +155,14 @@ describe('Arrive, before the morning session', () => {
     expect(usePreferences.getState().practice.arriveSkips).toBe(1);
   });
 
+  it('draws no lift for a person who tapped before Arrive had gone dark', async () => {
+    mockParams = { mode: 'write', prompt: 'become', arrive: '1' };
+    await render(<DailySessionScreen />);
+    await fireEvent.press(screen.getByTestId('practice-sky', { includeHiddenElements: true }));
+    await waitFor(() => expect(screen.getByLabelText(becomeCopy.question)).toBeTruthy());
+    expect(screen.queryByTestId('arrive-lift')).toBeNull();
+  });
+
   it('leaves for Today on Back during Arrive, without opening the book or counting a skip', async () => {
     const handlers: (() => boolean)[] = [];
     jest.spyOn(BackHandler, 'addEventListener').mockImplementation((_event, handler) => {
@@ -246,5 +256,21 @@ describe('Rehearse', () => {
     expect(screen.getByText('I will be calm with\nmy team today.')).toBeTruthy();
     const moving = JSON.stringify(screen.getByTestId('rehearse-line').props.style);
     expect(moving).toContain('"translateY":0');
+  });
+});
+
+// After the tests above, which leave their clock fake: this one needs it too.
+describe('the dark Arrive leaves behind', () => {
+  beforeEach(() => void jest.useFakeTimers());
+
+  it('lifts the dark Arrive left over the plate, so the book does not meet a cut', async () => {
+    mockParams = { mode: 'write', prompt: 'become', arrive: '1' };
+    await render(<DailySessionScreen />);
+    // Arrive has receded: the screen is almost black.
+    await act(async () => void jest.advanceTimersByTime(RECEDE_AFTER_MS + 1));
+    await fireEvent.press(screen.getByTestId('practice-sky', { includeHiddenElements: true }));
+    await waitFor(() => expect(screen.getByLabelText(becomeCopy.question)).toBeTruthy());
+    const lift = screen.getByTestId('arrive-lift');
+    expect(StyleSheet.flatten(lift.props.style).opacity).toBe(0.9);
   });
 });

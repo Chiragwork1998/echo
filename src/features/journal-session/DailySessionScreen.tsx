@@ -6,6 +6,7 @@ import { ArriveFirst } from '@/features/become/ArriveFirst';
 import { useHomeDissolve } from '@/features/home/dissolve';
 import { usePreferences } from '@/state/preferences';
 
+import { DarkLift } from './DarkLift';
 import { JournalSession } from './JournalSession';
 
 const first = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
@@ -41,21 +42,32 @@ export function DailySessionScreen() {
   const [arriving, setArriving] = useState(
     () => first(params.arrive) === '1' && arriveOffered(usePreferences.getState().practice),
   );
+  // How dark Arrive left the screen, lifted over the plate so that the book does not meet a cut.
+  const [lift, setLift] = useState(0);
   // Arrive first, then the book. Nothing of the session starts until it has handed over, so Back
   // during Arrive leaves nothing behind: it closes the session as Back from an empty book does.
   if (arriving) {
     return (
-      <ArriveFirst onArrived={() => setArriving(false)} onLeave={() => router.dismissTo('/home')} />
+      <ArriveFirst
+        onArrived={(dark) => {
+          setLift(dark);
+          setArriving(false);
+        }}
+        onLeave={() => router.dismissTo('/home')}
+      />
     );
   }
   return (
-    <JournalSession
-      // A different draft is a different session: the draft hook opens one draft per mount.
-      key={draftId ?? 'newest'}
-      variant="daily"
-      initialMode={modeFrom(first(params.mode))}
-      draftId={draftId}
-      become={first(params.prompt) === 'become'}
-    />
+    <>
+      <JournalSession
+        // A different draft is a different session: the draft hook opens one draft per mount.
+        key={draftId ?? 'newest'}
+        variant="daily"
+        initialMode={modeFrom(first(params.mode))}
+        draftId={draftId}
+        become={first(params.prompt) === 'become'}
+      />
+      {lift > 0 && <DarkLift from={lift} />}
+    </>
   );
 }

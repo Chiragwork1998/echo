@@ -25,27 +25,37 @@ const TONE = {
 export const GROUND_FADE = 220;
 const COME_MS = 900;
 const GO_MS = 600;
+/**
+ * How the quiet row and the shade under it come and go. They are one thing, so they share both the
+ * lengths and the curve: the words are never left standing on bright foliage while the shade is
+ * still on its way, and no dark band is left behind them when they have gone.
+ */
+export const QUIET_FADE = { come: 900, go: 200 } as const;
 
 type Props = {
   kind: 'sky' | 'ground';
   visible: boolean;
+  /** Rides with the quiet row: the same curve and the same quick leave (QUIET_FADE). */
+  quiet?: boolean;
   /** Where it sits: `top` or `bottom`, and `height`. It always spans the width. */
   style: ComponentProps<typeof Animated.View>['style'];
 };
 
-export function Wash({ kind, visible, style }: Props) {
+export function Wash({ kind, visible, quiet = false, style }: Props) {
   const { name } = useTheme();
   const reduced = useReduceMotion();
   const shown = useSharedValue(0);
   useEffect(() => {
+    const come = quiet ? QUIET_FADE.come : COME_MS;
+    const go = quiet ? QUIET_FADE.go : GO_MS;
     shown.set(
       withTiming(visible ? 1 : 0, {
-        duration: reduced ? 160 : visible ? COME_MS : GO_MS,
-        easing: Easing.inOut(Easing.quad),
+        duration: reduced ? 160 : visible ? come : go,
+        easing: quiet ? Easing.out(Easing.quad) : Easing.inOut(Easing.quad),
         reduceMotion: ReduceMotion.Never,
       }),
     );
-  }, [reduced, shown, visible]);
+  }, [quiet, reduced, shown, visible]);
   const fade = useAnimatedStyle(() => ({ opacity: shown.get() }));
 
   const tone = TONE[name];

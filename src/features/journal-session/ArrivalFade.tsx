@@ -18,6 +18,11 @@ type Props = {
   arrival: number;
   style: StyleProp<ViewStyle>;
   pointerEvents?: 'auto' | 'none' | 'box-none' | 'box-only';
+  /**
+   * The words are already readable, so new ones land plainly over them: the words the person was
+   * reading do not dip to a fifth of themselves at the moment the transcript is swapped in.
+   */
+  filled?: boolean;
   children: ReactNode;
 };
 
@@ -25,15 +30,24 @@ type Props = {
  * Lets words that were just spoken settle in, so they arrive rather than jump. It never touches
  * what the person types, only the moment a transcript lands. Reduce Motion: no animation at all.
  */
-export function ArrivalFade({ arrival, style, pointerEvents = 'box-none', children }: Props) {
+export function ArrivalFade({
+  arrival,
+  style,
+  pointerEvents = 'box-none',
+  filled = false,
+  children,
+}: Props) {
   const reduced = useReduceMotion();
   const opacity = useSharedValue(1);
   const seen = useRef(arrival);
+  // What `filled` was on the render before this one: the transcript has just landed in this render,
+  // so it is the page as it was a moment ago that decides whether there was anything to dim.
+  const was = useRef(filled);
 
   useEffect(() => {
     if (arrival === seen.current) return;
     seen.current = arrival;
-    if (reduced) {
+    if (reduced || was.current) {
       opacity.set(1);
       return;
     }
@@ -46,6 +60,10 @@ export function ArrivalFade({ arrival, style, pointerEvents = 'box-none', childr
       }),
     );
   }, [arrival, reduced, opacity]);
+  // Declared after the effect above, so that effect still sees the previous render's value.
+  useEffect(() => {
+    was.current = filled;
+  });
 
   const fade = useAnimatedStyle(() => ({ opacity: opacity.get() }));
   return (
