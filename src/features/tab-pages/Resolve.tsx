@@ -19,6 +19,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
+import { ArrivalContext, useGlassAware } from '@/components/arrival';
 import { EASE } from '@/design/ease';
 import { tokens } from '@/design/tokens';
 import { useReduceMotion } from '@/design/useReduceMotion';
@@ -38,6 +39,24 @@ const BLOCK_MS = 240;
 const SKELETON_OUT_MS = 180;
 /** Long enough for the last item of the longest staggered arrival, and a little over. */
 const SETTLE_MS = 760;
+/** How long an arrival that waits to be laid out waits for the word before it begins anyway. */
+const LAYOUT_WAIT_MS = 250;
+
+/**
+ * Whether a thing that waits to be laid out has been. Mounting something heavy takes a frame or
+ * more, and an animation timed from the commit has spent that time before the first frame of the
+ * thing is drawn: it is shown already part of the way in, and reads as a pop. So it starts when the
+ * layout is reported, or, if none ever is, a little later.
+ */
+function useLaidOut(wait: boolean) {
+  const [placed, setPlaced] = useState(!wait);
+  useEffect(() => {
+    if (placed) return;
+    const late = setTimeout(() => setPlaced(true), LAYOUT_WAIT_MS);
+    return () => clearTimeout(late);
+  }, [placed]);
+  return { placed, onLayout: placed ? undefined : () => setPlaced(true) };
+}
 
 /** Whether the bars of the skeleton below are showing, when a Resolve above is keeping the time. */
 const BarsContext = createContext<boolean | null>(null);
@@ -47,7 +66,7 @@ const ArrivingContext = createContext(false);
 export const useIsArriving = () => useContext(ArrivingContext);
 
 /** True while content is arriving from a skeleton that was seen, so rows may arrive one by one. */
-const ArrivalContext = createContext(false);
+const ArrivalOrderContext = createContext(false);
 
 /**
  * A skeleton's body. The skeleton stays mounted, and in the accessibility tree, from the first
@@ -75,8 +94,15 @@ export function Bars({ children, immediate = false }: PropsWithChildren<{ immedi
       }),
     );
   }, [reduced, shown, visible]);
-  const style = useAnimatedStyle(() => ({ opacity: shown.get() }));
-  return <Animated.View style={style}>{children}</Animated.View>;
+  const { glass, arrival } = useGlassAware(shown);
+  const fade = useAnimatedStyle(() => ({ opacity: shown.get() }));
+  // Glass is drawn whole while the bars are on their way, and not at all before they are.
+  const whole = useAnimatedStyle(() => ({ opacity: shown.get() > 0 ? 1 : 0 }));
+  return (
+    <ArrivalContext.Provider value={arrival}>
+      <Animated.View style={glass ? whole : fade}>{children}</Animated.View>
+    </ArrivalContext.Provider>
+  );
 }
 
 type RiseProps = PropsWithChildren<{
@@ -87,6 +113,8 @@ type RiseProps = PropsWithChildren<{
   distance?: number;
   /** False draws it at rest at once. Read once, at mount: a thing arrives when it appears. */
   animate?: boolean;
+  /** Begins when it has been laid out, so that mounting it is not spent from its arrival. Read at mount. */
+  afterLayout?: boolean;
   style?: StyleProp<ViewStyle>;
 }>;
 
@@ -99,17 +127,19 @@ export function Rise({
   duration = ARRIVE_MS,
   distance = RISE,
   animate = true,
+  afterLayout = false,
   style,
   children,
 }: RiseProps) {
   const reduced = useReduceMotion();
   const [moving] = useState(animate);
+  const { placed, onLayout } = useLaidOut(moving && afterLayout);
   const shown = useSharedValue(moving ? 0 : 1);
   // True while this is arriving, so something inside that arrives by itself (a Notice) does not
   // arrive a second time on top of it. Over once the arrival has had its time.
   const [busy, setBusy] = useState(moving);
   useEffect(() => {
-    if (!moving) return;
+    if (!moving || !placed) return;
     shown.set(
       withDelay(
         reduced ? 0 : delay,
@@ -125,20 +155,31 @@ export function Rise({
       (reduced ? 0 : delay) + (reduced ? tokens.motion.fast : duration) + 40,
     );
     return () => clearTimeout(over);
-  }, [delay, duration, moving, reduced, shown]);
+  }, [delay, duration, moving, placed, reduced, shown]);
+  const { glass, arrival } = useGlassAware(shown);
   const motion = useAnimatedStyle(() => ({
     opacity: shown.get(),
     transform: [{ translateY: reduced ? 0 : (1 - shown.get()) * distance }],
   }));
+  // A block with glass in it is whole from the moment it moves, and rises with no fade: the words on
+  // the glass are what fade in.
+  const block = useAnimatedStyle(() => ({
+    opacity: shown.get() > 0 ? 1 : 0,
+    transform: [{ translateY: reduced ? 0 : (1 - shown.get()) * distance }],
+  }));
   return (
     <ArrivingContext.Provider value={busy}>
-      <Animated.View style={[style, motion]}>{children}</Animated.View>
+      <ArrivalContext.Provider value={arrival}>
+        <Animated.View onLayout={onLayout} style={[style, glass ? block : motion]}>
+          {children}
+        </Animated.View>
+      </ArrivalContext.Provider>
     </ArrivingContext.Provider>
   );
 }
 
 /** True while content arrives from a skeleton the person saw: a row may then wait its turn. */
-export const useArriving = () => useContext(ArrivalContext);
+export const useArriving = () => useContext(ArrivalOrderContext);
 
 /** A row of a list that arrives with the others, one step after the one before, and only then. */
 export function ArriveInOrder({
@@ -153,24 +194,67 @@ export function ArriveInOrder({
   return moving ? <Rise delay={Math.min(index, cap - 1) * step}>{children}</Rise> : <>{children}</>;
 }
 
-function Leaving({ children }: PropsWithChildren) {
+function Leaving({ afterLayout = false, children }: PropsWithChildren<{ afterLayout?: boolean }>) {
   const gone = useSharedValue(1);
+  const { placed, onLayout } = useLaidOut(afterLayout);
   useEffect(() => {
+    if (!placed) return;
     gone.set(
       withTiming(0, { duration: SKELETON_OUT_MS, easing: EASE, reduceMotion: ReduceMotion.Never }),
     );
-  }, [gone]);
-  const style = useAnimatedStyle(() => ({ opacity: gone.get() }));
+  }, [gone, placed]);
+  const { glass, arrival } = useGlassAware(gone);
+  const fade = useAnimatedStyle(() => ({ opacity: gone.get() }));
+  // Glass is held whole under the arrival while its bars fade, and cut once they are gone.
+  const whole = useAnimatedStyle(() => ({ opacity: gone.get() > 0 ? 1 : 0 }));
   return (
-    <Animated.View
-      pointerEvents="none"
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
-      style={[styles.leaving, style]}
-    >
-      <BarsContext.Provider value>{children}</BarsContext.Provider>
-    </Animated.View>
+    <ArrivalContext.Provider value={arrival}>
+      <Animated.View
+        pointerEvents="none"
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        onLayout={onLayout}
+        style={[styles.leaving, glass ? whole : fade]}
+      >
+        <BarsContext.Provider value>{children}</BarsContext.Provider>
+      </Animated.View>
+    </ArrivalContext.Provider>
   );
+}
+
+/**
+ * A skeleton that stays where it was, under what has come to take its place, while its bars fade
+ * away: the hand-over, with no bare sky between. It lies over the top of whatever it is put in (a
+ * container the new content fills), is hidden from everyone, and is untouchable. The caller takes it
+ * away (see useHandOver) once the arrival is in. The glass of the skeleton is held whole until its
+ * bars are gone, as a skeleton leaving Resolve's does.
+ */
+export function Behind({ children }: PropsWithChildren) {
+  return <Leaving afterLayout>{children}</Leaving>;
+}
+
+/**
+ * True for `holdMs` after what a skeleton waited on has been answered with something new: `waiting`
+ * ends, and `key` (what was answered with) is not what it was when the waiting began. An answer that
+ * brings nothing new has nothing to hand over to.
+ */
+export function useHandOver(waiting: boolean, key: unknown, holdMs: number): boolean {
+  const [seen, setSeen] = useState({ waiting, key, handing: false });
+  if (seen.waiting !== waiting) {
+    setSeen({
+      waiting,
+      // What it was when the waiting began.
+      key: waiting ? key : seen.key,
+      handing: !waiting && key !== seen.key,
+    });
+  }
+  const { handing } = seen;
+  useEffect(() => {
+    if (!handing) return;
+    const over = setTimeout(() => setSeen((now) => ({ ...now, handing: false })), holdMs);
+    return () => clearTimeout(over);
+  }, [handing, holdMs]);
+  return handing;
 }
 
 type Phase = 'waiting' | 'arriving' | 'settled';
@@ -256,7 +340,7 @@ export function Resolve({
   return (
     <View style={style}>
       {leaving ? <Leaving>{skeleton}</Leaving> : null}
-      <ArrivalContext.Provider value={ordered && arriving}>
+      <ArrivalOrderContext.Provider value={ordered && arriving}>
         {items.map((item, index) =>
           ordered ? (
             <Fragment key={keyOf(item, index)}>{item}</Fragment>
@@ -272,7 +356,7 @@ export function Resolve({
             </Rise>
           ),
         )}
-      </ArrivalContext.Provider>
+      </ArrivalOrderContext.Provider>
     </View>
   );
 }

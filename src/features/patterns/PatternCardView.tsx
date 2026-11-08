@@ -213,7 +213,8 @@ export function PatternCardView({
     </Surface>
   );
   return (
-    <Reveal>
+    // Laid out before it begins: a card takes a frame or more to mount, and was seen already in.
+    <Reveal afterLayout>
       <View style={styles.stack}>
         <PlayingCard
           card={card}

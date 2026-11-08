@@ -1,17 +1,22 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { useState } from 'react';
+import { Pressable, Text } from 'react-native';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 
 import { ThemeProvider } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 import { ownWindowOpen } from '@/state/ownWindows';
 import { usePreferences } from '@/state/preferences';
+import { reanimatedMock } from '@/testing/reanimatedMock';
 import {
   backOutOfDialog,
   chooseInDialog,
   dialogChoices,
   dialogPrimary,
+  modalHost,
   openDialog,
   renderDialogHost,
+  renderWithDialogs,
   tapOutsideDialog,
 } from '@/testing/dialogs';
 
@@ -204,7 +209,7 @@ describe('Back and a tap outside', () => {
       { text: 'Cancel', style: 'cancel', onPress: cancel },
       { text: 'Record again' },
     ]);
-    const back = screen.getByTestId('dialog').props.onRequestClose as () => void;
+    const back = modalHost().onRequestClose as () => void;
     await act(() => {
       back();
       back();
@@ -399,5 +404,105 @@ describe('Day and Night', () => {
     expect(screen.getByText('Record again')).toHaveStyle({ color: day.textPrimary });
     expect(screen.getByText('Record again').parent).toHaveStyle({ backgroundColor: day.textInk });
     expect(screen.getByText('Cancel')).toHaveStyle({ color: day.textInk });
+  });
+});
+
+describe('a choice that takes the page away', () => {
+  // Keep draft, and Discard on the first echo: the answer is given, and the session navigates, while
+  // the sheet leaves. The window must go on being one window, fading, from the choice to its end.
+  const realTiming = reanimatedMock.withTiming;
+  const timing = jest.spyOn(reanimatedMock, 'withTiming');
+  afterEach(() => timing.mockImplementation(realTiming as never));
+
+  function Pages() {
+    const [page, setPage] = useState<'session' | 'home'>('session');
+    return page === 'session' ? (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Back"
+        onPress={() =>
+          showDialog('Keep your draft?', 'It stays on this device.', [
+            { text: 'Keep draft', onPress: () => setPage('home') },
+            { text: 'Stay', style: 'cancel' },
+          ])
+        }
+      >
+        <Text>Back</Text>
+      </Pressable>
+    ) : (
+      <Text>Home</Text>
+    );
+  }
+
+  const stage = () => screen.queryByTestId('dialog-stage', { includeHiddenElements: true });
+  type Done = (finished: boolean) => void;
+
+  /** The screen is busy mounting the page it is going to: no fade is drawn until it lets go. */
+  function busy() {
+    const waiting: Done[] = [];
+    timing.mockImplementation(((value: unknown, _config: unknown, done?: Done) => {
+      if (done) waiting.push(done);
+      return value;
+    }) as never);
+    return () =>
+      act(() => {
+        waiting.splice(0).forEach((done) => done(true));
+      });
+  }
+
+  /** One character for each frame: the window is there (S) or it is not (.). */
+  async function frames(count: number) {
+    let drawn = '';
+    for (let frame = 0; frame < count; frame++) {
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(16);
+      });
+      drawn += stage() ? 'S' : '.';
+    }
+    return drawn;
+  }
+
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  it('never blinks: the window is there for every frame of the exit, then gone for good', async () => {
+    await renderWithDialogs(<Pages />);
+    await fireEvent.press(screen.getByRole('button', { name: 'Back' }));
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(700);
+    });
+    await fireEvent.press(screen.getByRole('button', { name: 'Keep draft' }));
+    expect(screen.getByText('Home')).toBeTruthy();
+    expect(await frames(40)).toMatch(/^S+\.+$/);
+  });
+
+  it('is still whole when the screen is too busy to draw its fade, and goes only once it has been drawn', async () => {
+    await renderWithDialogs(<Pages />);
+    await fireEvent.press(screen.getByRole('button', { name: 'Back' }));
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(700);
+    });
+    const draw = busy();
+    await fireEvent.press(screen.getByRole('button', { name: 'Keep draft' }));
+    // 900 ms of a screen that cannot draw: a clock-driven exit would have taken the window at 280.
+    expect(await frames(56)).toBe('S'.repeat(56));
+    await draw();
+    expect(stage()).toBeNull();
+  });
+
+  it('leaves the window’s own properties alone from the choice to the last frame', async () => {
+    await renderWithDialogs(<Pages />);
+    await fireEvent.press(screen.getByRole('button', { name: 'Back' }));
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(700);
+    });
+    const told = () =>
+      Object.entries(modalHost()).filter(([, value]) => typeof value !== 'function');
+    const open = told();
+    await fireEvent.press(screen.getByRole('button', { name: 'Keep draft' }));
+    expect(told()).toEqual(open);
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(1500);
+    });
   });
 });

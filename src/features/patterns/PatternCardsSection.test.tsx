@@ -137,6 +137,27 @@ describe('pattern cards', () => {
     expect(screen.queryByText(patternsCopy.consent.title)).toBeNull();
   });
 
+  it('hands the reading over: the skeleton stands under the cards as they arrive, and goes only when they are in', async () => {
+    // The walk (c2): the skeleton went, the sky was bare, and the card popped in. A hand-over has
+    // no gap: the skeleton is still there when the card begins to arrive, and is taken away under it.
+    read.mockResolvedValue({
+      status: 'cards',
+      entriesRead: 5,
+      cards: [card('Guilty about resting')],
+    });
+    await render(<PatternsScreen />);
+    await press(patternsCopy.cards.read);
+    await press(patternsCopy.consent.agree);
+    expect(await screen.findByText('Guilty about resting')).toBeTruthy();
+    const skeleton = () =>
+      screen.queryByText(patternsCopy.cards.reading, { includeHiddenElements: true });
+    // Still there, hidden from everyone, under the arrival.
+    expect(skeleton()).toBeTruthy();
+    expect(screen.queryByText(patternsCopy.cards.reading)).toBeNull();
+    // And gone once the card has arrived.
+    await waitFor(() => expect(skeleton()).toBeNull(), { timeout: 3000 });
+  });
+
   it('keeps the earlier cards and says so calmly when the reader cannot be reached', async () => {
     jest.mocked(loadReading).mockResolvedValue({ ok: true, value: earlier });
     usePreferences.setState({ patternsConsent: CONSENT_VERSION });
@@ -191,6 +212,20 @@ describe('pattern cards', () => {
     await press(/^Delete these cards/);
     await waitFor(() => expect(screen.queryByText('Quiet scoring')).toBeNull());
     expect(clearReading).toHaveBeenCalled();
+  });
+
+  it('hands nothing over when no card came: the skeleton does not linger over the cards that were there', async () => {
+    jest.mocked(loadReading).mockResolvedValue({ ok: true, value: earlier });
+    usePreferences.setState({ patternsConsent: CONSENT_VERSION });
+    read.mockResolvedValue({ status: 'none', entriesRead: 5 });
+    await render(<PatternsScreen />);
+    await press(patternsCopy.cards.readAgain);
+    expect(
+      await screen.findByText(`${patternsCopy.cards.none} ${patternsCopy.cards.keptEarlier}`),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText(patternsCopy.cards.reading, { includeHiddenElements: true }),
+    ).toBeNull();
   });
 
   it('says nothing clear came up, and still keeps what was there', async () => {

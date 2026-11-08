@@ -1,13 +1,15 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
 import Animated, {
   Easing,
   ReduceMotion,
   runOnJS,
+  useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
 
 import { EchoText } from '@/components/EchoText';
@@ -28,7 +30,8 @@ import {
   stepMinutes,
   type ClockText,
 } from './time';
-import { useTone } from './tone';
+import { useTone, type Tone } from './tone';
+import { useClockText } from './useClock';
 
 // Dial size by viewport: 262 pt on the 393 pt reference, within the spec's 248 to 292 range.
 const SIZE = { min: 248, max: 292, ratio: 262 / 393 };
@@ -55,6 +58,54 @@ type Props = {
   onOpenPicker: () => void;
   disabled?: boolean;
 };
+
+/**
+ * The time written on the dial: the time the handle is at. A far tap or a fast drag carries the
+ * handle round over half a second, and the number rides with it, a step at a time: written at once it
+ * was at its place while the handle was still turning, and read as a jump. What was chosen is still
+ * said at once, to a screen reader and by the button's name, from the dial's `clock`. It is a part of
+ * its own so that each step redraws only the number, never the face.
+ */
+function DialTime({
+  angle,
+  start,
+  k,
+  tone,
+}: {
+  angle: SharedValue<number>;
+  start: number;
+  k: number;
+  tone: Tone;
+}) {
+  const [shown, setShown] = useState(start);
+  const written = useClockText(shown);
+  useAnimatedReaction(
+    () => snapMinutes(angleToMinutes(angle.get())),
+    (now, was) => {
+      if (now !== was) runOnJS(setShown)(now);
+    },
+  );
+  return (
+    <EchoText
+      variant="displayL"
+      serif
+      allowFontScaling={false}
+      style={[styles.main, { fontSize: 43 * k, lineHeight: 50 * k, color: tone.ink }]}
+    >
+      {written.main}
+      {written.period ? (
+        <EchoText
+          variant="displayL"
+          serif
+          allowFontScaling={false}
+          style={{ fontSize: 34 * k, letterSpacing: 1.2, color: tone.ink }}
+        >
+          {` ${written.period}`}
+        </EchoText>
+      ) : null}
+    </EchoText>
+  );
+}
 
 /**
  * A 24-hour glass dial. Dragging runs entirely on the UI thread: the pan gesture turns one shared
@@ -190,24 +241,7 @@ export function TimeDial({
           },
         ]}
       >
-        <EchoText
-          variant="displayL"
-          serif
-          allowFontScaling={false}
-          style={[styles.main, { fontSize: 43 * k, lineHeight: 50 * k, color: tone.ink }]}
-        >
-          {clock.main}
-          {clock.period ? (
-            <EchoText
-              variant="displayL"
-              serif
-              allowFontScaling={false}
-              style={{ fontSize: 34 * k, letterSpacing: 1.2, color: tone.ink }}
-            >
-              {` ${clock.period}`}
-            </EchoText>
-          ) : null}
-        </EchoText>
+        <DialTime angle={angle} start={minutes} k={k} tone={tone} />
       </Pressable>
 
       <View

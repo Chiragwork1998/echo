@@ -8,6 +8,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
+import { ArrivalContext, useGlassAware } from '@/components/arrival';
 import { EASE } from '@/design/ease';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
@@ -81,6 +82,9 @@ export function EchoesList({ rows, onOpen, waiting = false }: Props) {
           }),
     );
   }, [dim, reduced, waiting]);
+  // Dimmed glass loses its blur on Android, so with glass in the list the list stays whole and the
+  // rows on the glass are what dim.
+  const { glass, arrival } = useGlassAware(dim);
   const dimmed = useAnimatedStyle(() => ({ opacity: dim.get() }));
 
   let index = 0;
@@ -91,35 +95,37 @@ export function EchoesList({ rows, onOpen, waiting = false }: Props) {
       accessibilityState={waiting ? { busy: true } : undefined}
       accessibilityLiveRegion={waiting ? 'polite' : 'none'}
     >
-      <Animated.View
-        style={[styles.months, dimmed]}
-        pointerEvents={waiting ? 'none' : 'auto'}
-        accessibilityElementsHidden={waiting}
-        importantForAccessibility={waiting ? 'no-hide-descendants' : 'auto'}
-      >
-        {byMonth(rows).map((month) => {
-          const first = index;
-          return (
-            <View key={month.key || 'undated'} style={styles.month}>
-              {month.title ? (
-                <ArriveInOrder index={first} step={ROW_STEP_MS} cap={ROWS_THAT_ARRIVE}>
-                  <Heading>{month.title}</Heading>
-                </ArriveInOrder>
-              ) : null}
-              <Surface>
-                {month.rows.map((entry, row) => (
-                  <Fragment key={entry.id}>
-                    {row > 0 && <Between />}
-                    <ArriveInOrder index={index++} step={ROW_STEP_MS} cap={ROWS_THAT_ARRIVE}>
-                      <EntryRow entry={entry} onOpen={onOpen} />
-                    </ArriveInOrder>
-                  </Fragment>
-                ))}
-              </Surface>
-            </View>
-          );
-        })}
-      </Animated.View>
+      <ArrivalContext.Provider value={arrival}>
+        <Animated.View
+          style={[styles.months, glass ? undefined : dimmed]}
+          pointerEvents={waiting ? 'none' : 'auto'}
+          accessibilityElementsHidden={waiting}
+          importantForAccessibility={waiting ? 'no-hide-descendants' : 'auto'}
+        >
+          {byMonth(rows).map((month) => {
+            const first = index;
+            return (
+              <View key={month.key || 'undated'} style={styles.month}>
+                {month.title ? (
+                  <ArriveInOrder index={first} step={ROW_STEP_MS} cap={ROWS_THAT_ARRIVE}>
+                    <Heading>{month.title}</Heading>
+                  </ArriveInOrder>
+                ) : null}
+                <Surface>
+                  {month.rows.map((entry, row) => (
+                    <Fragment key={entry.id}>
+                      {row > 0 && <Between />}
+                      <ArriveInOrder index={index++} step={ROW_STEP_MS} cap={ROWS_THAT_ARRIVE}>
+                        <EntryRow entry={entry} onOpen={onOpen} />
+                      </ArriveInOrder>
+                    </Fragment>
+                  ))}
+                </Surface>
+              </View>
+            );
+          })}
+        </Animated.View>
+      </ArrivalContext.Provider>
     </View>
   );
 }

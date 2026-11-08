@@ -31,26 +31,31 @@ export function QuietAction({ label, onPress, busy, hint }: Props) {
       onPress={onPress}
       style={({ pressed }) => [styles.press, pressed && styles.pressed]}
     >
-      <Surface radius={HEIGHT / 2}>
-        <View style={styles.inside}>
-          <EchoText
-            variant="label"
-            numberOfLines={1}
-            maxFontSizeMultiplier={1.4}
-            style={busy ? styles.working : undefined}
-          >
-            {label}
-          </EchoText>
-          {busy ? <TideLine /> : null}
-        </View>
-      </Surface>
+      {({ pressed }) => (
+        <Surface radius={HEIGHT / 2}>
+          {/* Pressed, the label dims and the glass stays whole: Android's blur is lost under any view
+              that is see-through, and a pill that went pale as it was touched would look broken. */}
+          <View style={[styles.inside, pressed && styles.dimmed]}>
+            <EchoText
+              variant="label"
+              numberOfLines={1}
+              maxFontSizeMultiplier={1.4}
+              style={busy ? styles.working : undefined}
+            >
+              {label}
+            </EchoText>
+            {busy ? <TideLine /> : null}
+          </View>
+        </Surface>
+      )}
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   press: { alignSelf: 'center' },
-  pressed: { opacity: 0.72, transform: [{ scale: 0.985 }] },
+  pressed: { transform: [{ scale: 0.985 }] },
+  dimmed: { opacity: 0.72 },
   working: { opacity: 0.72 },
   inside: {
     minHeight: HEIGHT,

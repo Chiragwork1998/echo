@@ -1,4 +1,4 @@
-import { fireEvent, screen } from '@testing-library/react-native';
+import { fireEvent, screen, waitFor } from '@testing-library/react-native';
 
 import { cue } from '@/design/haptics';
 import { useReduceMotion } from '@/design/useReduceMotion';
@@ -60,14 +60,22 @@ describe('PatternCardView', () => {
 
   it('arrives over 560 ms, and under Reduce Motion over no more than 180 ms of opacity', async () => {
     const view = await render(<PatternCardView card={card} index={1} total={3} />);
-    expect(revealMs()).toContain(560);
+    // It begins once it has been laid out (or, if nothing says so, a quarter of a second on).
+    await waitFor(() => expect(revealMs()).toContain(560));
     await view.unmount();
     timing.mockClear();
     jest.mocked(useReduceMotion).mockReturnValue(true);
     await render(<PatternCardView card={card} index={1} total={3} />);
+    await waitFor(() => expect(revealMs()).toContain(180));
     expect(revealMs()).not.toContain(560);
     expect(revealMs()).not.toContain(240);
-    expect(revealMs()).toContain(180);
+  });
+
+  it('is not drawn at all until it has begun to arrive: never part of the way in at its first frame', async () => {
+    const view = await render(<PatternCardView card={card} index={1} total={3} />);
+    expect(revealMs()).not.toContain(560);
+    await waitFor(() => expect(revealMs()).toContain(560));
+    await view.unmount();
   });
 
   it('shows a card already seen face up, with its reading', async () => {

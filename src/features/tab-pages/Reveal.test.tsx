@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react-native';
+import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import { StyleSheet, Text } from 'react-native';
 
 import { useReduceMotion } from '@/design/useReduceMotion';
@@ -57,5 +57,86 @@ describe('Reveal', () => {
       transform: { translateY: number }[];
     };
     expect(style.transform).toEqual([{ translateY: 0 }]);
+  });
+});
+
+describe('Reveal that waits to be laid out', () => {
+  // Mounting a heavy card takes a frame or more, and an animation timed from the commit has spent
+  // that time before a single frame of the card is drawn: it is shown already part of the way in,
+  // and reads as a pop (the walk, c2). So it starts once the card has been laid out.
+  const placed = () =>
+    fireEvent(screen.getByText('A card'), 'layout', {
+      nativeEvent: { layout: { x: 0, y: 0, width: 340, height: 520 } },
+    });
+
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  it('does not begin until it has been laid out, and then begins at once', async () => {
+    const view = await render(
+      <Reveal afterLayout>
+        <Text>A card</Text>
+      </Reveal>,
+    );
+    expect(timing).not.toHaveBeenCalled();
+    await act(() => {
+      placed();
+    });
+    expect(durations()).toEqual([560]);
+    await view.unmount();
+  });
+
+  it('is not drawn before then: it is nothing, not already half there', async () => {
+    const view = await render(
+      <Reveal afterLayout>
+        <Text>A card</Text>
+      </Reveal>,
+    );
+    const style = StyleSheet.flatten(screen.getByText('A card').parent?.props.style) as {
+      opacity: number;
+    };
+    expect(style.opacity).toBe(0);
+    await view.unmount();
+  });
+
+  it('begins anyway if no layout is ever reported, a quarter of a second on', async () => {
+    const view = await render(
+      <Reveal afterLayout>
+        <Text>A card</Text>
+      </Reveal>,
+    );
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(249);
+    });
+    expect(timing).not.toHaveBeenCalled();
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(1);
+    });
+    expect(durations()).toEqual([560]);
+    await view.unmount();
+  });
+
+  it('begins once, however many times it is laid out', async () => {
+    const view = await render(
+      <Reveal afterLayout>
+        <Text>A card</Text>
+      </Reveal>,
+    );
+    await act(() => {
+      placed();
+      placed();
+    });
+    expect(durations()).toEqual([560]);
+    await view.unmount();
+  });
+
+  it('a Reveal that does not ask to wait begins at mount, as it always did', async () => {
+    const view = await render(
+      <Reveal>
+        <Text>A card</Text>
+      </Reveal>,
+    );
+    expect(durations()).toEqual([560]);
+    await view.unmount();
   });
 });

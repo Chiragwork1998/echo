@@ -17,6 +17,7 @@ import {
   Surface,
   usePlateText,
 } from '@/features/tab-pages/parts';
+import { Behind, useHandOver } from '@/features/tab-pages/Resolve';
 import { Reveal } from '@/features/tab-pages/Reveal';
 import { detail, prose, supporting } from '@/features/tab-pages/textStyles';
 import { useRequirePlus } from '@/services/plus';
@@ -32,6 +33,9 @@ import { SupportPanel } from './SupportPanel';
 import { usePatternCards, type CardsNotice } from './usePatternCards';
 
 const { cards: words } = patternsCopy;
+
+/** The skeleton stays under the cards until they have come in: their rise (560 ms) and a little over. */
+const HAND_OVER_MS = 700;
 
 /** "6 November 2026", in the device's language. */
 const readDate = (readAt: number) =>
@@ -134,6 +138,10 @@ export function PatternCardsSection({ entries }: { entries: readonly EntrySummar
     void sendWaitingReports();
   }, []);
 
+  // The reading skeleton does not go the moment the cards come: it stands under them while they
+  // arrive, so the sky is never bare between the two.
+  const handing = useHandOver(cards.reading, saved?.readAt, HAND_OVER_MS);
+
   if (!cards.loaded) return null;
 
   const text = notice ? noticeText(notice, hasCards) : null;
@@ -182,6 +190,11 @@ export function PatternCardsSection({ entries }: { entries: readonly EntrySummar
 
       {saved && (
         <View style={styles.cards}>
+          {handing ? (
+            <Behind>
+              <Reading />
+            </Behind>
+          ) : null}
           {saved.cards.map((card, index) => {
             const key = `${saved.readAt}-${index}`;
             return (

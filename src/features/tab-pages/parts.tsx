@@ -11,11 +11,13 @@ import {
   Platform,
   Pressable,
   StyleSheet,
+  useWindowDimensions,
   View,
   type StyleProp,
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
+import { OnGlass } from '@/components/arrival';
 import { EchoText } from '@/components/EchoText';
 import { GlassBlur } from '@/components/GlassCard';
 import { Icon } from '@/components/Icon';
@@ -121,7 +123,7 @@ export function Surface({
       {tint && !reduced ? (
         <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: tint }]} />
       ) : null}
-      {children}
+      <OnGlass>{children}</OnGlass>
     </View>
   );
 }
@@ -183,6 +185,11 @@ export function Section({ title, children }: PropsWithChildren<{ title?: string 
 type RowProps = {
   label: string;
   detail?: string;
+  /**
+   * Lines of detail the row holds room for, whatever the detail says. For a row whose detail is
+   * replaced by something shorter (a description by its result), so that the rows below it never move.
+   */
+  detailLines?: number;
   /** A short value set at the end of the row, such as a time. */
   value?: string;
   /** Without onPress the row is read-only text. */
@@ -203,6 +210,7 @@ type RowProps = {
 export function Row({
   label,
   detail,
+  detailLines,
   value,
   onPress,
   role = 'button',
@@ -215,6 +223,12 @@ export function Row({
   spoken: override,
 }: RowProps) {
   const { colors } = useTheme();
+  const { fontScale } = useWindowDimensions();
+  // The detail's lines grow with the type the person chose, as far as the type itself is allowed to.
+  const room =
+    detailLines === undefined
+      ? undefined
+      : { minHeight: detailLines * detailText.lineHeight! * Math.min(fontScale, 1.6) };
   const extra = detail ?? value;
   const spoken = override ?? (extra && role !== 'radio' ? `${label}. ${extra}` : label);
   const body = (
@@ -229,7 +243,7 @@ export function Row({
           <EchoText
             variant="bodyM"
             color="textSecondary"
-            style={detailText}
+            style={[detailText, room]}
             maxFontSizeMultiplier={1.6}
           >
             {keepTogether(detail)}

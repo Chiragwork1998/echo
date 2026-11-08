@@ -169,7 +169,11 @@ function EchoCard({ summary, strong }: CardProps) {
       : openEntry(entry.id);
 
   return (
-    <GlassCard radius={tokens.radius.medium} strength={strong ? 'strong' : 'regular'}>
+    <GlassCard
+      radius={tokens.radius.medium}
+      strength={strong ? 'strong' : 'regular'}
+      contentKey={draft ? `draft:${draft.id}` : `recent:${entry.id}`}
+    >
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`${label}. ${display.title}. ${display.openable ? meta : ''}`}
