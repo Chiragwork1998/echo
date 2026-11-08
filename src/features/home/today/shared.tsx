@@ -35,7 +35,13 @@ export function useClock() {
   return now.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 }
 
-/** A crop of the Home plate, so a thumbnail always looks like where the person is. */
+/**
+ * A crop of the Home plate, so a thumbnail always looks like where the person is.
+ *
+ * It is the plate at a size of its own, so it is decoded on its own and can be a frame or two behind
+ * the card it sits on (the walk, F5: empty, then popped in). It therefore dissolves in over the glass
+ * rather than appearing, which is invisible when it is ready at once and a soft arrival when it is not.
+ */
 export function PlateThumb({
   size,
   height = size,
@@ -60,7 +66,7 @@ export function PlateThumb({
       <Image
         source={backgroundSources[name].home}
         contentFit="fill"
-        transition={0}
+        transition={{ duration: tokens.motion.fast, effect: 'cross-dissolve' }}
         style={{
           position: 'absolute',
           width: imageWidth,
