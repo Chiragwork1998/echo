@@ -51,6 +51,24 @@ describe('the ground shade', () => {
     expect(last()[1]).toMatchObject({ duration: 600 });
   });
 
+  it('goes as slowly as it is asked to, where something else goes as slowly (Breathe’s dark: 3 s)', async () => {
+    const shade = (visible: boolean) => (
+      <Wash kind="ground" visible={visible} goMs={3000} style={{}} />
+    );
+    const { rerender } = await rendered(shade(true));
+    // Coming is the same as ever; only the leaving takes its own time.
+    expect(last()[1]).toMatchObject({ duration: 900 });
+    await rerender(shade(false));
+    expect(last()[1]).toMatchObject({ duration: 3000 });
+    // A shade that rides with the quiet row keeps the row's own 200 ms whatever it is asked.
+    const quiet = (visible: boolean) => (
+      <Wash kind="ground" quiet visible={visible} goMs={3000} style={{}} />
+    );
+    await rerender(quiet(true));
+    await rerender(quiet(false));
+    expect(last()[1]).toMatchObject({ duration: QUIET_FADE.go });
+  });
+
   it('is a plain 160 ms fade under Reduce Motion, quiet or not', async () => {
     mockReduced = true;
     const { rerender } = await rendered(<Wash kind="ground" quiet visible style={{}} />);

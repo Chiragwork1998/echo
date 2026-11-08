@@ -60,6 +60,8 @@ type Options = {
   voice: boolean;
   screenReader: boolean;
   onDone?: () => void;
+  /** The practice has reached a fade (Sleep's): the screen takes itself to black from here. */
+  onFade?: () => void;
 };
 
 /** The harness can hold a practice at one moment: window.__echoBreathAt, in milliseconds. */
@@ -100,6 +102,7 @@ export function usePracticeRun({
   voice,
   screenReader,
   onDone,
+  onFade,
 }: Options) {
   const level = useSharedValue(0);
   const [view, setView] = useState<RunView>({
@@ -121,9 +124,9 @@ export function usePracticeRun({
   const stopRamps = useRef<(() => void)[]>([]);
   /** Where the practice ended, kept once its sound has gone. */
   const endedAt = useRef<number | null>(null);
-  const settings = useRef({ sound, voice, screenReader, onDone, pace });
+  const settings = useRef({ sound, voice, screenReader, onDone, onFade, pace });
   useEffect(() => {
-    settings.current = { sound, voice, screenReader, onDone, pace };
+    settings.current = { sound, voice, screenReader, onDone, onFade, pace };
   });
   const [awake, setAwake] = useState(false);
   useBreathAwake(awake);
@@ -235,7 +238,7 @@ export function usePracticeRun({
     (cue: Cue) => {
       if (cue.kind === 'bell') ring(cue.bell);
       else if (cue.kind === 'voice') speak(cue);
-      // A fade is drawn by the screen, from the timeline.
+      else settings.current.onFade?.();
     },
     [ring, speak],
   );

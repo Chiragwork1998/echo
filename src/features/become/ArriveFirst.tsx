@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 
+import { holdTheme } from '@/design/themeHold';
 import { restoreJournalAudio } from '@/features/breathe/audio';
 import { ARRIVE } from '@/features/breathe/library/practices';
 import { PracticeView, type PracticeEnd } from '@/features/breathe/PracticeView';
@@ -42,6 +43,10 @@ export function ArriveFirst({
     const { practice, updatePractice } = usePreferences.getState();
     updatePractice({ begun: practice.begun + 1 });
   }, []);
+
+  // The book is not mounted during Arrive, so nothing else holds the theme for these minutes: a
+  // phone that follows the sun must not swap the plate and its colour mid-breath.
+  useEffect(() => holdTheme(), []);
 
   const handOver = async (end: PracticeEnd) => {
     const { practice, updatePractice } = usePreferences.getState();
