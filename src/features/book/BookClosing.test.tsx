@@ -1,9 +1,11 @@
-// The book shutting, as a session meets it: the entry is kept first, the book closes, and only then is
-// the next screen asked for. How it looks is judged frame by frame; here is what it does and when.
+// The book shutting, as a session meets it: the entry is kept first, the cover comes down, and the next
+// screen is asked for as it lands, to arrive over the book as it sinks (asked for after the sink, the sky
+// was bare for as long as the screen takes to mount). How it looks is judged frame by frame; here is what
+// it does and when.
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import { useEffect } from 'react';
-import { AccessibilityInfo, BackHandler, Keyboard } from 'react-native';
+import { AccessibilityInfo, BackHandler, Keyboard, StyleSheet } from 'react-native';
 
 import { copy } from '@/content/copy';
 import { cue } from '@/design/haptics';
@@ -26,7 +28,7 @@ import { openDialog, renderWithDialogs } from '@/testing/dialogs';
 import { animationClock } from '@/testing/reanimatedMock';
 import { render } from '@/testing/render';
 
-import { CLOSE_REDUCED_MS, FULL, HURRY_MS, SHORT, closeTimeline } from './ritual';
+import { CLOSE_REDUCED_MS, FULL, HURRY_MS, SHORT, UI_HANG_MS, closeTimeline } from './ritual';
 
 jest.mock('@/design/haptics');
 jest.mock('expo-router', () => {
@@ -64,7 +66,7 @@ beforeEach(() => {
   mockReduced = false;
   // The cover and the book are walked, a frame at a time, as their own animations: the closing follows
   // them (./useBookClosing), so these are what it is waiting for. Seen straight, the cover lands at
-  // 840 ms and the book is half gone half way through its sink, as ./ritual plans.
+  // 840 ms and the book sinks after its rest, as ./ritual plans.
   animationClock.reset();
   animationClock.stepped = true;
   jest.useFakeTimers();
@@ -127,14 +129,21 @@ const reflect = async () => {
 };
 
 describe('the next screen', () => {
-  it('waits for the book to shut, and is asked for in the middle of the sink', async () => {
+  it('waits for the cover to land, and is asked for then, with the book still to sink', async () => {
     await writeEntry();
     await reflect();
-    const { goAt } = closeTimeline(FULL);
-    await tick(goAt - 60);
+    const { contactAt, sinkAt } = closeTimeline(FULL);
+    await tick(contactAt - 60);
     expect(router.navigate).not.toHaveBeenCalled();
     await tick(120);
     expect(navigated()).toEqual(['/home/complete']);
+    // The book has not sunk yet: it rests a moment, and sinks as the screen arrives.
+    expect(sinkAt).toBeGreaterThan(contactAt);
+    expect(
+      StyleSheet.flatten(
+        screen.getByTestId('book-stage', { includeHiddenElements: true }).props.style,
+      ).opacity,
+    ).toBe(1);
     await tick(3000);
     expect(router.navigate).toHaveBeenCalledTimes(1);
   });
@@ -143,8 +152,8 @@ describe('the next screen', () => {
     usePreferences.setState({ bookOpens: 5 });
     await writeEntry();
     await reflect();
-    const { goAt } = closeTimeline(SHORT);
-    await tick(goAt - 60);
+    const { contactAt } = closeTimeline(SHORT);
+    await tick(contactAt - 60);
     expect(router.navigate).not.toHaveBeenCalled();
     await tick(120);
     expect(navigated()).toEqual(['/home/complete']);
@@ -154,19 +163,20 @@ describe('the next screen', () => {
     await writeEntry();
     usePreferences.setState({ bookOpens: 50 });
     await reflect();
-    await tick(closeTimeline(SHORT).goAt + 60);
+    await tick(closeTimeline(SHORT).contactAt + 60);
     expect(router.navigate).not.toHaveBeenCalled();
   });
 
-  it('goes at 300 ms when a tap says enough, with no buzz', async () => {
+  it('is asked for as the hurried book begins to sink when a tap says enough, with no buzz', async () => {
     await writeEntry();
     await reflect();
     await tick(200);
-    await fireEvent.press(screen.getByTestId('session-scenery'));
-    await tick(HURRY_MS - 40);
     expect(router.navigate).not.toHaveBeenCalled();
-    await tick(80);
+    await fireEvent.press(screen.getByTestId('session-scenery'));
+    await tick(60);
     expect(navigated()).toEqual(['/home/complete']);
+    await tick(HURRY_MS + 2000);
+    expect(router.navigate).toHaveBeenCalledTimes(1);
     expect(cue).not.toHaveBeenCalled();
   });
 
@@ -187,32 +197,35 @@ describe('the next screen', () => {
   });
 
   describe('on a phone that is behind the clock', () => {
-    // The UI thread is 800 ms late with every animation the closing plays. The clock says the book is
-    // shut; it is not, and nothing that says it is shut may happen until it is.
-    const LATE = 800;
-    const goAt = () => closeTimeline(FULL).goAt;
+    // The UI thread begins every animation the closing plays 2 s after it was asked: the walk measured
+    // 1.8 to 2.1 s. The clock says the book is shut; it is not, and nothing that says it is shut, or
+    // that it has done with a leaf, may happen until it is: no net may go off in the middle of the motion.
+    const LATE = 2000;
 
     it('does not feel the cover down, or ask for the next screen, before the cover has come down', async () => {
       await writeEntry();
       animationClock.lag = LATE;
       await reflect();
-      await tick(closeTimeline(FULL).contactAt + LATE - 100);
+      // Where the old net, the ritual's length plus 1500 ms, called a cover in the air shut.
+      await tick(closeTimeline(FULL).contactAt + 1500 + 300);
+      expect(cue).not.toHaveBeenCalled();
+      expect(router.navigate).not.toHaveBeenCalled();
+      await tick(LATE - 1500 - 300 - 100);
       expect(cue).not.toHaveBeenCalled();
       expect(router.navigate).not.toHaveBeenCalled();
       await tick(200);
       expect(cue).toHaveBeenCalledTimes(1);
       expect(cue).toHaveBeenCalledWith('settle');
+      expect(navigated()).toEqual(['/home/complete']);
     });
 
-    it('keeps the book there until it has sunk, and then asks for the next screen once', async () => {
+    it('asks for the next screen once, as the cover lands, however late that is', async () => {
       await writeEntry();
       animationClock.lag = LATE;
       await reflect();
-      await tick(goAt() + LATE - 100);
-      expect(router.navigate).not.toHaveBeenCalled();
-      await tick(goAt());
+      await tick(closeTimeline(FULL).contactAt + LATE + 100);
       expect(navigated()).toEqual(['/home/complete']);
-      await tick(3000);
+      await tick(5000);
       expect(router.navigate).toHaveBeenCalledTimes(1);
     });
 
@@ -220,17 +233,22 @@ describe('the next screen', () => {
       await writeEntry();
       animationClock.lag = LATE;
       await reflect();
-      await tick(FULL.close.leaf + LATE - 100);
+      await tick(FULL.close.leaf + 1500 + 300);
+      expect(screen.queryByTestId('book-closing-leaf')).not.toBeNull();
+      await tick(LATE - 1500 - 300 - 100);
       expect(screen.queryByTestId('book-closing-leaf')).not.toBeNull();
       await tick(200);
       expect(screen.queryByTestId('book-closing-leaf')).toBeNull();
     });
 
-    it('is given up on, and the book goes on, if the animations never answer', async () => {
+    it('is given up on, a very long time after, and the book goes on, if the animations never answer', async () => {
       await writeEntry();
       animationClock.lag = 1_000_000;
       await reflect();
       await tick(closeTimeline(FULL).endAt + 4 * 1500);
+      expect(router.navigate).not.toHaveBeenCalled();
+      expect(screen.queryByTestId('book-closing-leaf')).not.toBeNull();
+      await tick(closeTimeline(FULL).contactAt + UI_HANG_MS);
       expect(navigated()).toEqual(['/home/complete']);
       expect(cue).toHaveBeenCalledTimes(1);
     });
@@ -286,7 +304,7 @@ describe('First Echo', () => {
     await fireEvent.changeText(title(), BODY);
     await fireEvent(title(), 'blur');
     await reflect();
-    await tick(closeTimeline(FULL).goAt - 60);
+    await tick(closeTimeline(FULL).contactAt - 60);
     expect(router.navigate).not.toHaveBeenCalled();
     await tick(120);
     expect(router.navigate).toHaveBeenCalledTimes(1);

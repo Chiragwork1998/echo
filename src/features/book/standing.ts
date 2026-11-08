@@ -168,8 +168,6 @@ export function clothLightAt(a: number): number {
 
 /** How far the book sinks as it goes, in points, and how much it shrinks as it does. */
 export const SINK = { drop: 26, scale: 0.015 } as const;
-/** The book is half gone, and the next screen may be asked for, when its sink has got this far (0 to 1). */
-export const SINK_GONE = 0.5;
 
 /** The leaf that has been turned goes as it lands: its last stretch fades, so no sliver is left. */
 export function closingLeafOpacity(shut: number): number {

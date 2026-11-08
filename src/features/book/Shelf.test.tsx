@@ -8,7 +8,8 @@ import { withTiming } from 'react-native-reanimated';
 import { animationClock } from '@/testing/reanimatedMock';
 import { render } from '@/testing/render';
 
-import { ANIMATION_NET_MS } from './ritual';
+import { ANIMATION_NET_MS, UI_HANG_MS } from './ritual';
+import { netAfterBegin } from './animationEnd';
 import { CHOOSE_AT_MS, Shelf, useShelfOffset } from './Shelf';
 import { VOLUMES } from './volumes';
 
@@ -112,16 +113,54 @@ describe('choosing a volume', () => {
     expect(onLeft).toHaveBeenCalledTimes(1);
   });
 
-  it('is let go of, a little after its time, if its fade never says it has ended', async () => {
+  it('is there for as long as its fade takes on a phone whose UI thread begins it two seconds late', async () => {
+    // The walk measured the UI thread beginning an animation 1.8 to 2.1 s after it was asked for. The
+    // shelf must not be called gone at the ritual's length plus 1500 ms, a third of the way through.
+    animationClock.lag = 2000;
+    const onLeft = jest.fn();
+    await render(<Row onChoose={jest.fn()} onLeft={onLeft} />);
+    await tick(ROLL_MS);
+    await fireEvent.press(screen.getByTestId('volume-your-echo'));
+    await tick(OUT_MS + 1500 + 100);
+    expect(onLeft).not.toHaveBeenCalled();
+    await tick(2000 + OUT_MS - (OUT_MS + 1500 + 100) - 1);
+    expect(onLeft).not.toHaveBeenCalled();
+    await tick(2);
+    expect(onLeft).toHaveBeenCalledTimes(1);
+    await tick(UI_HANG_MS * 2);
+    expect(onLeft).toHaveBeenCalledTimes(1);
+  });
+
+  it('is let go of, a net after it was due and no sooner, if its fade began and its end is never heard', async () => {
+    animationClock.lag = 2000;
+    animationClock.silent = true;
+    const onLeft = jest.fn();
+    await render(<Row onChoose={jest.fn()} onLeft={onLeft} />);
+    await tick(ROLL_MS);
+    await fireEvent.press(screen.getByTestId('volume-your-echo'));
+    await tick(2000 + netAfterBegin(OUT_MS) - 2);
+    expect(onLeft).not.toHaveBeenCalled();
+    await tick(4);
+    expect(onLeft).toHaveBeenCalledTimes(1);
+  });
+
+  it('is let go of, a very long time after it was due, if its fade is never begun', async () => {
     animationClock.lag = 1_000_000;
     const onLeft = jest.fn();
     await render(<Row onChoose={jest.fn()} onLeft={onLeft} />);
     await tick(ROLL_MS);
     await fireEvent.press(screen.getByTestId('volume-your-echo'));
-    await tick(OUT_MS + ANIMATION_NET_MS - 1);
+    await tick(OUT_MS + 1500 + ANIMATION_NET_MS + 100);
+    expect(onLeft).not.toHaveBeenCalled();
+    await tick(UI_HANG_MS - 1500 - ANIMATION_NET_MS - 100 - 1);
     expect(onLeft).not.toHaveBeenCalled();
     await tick(1);
     expect(onLeft).toHaveBeenCalledTimes(1);
+  });
+
+  it('fades as one picture, so the books and the plank do not show through each other', async () => {
+    await render(<Row onChoose={jest.fn()} />);
+    expect(screen.getByTestId('shelf-stage').props.needsOffscreenAlphaCompositing).toBe(true);
   });
 
   it('does not open it on a screen that has gone: Back as it is chosen takes it back', async () => {
@@ -132,7 +171,7 @@ describe('choosing a volume', () => {
     await fireEvent.press(screen.getByTestId('volume-your-echo'));
     await tick(CHOOSE_AT_MS / 2);
     await view.unmount();
-    await tick(OUT_MS + ANIMATION_NET_MS);
+    await tick(OUT_MS + UI_HANG_MS);
     expect(onChoose).not.toHaveBeenCalled();
     expect(onLeft).not.toHaveBeenCalled();
   });

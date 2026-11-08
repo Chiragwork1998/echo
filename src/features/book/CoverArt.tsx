@@ -13,8 +13,10 @@ import Svg, { Circle, Defs, Ellipse, Path, Pattern, Rect } from 'react-native-sv
 import { EchoText } from '@/components/EchoText';
 import { EASE } from '@/design/ease';
 
+import { useUiBegun } from './animationEnd';
 import { bookCopy } from './bookCopy';
 import { InscribedName, stampMs } from './InscribedName';
+import { UI_HANG_MS } from './ritual';
 import { BOOK_W, type Volume } from './volumes';
 
 /**
@@ -297,17 +299,39 @@ export function BookCover({
     transform: [{ scaleX: Math.max(line.get(), 0.001) }],
   }));
 
-  // The stamp lands once its window has crossed the name.
+  // The stamp lands once its window has crossed the name: counted from when the UI thread has begun it,
+  // and not from when JS asked. The UI thread of a slow phone begins an animation seconds late (the walked
+  // emulator, 1.8 to 2.1 s), and a clock set when JS asked would feel the stamp, and let the book go,
+  // before a letter of it was drawn. A UI thread that never begins is let go of a very long time after.
   const stamped = landing > 0 ? landing : null;
   const report = useRef(onStamped);
   useEffect(() => {
     report.current = onStamped;
   });
+  const begun = useUiBegun();
   useEffect(() => {
     if (stamped === null) return;
-    const timer = setTimeout(() => report.current?.(), stamped);
-    return () => clearTimeout(timer);
-  }, [stamped]);
+    let said = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const say = () => {
+      if (said) return;
+      said = true;
+      clearTimeout(timer);
+      clearTimeout(backstop);
+      report.current?.();
+    };
+    const backstop = setTimeout(say, stamped + UI_HANG_MS);
+    begun(() => {
+      if (said) return;
+      clearTimeout(backstop);
+      timer = setTimeout(say, stamped);
+    });
+    return () => {
+      said = true;
+      clearTimeout(timer);
+      clearTimeout(backstop);
+    };
+  }, [begun, stamped]);
   const nameSize = NAME_PLACE.size * s;
 
   return (

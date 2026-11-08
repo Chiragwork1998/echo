@@ -19,6 +19,7 @@ import { cue } from '@/design/haptics';
 import { useLayout } from '@/design/layout';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
+import { useUiBegun } from '@/features/book/animationEnd';
 import { BookPage, useBookFrame } from '@/features/book/BookPage';
 import { controlsBottom, keyboardRise, restingDrop } from '@/features/book/bookPlace';
 import type { Inscribing } from '@/features/book/CoverArt';
@@ -32,7 +33,7 @@ import {
 } from '@/features/book/owner';
 import { PaperProvider, usePaperLook, type Surface } from '@/features/book/paper';
 import { opensPin, volumePin } from '@/features/book/qaPins';
-import { CLOSE_REDUCED_MS, PART_MS, ritualFor } from '@/features/book/ritual';
+import { CLOSE_REDUCED_MS, PART_MS, UI_HANG_MS, ritualFor } from '@/features/book/ritual';
 import { Shelf, ShelfBackdrop, useShelfOffset } from '@/features/book/Shelf';
 import { useBookClosing } from '@/features/book/useBookClosing';
 import { useEasedKeys } from '@/features/book/useEasedKeys';
@@ -127,7 +128,7 @@ export function ImmersiveSession({
     begin: shut,
     hurry: hurryClosing,
     landed: coverLanded,
-    gone: bookGone,
+    sinkBegun: bookSinkBegun,
   } = useBookClosing(ritual, reduced || screenReader);
   const parting = closing !== null;
   // From the moment the entry begins to be kept until the screen goes, unless keeping it fails: the
@@ -272,8 +273,38 @@ export function ImmersiveSession({
     asking.current = 'decline';
     Keyboard.dismiss();
     setInscribing({ phase: 'decline' });
-    after(reduced || screenReader ? CLOSE_REDUCED_MS : NAME_UNDRAW_MS, answered);
   };
+  // The book goes as the line is as good as gone, counted from when the UI thread has begun to take it
+  // back, and not from the press: a UI thread that is seconds late would otherwise let the book go with
+  // the line not yet begun to leave. (The cover's own effect has set the line going by now: a parent's
+  // effect runs after its child's.) Reduce Motion draws no line, and keeps its short time.
+  const begun = useUiBegun();
+  const declining = inscribing?.phase === 'decline';
+  const answeredLater = useRef(answered);
+  useEffect(() => {
+    answeredLater.current = answered;
+  });
+  useEffect(() => {
+    if (!declining) return;
+    if (reduced || screenReader) {
+      const id = setTimeout(() => answeredLater.current(), CLOSE_REDUCED_MS);
+      return () => clearTimeout(id);
+    }
+    let live = true;
+    let id: ReturnType<typeof setTimeout> | undefined;
+    // And a very long way behind it, a UI thread that never begins: the question must always be answered.
+    const backstop = setTimeout(() => answeredLater.current(), NAME_UNDRAW_MS + UI_HANG_MS);
+    begun(() => {
+      if (!live) return;
+      clearTimeout(backstop);
+      id = setTimeout(() => answeredLater.current(), NAME_UNDRAW_MS);
+    });
+    return () => {
+      live = false;
+      clearTimeout(backstop);
+      clearTimeout(id);
+    };
+  }, [begun, declining, reduced, screenReader]);
   // Back, while the book asks, is Not now. Once it is answered there is nothing to go back to.
   const latestNotNow = useRef(notNow);
   useEffect(() => {
@@ -517,7 +548,7 @@ export function ImmersiveSession({
             inscribing={inscribing}
             onStamped={stamped}
             onLanded={coverLanded}
-            onGone={bookGone}
+            onSinkBegun={bookSinkBegun}
             concealed={hidden}
             dimmed={noteDrawn}
             arrival={session.arrival}

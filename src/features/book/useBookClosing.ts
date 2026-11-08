@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { cue } from '@/design/haptics';
 
-import { ANIMATION_NET_MS, CLOSE_REDUCED_MS, HURRY_MS, closeTimeline, type Ritual } from './ritual';
+import { CLOSE_REDUCED_MS, HURRY_MS, UI_HANG_MS, closeTimeline, type Ritual } from './ritual';
 
 /** Where the closing of the book has got to. Null while the book is open and being written in. */
 export type ClosingState = {
@@ -40,13 +40,19 @@ const fresh = (): Moment => ({ reached: false, wake: null });
  * time at which the next screen may be asked for.
  *
  * The closing follows those animations, not the clock. They run on the UI thread, which can be a
- * second behind the wall clock on a slow phone, and a timer would then call the cover down while it
- * was still in the air, and the next screen would be asked for over a book that had not sunk. So the
- * book says when its cover has `landed`, which is the moment it is felt, and when it is `gone` (half
- * way sunk), which is the moment the next screen is asked for. Each wait has an end (ANIMATION_NET_MS),
- * and `begin` resolves at that time, and always does: a closing can be hurried, and one that is torn
- * down resolves at once, so a session can never hang. Reduce Motion has no cover and no sink to
- * wait for, and keeps its own short times.
+ * second or two behind the wall clock on a slow phone, and a timer would then call the cover down while
+ * it was still in the air. So the book says when its cover has `landed`, which is the moment it is felt.
+ * The book's own animation reports it, with a net of its own that is measured from the animation's first
+ * frame (./animationEnd); what is here is only the last word, UI_HANG_MS beyond the time the cover was
+ * due, for a UI thread that is not there at all. `begin` resolves at that time, and always does: a
+ * closing can be hurried, and one that is torn down resolves at once, so a session can never hang.
+ *
+ * The next screen is asked for as the cover lands, and not when the book has sunk, or when it is half
+ * sunk: a screen takes a quarter of a second to most of a second to mount, and asked for after the book
+ * had gone, the sky was bare for as long as that took. Asked for as the cover lands (after a question on
+ * it is answered, if there is one) it is arriving as the book rests and sinks, and sinks over its
+ * entrance. The order of the book is kept: the cover lands, that is felt, and then the book sinks.
+ * Reduce Motion has no cover and no sink to wait for, and keeps its own short times.
  */
 export function useBookClosing(ritual: Ritual, reduced: boolean) {
   const [closing, setClosing] = useState<ClosingState | null>(null);
@@ -63,7 +69,7 @@ export function useBookClosing(ritual: Ritual, reduced: boolean) {
   // The book is waiting on an answer: the question on its cover.
   const holding = useRef(false);
   // What the book has told us, which may be before we ask.
-  const moments = useRef({ landed: fresh(), gone: fresh() });
+  const moments = useRef({ landed: fresh(), sinkBegun: fresh() });
 
   const wait = useCallback(
     (ms: number) =>
@@ -107,7 +113,7 @@ export function useBookClosing(ritual: Ritual, reduced: boolean) {
     timers.current.forEach(clearTimeout);
     timers.current.clear();
     moments.current.landed.wake = null;
-    moments.current.gone.wake = null;
+    moments.current.sinkBegun.wake = null;
   }, []);
 
   useEffect(
@@ -120,8 +126,8 @@ export function useBookClosing(ritual: Ritual, reduced: boolean) {
 
   /** The cover is down: the book tells us, from the animation that put it there. */
   const landed = useCallback(() => reach(moments.current.landed), [reach]);
-  /** The book has sunk far enough for the next screen to come (all the way, when hurried). */
-  const gone = useCallback(() => reach(moments.current.gone), [reach]);
+  /** The UI thread has begun the book's sink: a hurried closing asks for the next screen then. */
+  const sinkBegun = useCallback(() => reach(moments.current.sinkBegun), [reach]);
 
   const begin = useCallback(
     (options: BeginOptions = {}): Promise<void> => {
@@ -155,7 +161,7 @@ export function useBookClosing(ritual: Ritual, reduced: boolean) {
           // Otherwise the cover comes down, and the closing waits for it to be down.
           await (still
             ? wait(CLOSE_REDUCED_MS)
-            : until(moments.current.landed, times.contactAt + ANIMATION_NET_MS));
+            : until(moments.current.landed, times.contactAt + UI_HANG_MS));
           if (!live()) return;
           state({ contact: true });
           cue(still ? 'commit' : 'settle');
@@ -165,14 +171,17 @@ export function useBookClosing(ritual: Ritual, reduced: boolean) {
             holding.current = false;
             if (!live()) return;
           }
+          // The cover is down and the book is not being asked anything: the next screen is asked for now,
+          // and arrives over the book as it rests and sinks. (Reduce Motion fades the book first.)
+          if (!still) resolve();
           await wait(still ? 0 : plan.close.gap);
           if (!live()) return;
           state({ sinking: true });
-          await (still
-            ? wait(CLOSE_REDUCED_MS)
-            : until(moments.current.gone, plan.close.sink + ANIMATION_NET_MS));
-          if (!live()) return;
-          resolve();
+          if (still) {
+            await wait(CLOSE_REDUCED_MS);
+            if (!live()) return;
+            resolve();
+          }
         })();
       });
       started.current = promise;
@@ -187,9 +196,10 @@ export function useBookClosing(ritual: Ritual, reduced: boolean) {
     hurried.current = true;
     stop();
     setClosing((now) => (now ? { ...now, hurry: true, contact: true, sinking: true } : now));
-    // The hurried book sinks in 300 ms, all of it: the next screen comes when it has.
-    void until(moments.current.gone, HURRY_MS + ANIMATION_NET_MS).then(() => done.current?.());
+    // The hurried book sinks in 300 ms, the cover with it. The next screen is asked for as the UI
+    // thread begins that, so that it arrives as the book goes, and not after it has gone.
+    void until(moments.current.sinkBegun, HURRY_MS + UI_HANG_MS).then(() => done.current?.());
   }, [stop, until]);
 
-  return { closing, begin, hurry, landed, gone, isHolding: () => holding.current };
+  return { closing, begin, hurry, landed, sinkBegun, isHolding: () => holding.current };
 }

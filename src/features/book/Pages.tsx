@@ -34,6 +34,7 @@ import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 import { useReduceMotion } from '@/design/useReduceMotion';
 
+import { useUiBegun, watchAnimation } from './animationEnd';
 import { bookCopy } from './bookCopy';
 import { ArrivalFade } from '@/features/journal-session/ArrivalFade';
 
@@ -41,7 +42,7 @@ import { InscribedName, nameType } from './InscribedName';
 import { LeftStack } from './LeftStack';
 import { linesOf, measuredText, pageCount, pageOfLine } from './pagination';
 import { Sheet, type PaperLook } from './paper';
-import { ANIMATION_NET_MS, HURRY_MS } from './ritual';
+import { HURRY_MS } from './ritual';
 import { closingLeafOpacity, leafGeometry } from './standing';
 import type { ClosingState } from './useBookClosing';
 import type { Volume } from './volumes';
@@ -334,15 +335,19 @@ export function Pages({
     setLeafOf(null);
     setLeafGone(false);
   }
+  const begun = useUiBegun();
   useEffect(() => {
     if (!leafOn) return;
     const duration = leafHurry ? HURRY_MS : leafMs;
-    const gone = () => setLeafGone(true);
     // The leaf is taken away when its own turn has ended, not when the clock says it should have: a
     // phone that is behind would show the page blank, and the cover down, with the leaf still in the air.
-    const turned = (finished?: boolean) => {
+    // The UI thread of a slow phone begins the turn seconds after JS asks for it, so its net is set from
+    // the turn's first frame (./animationEnd), and is only for a turn that is lost.
+    const watch = watchAnimation(duration, () => setLeafGone(true));
+    const { ended } = watch;
+    const turned = () => {
       'worklet';
-      if (finished) runOnJS(gone)();
+      runOnJS(ended)();
     };
     shut.set(
       withTiming(
@@ -355,9 +360,9 @@ export function Pages({
         turned,
       ),
     );
-    const timer = setTimeout(gone, duration + ANIMATION_NET_MS);
-    return () => clearTimeout(timer);
-  }, [leafOn, leafHurry, leafMs, shut]);
+    begun(watch.began);
+    return () => watch.cancel();
+  }, [leafOn, leafHurry, leafMs, shut, begun]);
   const shutAngle = useAnimatedStyle(() => ({
     transform: [{ perspective: PERSPECTIVE }, { rotateY: `${-180 * shut.get()}deg` }],
   }));

@@ -60,27 +60,43 @@ export const SHORT: Ritual = {
 export const HURRY_MS = 300;
 
 /**
- * The ritual follows the book's own animations, which run on the UI thread and can be a second behind
- * the clock on a slow phone: the cover is open when its swing has finished, and the closing goes on
- * when the cover has landed and the book has sunk. A UI thread that never answers must not hold the
- * ritual for ever, so each wait has an end: this long after the animation ought to have finished.
+ * The ritual follows the book's own animations, which run on the UI thread and can be a second or two
+ * behind the clock on a slow phone (the walked emulator began them 1.8 to 2.1 s after JS asked): the
+ * cover is open when its swing has finished, and the closing goes on when the cover has landed. No clock
+ * the ritual holds may stand in for that. A UI thread that has stopped answering must not hold the book
+ * shut for ever, though, so each wait has a net, and a net is measured from the animation's own first
+ * frame on the UI thread (./animationEnd), never from when JS asked for it.
+ *
+ * Once an animation has begun it is timed by frames, and finishes at its time or at the first frame after
+ * a stall. A net, counted from that first frame, is its time times ANIMATION_SLOWDOWN (an animation clock
+ * that runs at a third of the wall clock, which the web build is held to, is still not cut) and
+ * ANIMATION_NET_MS more: a UI thread that began it and has said nothing since is let go of then. Three
+ * seconds is more than the longest stall measured (1.6 s), and far less than a person will wait on a book
+ * that is stuck.
  */
-export const ANIMATION_NET_MS = 1500;
+export const ANIMATION_SLOWDOWN = 3;
+export const ANIMATION_NET_MS = 3000;
+/**
+ * How long a UI thread that never begins an animation at all is waited for, counted from when it was
+ * asked and beyond the animation's own time. This is not a clock for the motion, which has none: it is
+ * the last word on a UI thread that is not there, and is longer than any slow phone has been seen to be.
+ */
+export const UI_HANG_MS = 10_000;
 
 /**
  * When each part of the closing happens, in ms from the moment it begins, taking the cover and the sink
- * as straight lines. The cover is down at `contactAt`, the book begins to sink at `sinkAt`, the next
- * screen is asked for at `goAt` (half way through that line, so its fade begins while the book is half
- * gone), and all is still at `endAt`. The closing does not run to this clock: it follows the cover
- * landing and the book sinking (./useBookClosing), and uses these times only for the longest it will
- * wait for either. The sink decelerates, so the book is in fact half gone, and the next screen asked
- * for, in the first sixth of it.
+ * as straight lines. The cover is down at `contactAt`; the next screen is asked for then, `goAt`, so that
+ * it is arriving (a screen takes a quarter to three quarters of a second to mount on the phones walked)
+ * as the book, which rests for `gap`, begins to sink at `sinkAt` and has gone by `endAt`. Asked for only
+ * when the book was half sunk, it came after the book had gone, and the sky was bare between the two.
+ * The closing does not run to this clock: it follows the cover landing (./useBookClosing), and uses
+ * these times only for how long the rest of the sequence takes.
  */
 export function closeTimeline(ritual: Ritual) {
   const { coverAt, cover, gap, sink } = ritual.close;
   const contactAt = coverAt + cover;
   const sinkAt = contactAt + gap;
-  return { contactAt, sinkAt, goAt: sinkAt + sink / 2, endAt: sinkAt + sink };
+  return { contactAt, goAt: contactAt, sinkAt, endAt: sinkAt + sink };
 }
 
 /** How long the quiet things (controls, the light, notices) take to leave as the closing begins. */
