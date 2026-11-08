@@ -67,7 +67,7 @@ describe('Today in the morning', () => {
     expect(screen.queryByText(copy.home.nightHeadline)).toBeNull();
   });
 
-  it('opens the morning session with Arrive from Begin and from Write instead', async () => {
+  it('opens the spoken morning session with Arrive, and the written one straight into the book', async () => {
     await render(<HomeScreen />);
     await fireEvent.press(screen.getByRole('button', { name: /^Begin\./ }));
     expect(router.push).toHaveBeenLastCalledWith({
@@ -77,7 +77,9 @@ describe('Today in the morning', () => {
     await fireEvent.press(screen.getByRole('button', { name: 'Write instead' }));
     expect(router.push).toHaveBeenLastCalledWith({
       pathname: '/home/session',
-      params: { mode: 'write', prompt: 'become', arrive: '1' },
+      // Someone writing is often somewhere sound would not be welcome, and Arrive speaks and breathes
+      // aloud even on silent.
+      params: { mode: 'write', prompt: 'become' },
     });
   });
 

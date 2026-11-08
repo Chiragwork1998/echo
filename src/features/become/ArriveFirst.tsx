@@ -14,9 +14,16 @@ import { becomeCopy } from './becomeCopy';
 /**
  * Become's Arrive, before the morning session: two minutes of Heart, then the theater of the mind.
  * Sound only if the person keeps sound on. A tap goes straight into the book. Before the book opens,
- * the audio is put back the way the journal records in.
+ * the audio is put back the way the journal records in. Back leaves the session altogether, as it
+ * does from the book, and is not counted as a skip: it says nothing about wanting Arrive.
  */
-export function ArriveFirst({ onArrived }: { onArrived: () => void }) {
+export function ArriveFirst({
+  onArrived,
+  onLeave,
+}: {
+  onArrived: () => void;
+  onLeave: () => void;
+}) {
   const plus = usePlus();
   const [{ timeline, pace, sound, voice, first }] = useState(() => {
     const prefs = usePreferences.getState().practice;
@@ -41,6 +48,10 @@ export function ArriveFirst({ onArrived }: { onArrived: () => void }) {
     await restoreJournalAudio();
     onArrived();
   };
+  const leave = async () => {
+    await restoreJournalAudio();
+    onLeave();
+  };
 
   return (
     <PracticeView
@@ -50,6 +61,7 @@ export function ArriveFirst({ onArrived }: { onArrived: () => void }) {
       voice={voice}
       first={first}
       onEnd={(end) => void handOver(end)}
+      onBack={() => void leave()}
       endLabel={becomeCopy.skip}
       tapToEnd
     />

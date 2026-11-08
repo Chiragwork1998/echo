@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { router } from 'expo-router';
-import { AccessibilityInfo, AppState } from 'react-native';
+import { AccessibilityInfo, AppState, BackHandler } from 'react-native';
 
 import { JOURNAL_AUDIO_MODE } from '@/features/breathe/audio';
 import { JournalSession } from '@/features/journal-session/JournalSession';
@@ -155,6 +155,30 @@ describe('Arrive, before the morning session', () => {
     await waitFor(() => expect(screen.getByLabelText(becomeCopy.question)).toBeTruthy());
     expect(mockAudio.setAudioModeAsync).toHaveBeenCalledWith(JOURNAL_AUDIO_MODE);
     expect(usePreferences.getState().practice.arriveSkips).toBe(1);
+  });
+
+  it('leaves for Today on Back during Arrive, without opening the book or counting a skip', async () => {
+    const handlers: (() => boolean)[] = [];
+    jest.spyOn(BackHandler, 'addEventListener').mockImplementation((_event, handler) => {
+      handlers.push(handler as () => boolean);
+      return { remove: jest.fn() };
+    });
+    mockParams = { mode: 'voice', prompt: 'become', arrive: '1' };
+    await render(<DailySessionScreen />);
+    expect(screen.getByRole('button', { name: becomeCopy.skip })).toBeTruthy();
+    mockAudio.setAudioModeAsync.mockClear();
+    let handled = false;
+    await act(async () => {
+      handled = handlers.at(-1)?.() ?? false;
+    });
+    expect(handled).toBe(true);
+    await waitFor(() => expect(router.dismissTo).toHaveBeenCalledWith('/home'));
+    expect(screen.queryByLabelText(becomeCopy.question)).toBeNull();
+    expect(usePreferences.getState().practice.arriveSkips).toBe(0);
+    // The journal's audio mode is put back as the practice goes.
+    await waitFor(() =>
+      expect(mockAudio.setAudioModeAsync).toHaveBeenCalledWith(JOURNAL_AUDIO_MODE),
+    );
   });
 
   it('is not offered after three mornings skipped in a row', async () => {

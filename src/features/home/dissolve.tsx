@@ -174,7 +174,9 @@ export function useHomeVeil() {
 
 /**
  * What a new session is opened with: its mode, and in the morning the Become question and, while it
- * is still offered, Arrive first.
+ * is still offered, Arrive first. Arrive comes before the spoken session only: someone who writes
+ * instead is often somewhere sound would not be welcome, and Arrive breathes and speaks aloud even
+ * on silent.
  */
 export function sessionParams(
   mode: 'voice' | 'write',
@@ -197,7 +199,7 @@ export function useSessionEntry() {
       begin: () =>
         dissolve({ pathname: '/home/session', params: sessionParams('voice', morning, arrive) }),
       writeInstead: () =>
-        dissolve({ pathname: '/home/session', params: sessionParams('write', morning, arrive) }),
+        dissolve({ pathname: '/home/session', params: sessionParams('write', morning, false) }),
       continueDraft: (draftId: string) =>
         dissolve({ pathname: '/home/session', params: { draftId } }),
       breathe: () => dissolve('/home/breathe'),

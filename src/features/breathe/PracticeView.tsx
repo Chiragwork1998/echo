@@ -52,6 +52,11 @@ type Props = {
   endLabel?: string;
   /** Any tap ends it, rather than first bringing the screen back (Arrive: a tap goes into the book). */
   tapToEnd?: boolean;
+  /**
+   * The system Back button, where it means leaving rather than ending (Arrive: Back leaves the morning
+   * session, as it does from the book). The sound stops first. Without it, Back ends like End.
+   */
+  onBack?: () => void;
 };
 
 /**
@@ -61,7 +66,7 @@ type Props = {
  */
 export function PracticeView(props: Props) {
   const { timeline, pace, sound, voice, first, onEnd } = props;
-  const { endLabel = breatheCopy.end, tapToEnd = false } = props;
+  const { endLabel = breatheCopy.end, tapToEnd = false, onBack } = props;
   const insets = useSafeAreaInsets();
   const reduced = useReduceMotion();
   const screenReader = useScreenReader();
@@ -159,13 +164,23 @@ export function PracticeView(props: Props) {
     recedeLater(BACK_FOR_MS);
   };
 
+  const onBackRef = useRef(onBack);
+  useEffect(() => {
+    onBackRef.current = onBack;
+  });
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      end();
+      const leave = onBackRef.current;
+      if (!leave) {
+        end();
+        return true;
+      }
+      stop();
+      leave();
       return true;
     });
     return () => subscription.remove();
-  }, [end]);
+  }, [end, stop]);
 
   const controls = screenReader || !receded;
   const shown = useSharedValue(controls ? 1 : 0);

@@ -147,7 +147,10 @@ or names him in the product's copy, except the existing credited lens on pattern
 - Today's question in the morning is "Who will you be today?" in place of "Where are you, really?".
   Begin works exactly as it does in the evening and saves the entry with `promptId: 'become'`.
 - Before the morning session, Arrive (section 1): two minutes of Heart, then the theater of the mind,
-  skippable with a tap, free.
+  skippable with a tap, free. Arrive opens the spoken session (Begin) only. Write instead goes
+  straight into the book: someone who writes is often somewhere sound would not be welcome, and
+  Arrive breathes and speaks aloud even on silent. Back during Arrive leaves for Today, as Back from
+  an empty book does, and is not counted as a skip.
 - After Reflect on a morning entry, before Completion, the Rehearse moment (about 60 seconds, free):
   the person's own words come back over the sky one phrase at a time (at most the first 240
   characters, whole sentences). Then "Now feel it, as if it is already true." stays while the sky

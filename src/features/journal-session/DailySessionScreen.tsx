@@ -1,4 +1,4 @@
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 
 import { arriveOffered } from '@/features/become/arrive';
@@ -41,8 +41,13 @@ export function DailySessionScreen() {
   const [arriving, setArriving] = useState(
     () => first(params.arrive) === '1' && arriveOffered(usePreferences.getState().practice),
   );
-  // Arrive first, then the book. Nothing of the session starts until it has handed over.
-  if (arriving) return <ArriveFirst onArrived={() => setArriving(false)} />;
+  // Arrive first, then the book. Nothing of the session starts until it has handed over, so Back
+  // during Arrive leaves nothing behind: it closes the session as Back from an empty book does.
+  if (arriving) {
+    return (
+      <ArriveFirst onArrived={() => setArriving(false)} onLeave={() => router.dismissTo('/home')} />
+    );
+  }
   return (
     <JournalSession
       // A different draft is a different session: the draft hook opens one draft per mount.
