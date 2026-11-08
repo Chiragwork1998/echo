@@ -1,11 +1,11 @@
 import { router, useFocusEffect } from 'expo-router';
-import * as Haptics from 'expo-haptics';
 import { useCallback } from 'react';
 import { BackHandler, StyleSheet, View } from 'react-native';
 
 import { PrimaryCTA } from '@/components/PrimaryCTA';
 import { ScreenShell } from '@/components/ScreenShell';
 import { copy } from '@/content/copy';
+import { cue } from '@/design/haptics';
 import { useLayout } from '@/design/layout';
 import { useTheme } from '@/design/theme';
 import { usePlatePoint } from '@/design/usePlatePoint';
@@ -66,7 +66,7 @@ export function ArrivalScreen() {
   const choose = useCallback(
     (value: Mood) => {
       if (value === mood) return;
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      cue('tick');
       update({ mood: value });
     },
     [mood, update],

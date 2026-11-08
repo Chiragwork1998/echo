@@ -1,4 +1,3 @@
-import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { useCallback } from 'react';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
@@ -7,6 +6,7 @@ import { OnboardingHeader } from '@/components/OnboardingHeader';
 import { OnboardingHeading } from '@/components/OnboardingHeading';
 import { PrimaryCTA } from '@/components/PrimaryCTA';
 import { ScreenShell } from '@/components/ScreenShell';
+import { cue } from '@/design/haptics';
 import { useLayout } from '@/design/layout';
 import { backPath, nextPath, type ScreenId } from '@/features/onboarding/flow';
 
@@ -65,7 +65,7 @@ export function ThreeChoiceScreen<V extends string>({
   const choose = useCallback(
     (next: V) => {
       if (next === value) return;
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      cue('tick');
       onChange(next);
     },
     [value, onChange],

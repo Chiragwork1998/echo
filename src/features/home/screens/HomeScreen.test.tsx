@@ -4,6 +4,7 @@ import { Dimensions } from 'react-native';
 
 import { copy } from '@/content/copy';
 import { goldenCopy } from '@/content/goldenCopy';
+import { cue } from '@/design/haptics';
 import {
   createMemoryJournal,
   setJournal,
@@ -19,11 +20,7 @@ import { render } from '@/testing/render';
 import { homeLabels } from '../today/homeLabels';
 import { HomeScreen } from './HomeScreen';
 
-jest.mock('expo-haptics', () => ({
-  impactAsync: jest.fn(),
-  selectionAsync: jest.fn(),
-  ImpactFeedbackStyle: { Light: 'light', Medium: 'medium' },
-}));
+jest.mock('@/design/haptics');
 jest.mock('expo-router', () => ({
   router: { navigate: jest.fn(), push: jest.fn() },
   usePathname: () => '/home',
@@ -170,6 +167,15 @@ describe('Home, Night', () => {
       pathname: '/home/session',
       params: { mode: 'write' },
     });
+  });
+
+  it('cues a commit from the stone and a tick from each pill beside it', async () => {
+    await render(<HomeScreen />);
+    await fireEvent.press(button(`${goldenCopy.nightBegin}. ${goldenCopy.nightBeginArc}`));
+    expect(jest.mocked(cue).mock.calls).toEqual([['commit']]);
+    await fireEvent.press(screen.getByTestId('home-breathe-first'));
+    await fireEvent.press(button(goldenCopy.nightWriteInstead));
+    expect(jest.mocked(cue).mock.calls).toEqual([['commit'], ['tick'], ['tick']]);
   });
 
   it('continues the draft from its card', async () => {
@@ -331,6 +337,15 @@ describe('Home, Day', () => {
       pathname: '/home/session',
       params: { mode: 'voice' },
     });
+  });
+
+  it('cues a commit from the cream CTA and a tick from each link under it', async () => {
+    await render(<HomeScreen />);
+    await fireEvent.press(button(copy.home.begin));
+    expect(jest.mocked(cue).mock.calls).toEqual([['commit']]);
+    await fireEvent.press(screen.getByTestId('home-breathe-first'));
+    await fireEvent.press(button(goldenCopy.dayWriteInstead));
+    expect(jest.mocked(cue).mock.calls).toEqual([['commit'], ['tick'], ['tick']]);
   });
 
   it('offers Write instead under the CTA, and opens the session in Write', async () => {

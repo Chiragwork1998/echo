@@ -1,4 +1,3 @@
-import * as Haptics from 'expo-haptics';
 import { useEffect, useId, useMemo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
@@ -25,6 +24,7 @@ import Svg, {
 } from 'react-native-svg';
 
 import { EchoText } from '@/components/EchoText';
+import { cue } from '@/design/haptics';
 import { tokens } from '@/design/tokens';
 import { useReduceMotion } from '@/design/useReduceMotion';
 
@@ -348,7 +348,7 @@ export function LimestoneStone({ title, arcCaption, accessibilityLabel, onPress 
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel}
         onPress={() => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          cue('commit');
           onPress();
         }}
         onPressIn={() => pressTo(1)}

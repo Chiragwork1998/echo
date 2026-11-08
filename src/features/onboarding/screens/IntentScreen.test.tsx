@@ -1,18 +1,15 @@
 import { act, fireEvent, screen, within } from '@testing-library/react-native';
-import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { Dimensions, StyleSheet } from 'react-native';
 
 import { copy } from '@/content/copy';
+import { cue } from '@/design/haptics';
 import { initialOnboarding, useOnboarding } from '@/state/onboarding';
 import { render } from '@/testing/render';
 
 import { IntentScreen } from './IntentScreen';
 
-jest.mock('expo-haptics', () => ({
-  impactAsync: jest.fn(),
-  ImpactFeedbackStyle: { Light: 'light' },
-}));
+jest.mock('@/design/haptics');
 jest.mock('expo-router', () => ({ router: { navigate: jest.fn() } }));
 jest.mock(
   'react-native-safe-area-context',
@@ -55,21 +52,21 @@ describe('IntentScreen', () => {
     expect(router.navigate).not.toHaveBeenCalled();
   });
 
-  it('selects one choice at a time, stores it, and gives a light haptic', async () => {
+  it('selects one choice at a time, stores it, and cues a tick', async () => {
     await render(<IntentScreen />);
     await fireEvent.press(radio(HOLD));
     expect(useOnboarding.getState().intent).toBe('hold_moments');
     expect(radio(HOLD)).toBeChecked();
     expect(radio(HOLD)).toBeSelected();
     expect(radio(QUIET)).not.toBeChecked();
-    expect(Haptics.impactAsync).toHaveBeenCalledTimes(1);
-    expect(Haptics.impactAsync).toHaveBeenCalledWith('light');
+    expect(cue).toHaveBeenCalledTimes(1);
+    expect(cue).toHaveBeenCalledWith('tick');
 
     await fireEvent.press(radio(DIRECTION));
     expect(useOnboarding.getState().intent).toBe('direction');
     expect(radio(DIRECTION)).toBeChecked();
     expect(radio(HOLD)).not.toBeChecked();
-    expect(Haptics.impactAsync).toHaveBeenCalledTimes(2);
+    expect(cue).toHaveBeenCalledTimes(2);
   });
 
   it('stores the right value for every choice', async () => {
@@ -90,7 +87,7 @@ describe('IntentScreen', () => {
     await render(<IntentScreen />);
     await fireEvent.press(radio(UNDERSTAND));
     await fireEvent.press(radio(UNDERSTAND));
-    expect(Haptics.impactAsync).toHaveBeenCalledTimes(1);
+    expect(cue).toHaveBeenCalledTimes(1);
     expect(radio(UNDERSTAND)).toBeChecked();
   });
 
@@ -203,7 +200,7 @@ describe('IntentScreen at large text sizes and in landscape', () => {
     await fireEvent.press(radio(HOLD));
     expect(useOnboarding.getState().intent).toBe('hold_moments');
     expect(radio(HOLD)).toBeChecked();
-    expect(Haptics.impactAsync).toHaveBeenCalledTimes(1);
+    expect(cue).toHaveBeenCalledTimes(1);
     await fireEvent.press(cta());
     expect(router.navigate).toHaveBeenCalledWith('/onboarding/horizon');
   });

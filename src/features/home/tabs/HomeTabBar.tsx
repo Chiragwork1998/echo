@@ -1,4 +1,3 @@
-import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, usePathname } from 'expo-router';
 import { useEffect } from 'react';
@@ -17,6 +16,7 @@ import { EchoText } from '@/components/EchoText';
 import { BlurSurface, GlassCard } from '@/components/GlassCard';
 import { Icon, type IconName } from '@/components/Icon';
 import { copy } from '@/content/copy';
+import { cue } from '@/design/haptics';
 import { useLayout } from '@/design/layout';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
@@ -155,7 +155,7 @@ export function HomeTabBar() {
                     accessibilityState={{ selected }}
                     onPress={() => {
                       if (selected) return;
-                      Haptics.selectionAsync();
+                      cue('tick');
                       router.navigate(tab.path as never);
                     }}
                     style={({ pressed }) => [styles.tab, pressed && !selected && styles.pressed]}

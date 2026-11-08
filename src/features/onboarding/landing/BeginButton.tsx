@@ -1,4 +1,3 @@
-import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
@@ -13,6 +12,7 @@ import Animated, {
 
 import { GlassBlur } from '@/components/GlassCard';
 import { TrackedText } from '@/components/TrackedText';
+import { cue } from '@/design/haptics';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 import { useReduceMotion } from '@/design/useReduceMotion';
@@ -88,7 +88,7 @@ export function BeginButton({ label, onPress }: { label: string; onPress: () => 
         accessibilityRole="button"
         accessibilityLabel={label}
         onPress={() => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          cue('commit');
           onPress();
         }}
         onPressIn={() => pressTo(1)}

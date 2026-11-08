@@ -1,10 +1,10 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
-import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import type { ComponentProps } from 'react';
 import { AppState, Text } from 'react-native';
 
 import { copy } from '@/content/copy';
+import { cue } from '@/design/haptics';
 import { ThemeProvider, useTheme } from '@/design/theme';
 import {
   createMemoryJournal,
@@ -33,10 +33,7 @@ import { render } from '@/testing/render';
 import { JournalSession as Session, type SessionVariant } from './JournalSession';
 import { sessionCopy } from './sessionCopy';
 
-jest.mock('expo-haptics', () => ({
-  impactAsync: jest.fn(),
-  ImpactFeedbackStyle: { Light: 'light' },
-}));
+jest.mock('@/design/haptics');
 jest.mock('expo-router', () => {
   const { useEffect } = jest.requireActual('react');
   return {
@@ -198,6 +195,14 @@ describe('JournalSession layout and states', () => {
     expect(usePreferences.getState().lastMode).toBe('write');
   });
 
+  it('cues a tick for each mode the person chooses', async () => {
+    await open();
+    await fireEvent.press(tab(copy.firstEcho.speak));
+    expect(jest.mocked(cue).mock.calls).toEqual([['tick']]);
+    await fireEvent.press(tab(copy.firstEcho.write));
+    expect(jest.mocked(cue).mock.calls).toEqual([['tick'], ['tick']]);
+  });
+
   it('opens in Write where there is no microphone to speak into', async () => {
     usePreferences.setState({ lastMode: 'speak' });
     voice = { ...voice, available: false };
@@ -225,13 +230,13 @@ describe('JournalSession layout and states', () => {
     expect(await screen.findByText(sessionCopy.saved, {}, { timeout: 2500 })).toBeTruthy();
   });
 
-  it('gives one gentle haptic when the first save lands, and none for the saves after it', async () => {
+  it('cues one tick when the first save lands, and none for the saves after it', async () => {
     const input = await open();
-    expect(Haptics.impactAsync).not.toHaveBeenCalled();
+    expect(cue).not.toHaveBeenCalled();
     await write(input);
     await screen.findByText(sessionCopy.saved, {}, { timeout: 2500 });
-    await waitFor(() => expect(Haptics.impactAsync).toHaveBeenCalledTimes(1));
-    expect(Haptics.impactAsync).toHaveBeenCalledWith('light');
+    await waitFor(() => expect(cue).toHaveBeenCalledTimes(1));
+    expect(cue).toHaveBeenCalledWith('tick');
 
     await write(input, `${BODY}, and more`);
     await waitFor(async () =>
@@ -240,7 +245,7 @@ describe('JournalSession layout and states', () => {
         value: { body: `${BODY}, and more` },
       }),
     );
-    expect(Haptics.impactAsync).toHaveBeenCalledTimes(1);
+    expect(cue).toHaveBeenCalledTimes(1);
   });
 
   it('offers a retry when the draft cannot be opened, and none when it is unreadable', async () => {

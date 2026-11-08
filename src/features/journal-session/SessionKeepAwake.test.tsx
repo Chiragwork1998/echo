@@ -28,10 +28,7 @@ jest.mock('expo-keep-awake', () => ({
   activateKeepAwakeAsync: jest.fn(async (tag: string) => void mockHeld.add(tag)),
   deactivateKeepAwake: jest.fn(async (tag: string) => void mockHeld.delete(tag)),
 }));
-jest.mock('expo-haptics', () => ({
-  impactAsync: jest.fn(),
-  ImpactFeedbackStyle: { Light: 'light' },
-}));
+jest.mock('@/design/haptics');
 jest.mock('expo-router', () => {
   const { useEffect } = jest.requireActual('react');
   return {

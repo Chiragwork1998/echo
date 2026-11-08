@@ -1,4 +1,3 @@
-import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useMemo } from 'react';
 import { Image, Pressable, StyleSheet, View } from 'react-native';
@@ -13,6 +12,7 @@ import Svg, { Circle, Defs, Line, RadialGradient, Rect, Stop } from 'react-nativ
 
 import { EchoText } from '@/components/EchoText';
 import { Icon } from '@/components/Icon';
+import { cue } from '@/design/haptics';
 import { tokens } from '@/design/tokens';
 import { useReduceMotion } from '@/design/useReduceMotion';
 import { Grain, usePaperLook } from '@/features/book/paper';
@@ -343,7 +343,7 @@ export function PlayingCard({
   });
 
   const turn = () => {
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    cue('tick');
     onTurn();
   };
 

@@ -1,10 +1,10 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
-import * as Haptics from 'expo-haptics';
 import { router, Stack } from 'expo-router';
 import { AccessibilityInfo, BackHandler, Dimensions, StyleSheet } from 'react-native';
 import * as Reanimated from 'react-native-reanimated';
 
 import { copy } from '@/content/copy';
+import { cue, cuedWithin } from '@/design/haptics';
 import { tokens } from '@/design/tokens';
 import { completionText } from '@/features/onboarding/completion/text';
 import { createMemoryJournal, setJournal, type Entry, type Journal } from '@/features/journal';
@@ -14,10 +14,7 @@ import { render } from '@/testing/render';
 
 import { CompletionScreen, DailyCompletionScreen } from './CompletionScreen';
 
-jest.mock('expo-haptics', () => ({
-  impactAsync: jest.fn(),
-  ImpactFeedbackStyle: { Light: 'light', Medium: 'medium' },
-}));
+jest.mock('@/design/haptics');
 jest.mock('expo-router', () => ({
   router: { navigate: jest.fn(), replace: jest.fn(), dismissTo: jest.fn() },
   Stack: { Screen: jest.fn(() => null) },
@@ -145,11 +142,19 @@ describe('Completion in onboarding', () => {
     expect(screen.queryByText('words that belong to no one else')).toBeNull();
   });
 
-  it('gives one medium haptic on arrival and no other', async () => {
+  it('cues one commit on arrival and no other', async () => {
     await render(<CompletionScreen />);
     await screen.findByText('Saved privately · 12 minutes');
-    expect(Haptics.impactAsync).toHaveBeenCalledTimes(1);
-    expect(Haptics.impactAsync).toHaveBeenCalledWith('medium');
+    expect(cue).toHaveBeenCalledTimes(1);
+    expect(cue).toHaveBeenCalledWith('commit');
+  });
+
+  it('stays quiet on arrival when the closing has just settled, so the two never buzz twice', async () => {
+    jest.mocked(cuedWithin).mockReturnValueOnce(true);
+    await render(<CompletionScreen />);
+    await screen.findByText('Saved privately · 12 minutes');
+    expect(cuedWithin).toHaveBeenCalledWith('settle', 3000);
+    expect(cue).not.toHaveBeenCalled();
   });
 
   it('completes onboarding on Enter your space and leaves the navigating to the root layout', async () => {
@@ -315,9 +320,9 @@ describe('Completion after a daily session', () => {
     });
   });
 
-  it('gives its own medium haptic on arrival', async () => {
+  it('cues its own commit on arrival', async () => {
     await render(<DailyCompletionScreen />);
-    expect(Haptics.impactAsync).toHaveBeenCalledWith('medium');
+    expect(cue).toHaveBeenCalledWith('commit');
   });
 });
 

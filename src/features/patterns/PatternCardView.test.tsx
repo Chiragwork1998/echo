@@ -1,5 +1,6 @@
 import { fireEvent, screen } from '@testing-library/react-native';
 
+import { cue } from '@/design/haptics';
 import type { PatternCard } from '@/services/patterns';
 import { render } from '@/testing/render';
 
@@ -22,6 +23,10 @@ const card: PatternCard = {
   practice: 'Write two short lines.',
   question: 'What does enough mean on an ordinary day?',
 };
+
+jest.mock('@/design/haptics');
+
+beforeEach(() => jest.clearAllMocks());
 
 describe('PatternCardView', () => {
   it('sets the card first, its name and a line in the person’s words, then its reading in order', async () => {
@@ -55,7 +60,10 @@ describe('PatternCardView', () => {
     await render(<PatternCardView card={card} index={2} total={3} fresh />);
     expect(screen.queryByText(/It seems that rest brings/)).toBeNull();
     expect(screen.getByText(patternsCopy.cards.turnHint)).toBeTruthy();
+    expect(cue).not.toHaveBeenCalled();
     await fireEvent.press(screen.getByRole('button', { name: 'Pattern card 2 of 3, face down.' }));
+    expect(cue).toHaveBeenCalledTimes(1);
+    expect(cue).toHaveBeenCalledWith('tick');
     expect(await screen.findByText(/It seems that rest brings/)).toBeTruthy();
     expect(screen.queryByText(patternsCopy.cards.turnHint)).toBeNull();
     expect(

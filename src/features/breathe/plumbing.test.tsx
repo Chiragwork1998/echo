@@ -1,9 +1,9 @@
 import { act, screen } from '@testing-library/react-native';
-import * as Haptics from 'expo-haptics';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { AccessibilityInfo, AppState } from 'react-native';
 import { useSharedValue } from 'react-native-reanimated';
 
+import { cue } from '@/design/haptics';
 import { installRuntime } from '@/storage/runtime';
 import { createTestRuntime, everyStoredByte } from '@/storage/testing/nodePorts';
 import { render } from '@/testing/render';
@@ -32,11 +32,7 @@ let mockReduced = false;
 let mockScreenReader = false;
 
 jest.mock('@/services/nativeModules', () => ({ loadAudio: () => mockAudio }));
-jest.mock('expo-haptics', () => ({
-  impactAsync: jest.fn(async () => undefined),
-  selectionAsync: jest.fn(async () => undefined),
-  ImpactFeedbackStyle: { Light: 'light' },
-}));
+jest.mock('@/design/haptics');
 jest.mock('expo-keep-awake', () => ({
   activateKeepAwakeAsync: jest.fn(async () => undefined),
   deactivateKeepAwake: jest.fn(async () => undefined),
@@ -96,8 +92,11 @@ describe('a practice running', () => {
     await advance(19_000);
     // Two rounds of 4 in and 6 out: in at 0 and 10 s, out at 4 and 14 s. With the sound off, the
     // opening bell is a tick too.
-    expect(Haptics.impactAsync).toHaveBeenCalledTimes(3);
-    expect(Haptics.selectionAsync).toHaveBeenCalledTimes(2);
+    const played = jest.mocked(cue).mock.calls.map(([name]) => name);
+    expect(played.filter((name) => name === 'breathIn')).toHaveLength(2);
+    expect(played.filter((name) => name === 'breathOut')).toHaveLength(2);
+    expect(played.filter((name) => name === 'moment')).toHaveLength(1);
+    expect(played).toHaveLength(5);
   });
 
   it('tells a screen reader the first two rounds, then lets the sound carry it', async () => {

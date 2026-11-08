@@ -1,9 +1,9 @@
-import * as Haptics from 'expo-haptics';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, BackHandler, Keyboard } from 'react-native';
 
 import { copy } from '@/content/copy';
+import { cue } from '@/design/haptics';
 import { holdTheme } from '@/design/themeHold';
 import { BECOME_PROMPT_ID, becomeCopy } from '@/features/become/becomeCopy';
 import { routeAfterReflect } from '@/features/become/rehearsal';
@@ -236,7 +236,7 @@ export function useSessionController({ variant, initialMode, draftId, become }: 
   };
 
   const choose = (next: SessionMode) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    cue('tick');
     if (next === 'speak') Keyboard.dismiss();
     // The next session opens the way this one was last used.
     usePreferences.getState().setLastMode(next);

@@ -259,17 +259,34 @@ function Support() {
   );
 }
 
+// The haptic tuning lab is for development builds. Metro replaces `__DEV__` with false in a store
+// build and drops the require with it, so the lab is never compiled in.
+const HapticLab = __DEV__
+  ? // eslint-disable-next-line @typescript-eslint/no-require-imports
+    (require('./HapticLab') as typeof import('./HapticLab')).HapticLab
+  : null;
+
 function About() {
+  const [lab, setLab] = useState(false);
+  const version = APP_VERSION ? (
+    <EchoText variant="bodyM" maxFontSizeMultiplier={1.6}>
+      {youCopy.version(APP_VERSION)}
+    </EchoText>
+  ) : null;
   return (
     <Group>
       <Heading>{youCopy.about}</Heading>
       <Surface>
         <View style={styles.about}>
-          {APP_VERSION ? (
-            <EchoText variant="bodyM" maxFontSizeMultiplier={1.6}>
-              {youCopy.version(APP_VERSION)}
-            </EchoText>
-          ) : null}
+          {HapticLab && version ? (
+            // A long press on the version line opens the lab. Only the gesture is added: the line
+            // is read and laid out as it is without it.
+            <Pressable accessible={false} onLongPress={() => setLab(true)}>
+              {version}
+            </Pressable>
+          ) : (
+            version
+          )}
           <EchoText
             variant="bodyM"
             color="textSecondary"
@@ -288,6 +305,7 @@ function About() {
           </EchoText>
         </View>
       </Surface>
+      {HapticLab && <HapticLab visible={lab} onClose={() => setLab(false)} />}
     </Group>
   );
 }

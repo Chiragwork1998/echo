@@ -1,18 +1,15 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react-native';
-import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { AccessibilityInfo, BackHandler, Dimensions, StyleSheet } from 'react-native';
 
 import { copy } from '@/content/copy';
+import { cue } from '@/design/haptics';
 import { initialOnboarding, useOnboarding, type Mood } from '@/state/onboarding';
 import { render } from '@/testing/render';
 
 import { ArrivalScreen } from './ArrivalScreen';
 
-jest.mock('expo-haptics', () => ({
-  impactAsync: jest.fn(),
-  ImpactFeedbackStyle: { Light: 'light' },
-}));
+jest.mock('@/design/haptics');
 jest.mock('expo-router', () => ({
   router: { navigate: jest.fn() },
   // Runs the effect once on mount, as a focused screen would.
@@ -73,21 +70,21 @@ describe('ArrivalScreen', () => {
     expect(router.navigate).not.toHaveBeenCalled();
   });
 
-  it('selects one stone at a time, stores it, and gives a light haptic', async () => {
+  it('selects one stone at a time, stores it, and cues a tick', async () => {
     await render(<ArrivalScreen />);
     await fireEvent.press(radio(UNSETTLED!));
     expect(useOnboarding.getState().mood).toBe('unsettled');
     expect(radio(UNSETTLED!)).toBeSelected();
     expect(radio(UNSETTLED!)).toBeChecked();
     expect(radio(LIGHT!)).not.toBeSelected();
-    expect(Haptics.impactAsync).toHaveBeenCalledTimes(1);
-    expect(Haptics.impactAsync).toHaveBeenCalledWith('light');
+    expect(cue).toHaveBeenCalledTimes(1);
+    expect(cue).toHaveBeenCalledWith('tick');
 
     await fireEvent.press(radio(HEAVY!));
     expect(useOnboarding.getState().mood).toBe('heavy');
     expect(radio(HEAVY!)).toBeChecked();
     expect(radio(UNSETTLED!)).not.toBeChecked();
-    expect(Haptics.impactAsync).toHaveBeenCalledTimes(2);
+    expect(cue).toHaveBeenCalledTimes(2);
   });
 
   it('stores the right value for every stone', async () => {
@@ -102,7 +99,7 @@ describe('ArrivalScreen', () => {
     await render(<ArrivalScreen />);
     await fireEvent.press(radio(NUMB!));
     await fireEvent.press(radio(NUMB!));
-    expect(Haptics.impactAsync).toHaveBeenCalledTimes(1);
+    expect(cue).toHaveBeenCalledTimes(1);
     expect(radio(NUMB!)).toBeChecked();
   });
 
@@ -253,7 +250,7 @@ describe('ArrivalScreen at large text sizes and in landscape', () => {
     await fireEvent.press(radio(HEAVY!));
     expect(useOnboarding.getState().mood).toBe('heavy');
     expect(radio(HEAVY!)).toBeChecked();
-    expect(Haptics.impactAsync).toHaveBeenCalledTimes(1);
+    expect(cue).toHaveBeenCalledTimes(1);
     await fireEvent.press(cta());
     expect(router.navigate).toHaveBeenCalledWith('/onboarding/first-echo');
   });

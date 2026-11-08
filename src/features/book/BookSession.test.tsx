@@ -22,10 +22,7 @@ import { PAGE_TEXT } from './Pages';
 import { FULL, HURRY_MS, SHORT } from './ritual';
 import { VOLUMES } from './volumes';
 
-jest.mock('expo-haptics', () => ({
-  impactAsync: jest.fn(),
-  ImpactFeedbackStyle: { Light: 'light' },
-}));
+jest.mock('@/design/haptics');
 jest.mock('expo-router', () => {
   const { useEffect } = jest.requireActual('react');
   return {

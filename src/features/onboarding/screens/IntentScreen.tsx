@@ -1,4 +1,3 @@
-import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { useCallback, type ReactNode } from 'react';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
@@ -8,6 +7,7 @@ import { OnboardingHeading } from '@/components/OnboardingHeading';
 import { PrimaryCTA } from '@/components/PrimaryCTA';
 import { ScreenShell } from '@/components/ScreenShell';
 import { copy } from '@/content/copy';
+import { cue } from '@/design/haptics';
 import { useLayout } from '@/design/layout';
 import { textStyle } from '@/design/typography';
 import { usePlatePoint } from '@/design/usePlatePoint';
@@ -70,7 +70,7 @@ export function IntentScreen() {
   const choose = useCallback(
     (value: Intent) => {
       if (value === intent) return;
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      cue('tick');
       update({ intent: value });
     },
     [intent, update],

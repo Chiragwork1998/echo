@@ -22,10 +22,7 @@ import { render } from '@/testing/render';
 
 import { PAGE_DIMMED } from './Pages';
 
-jest.mock('expo-haptics', () => ({
-  impactAsync: jest.fn(),
-  ImpactFeedbackStyle: { Light: 'light' },
-}));
+jest.mock('@/design/haptics');
 jest.mock('expo-router', () => {
   const { useEffect } = jest.requireActual('react');
   return {

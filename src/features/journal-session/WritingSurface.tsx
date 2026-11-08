@@ -1,4 +1,3 @@
-import * as Haptics from 'expo-haptics';
 import { useEffect, useState, type PropsWithChildren } from 'react';
 import { StyleSheet, TextInput } from 'react-native';
 import Animated, {
@@ -11,6 +10,7 @@ import Animated, {
 import Svg, { Path } from 'react-native-svg';
 
 import { EchoText } from '@/components/EchoText';
+import { cue } from '@/design/haptics';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 import { textStyle } from '@/design/typography';
@@ -133,7 +133,7 @@ export function WritingSurface({
   // Once, when the note first appears. Later autosaves are only the tick, so that writing is never
   // buzzed through.
   useEffect(() => {
-    if (everSaved) void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (everSaved) cue('tick');
   }, [everSaved]);
   const minHeight = squeezed ? SURFACE_KEYBOARD_MIN_HEIGHT : SURFACE_MIN_HEIGHT;
 

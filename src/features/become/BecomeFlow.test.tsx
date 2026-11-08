@@ -35,11 +35,7 @@ let mockParams: Record<string, string | undefined> = {};
 let mockReduced = false;
 
 jest.mock('@/services/nativeModules', () => ({ loadAudio: () => mockAudio }));
-jest.mock('expo-haptics', () => ({
-  impactAsync: jest.fn(async () => undefined),
-  selectionAsync: jest.fn(async () => undefined),
-  ImpactFeedbackStyle: { Light: 'light' },
-}));
+jest.mock('@/design/haptics');
 jest.mock('expo-keep-awake', () => ({
   activateKeepAwakeAsync: jest.fn(async () => undefined),
   deactivateKeepAwake: jest.fn(async () => undefined),

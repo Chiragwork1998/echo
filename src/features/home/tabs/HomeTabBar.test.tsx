@@ -3,12 +3,13 @@ import { router, usePathname } from 'expo-router';
 import { Dimensions } from 'react-native';
 
 import { copy } from '@/content/copy';
+import { cue } from '@/design/haptics';
 import { usePreferences } from '@/state/preferences';
 import { render } from '@/testing/render';
 
 import { HomeTabBar, TAB_BAR_HEIGHT, tabPaths } from './HomeTabBar';
 
-jest.mock('expo-haptics', () => ({ selectionAsync: jest.fn() }));
+jest.mock('@/design/haptics');
 jest.mock('expo-router', () => ({
   router: { navigate: jest.fn() },
   usePathname: jest.fn(),
@@ -56,9 +57,12 @@ describe('HomeTabBar', () => {
     await render(<HomeTabBar />);
     await fireEvent.press(tab(copy.home.tabs[2]));
     expect(router.navigate).toHaveBeenCalledWith('/home/patterns');
+    expect(cue).toHaveBeenCalledTimes(1);
+    expect(cue).toHaveBeenCalledWith('tick');
     jest.clearAllMocks();
     await fireEvent.press(tab(copy.home.tabs[0]));
     expect(router.navigate).not.toHaveBeenCalled();
+    expect(cue).not.toHaveBeenCalled();
   });
 
   it('works in Day as well', async () => {

@@ -1,5 +1,6 @@
-import * as Haptics from 'expo-haptics';
 import { AccessibilityInfo } from 'react-native';
+
+import { cue } from '@/design/haptics';
 
 import type { BreathPhase } from './engine';
 
@@ -8,24 +9,13 @@ import type { BreathPhase } from './engine';
  * be followed with the sound off and the eyes closed. Holds pass in stillness.
  */
 export function tickFor(phase: BreathPhase): void {
-  try {
-    if (phase.action === 'inhale') {
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
-    } else if (phase.action === 'exhale') {
-      void Haptics.selectionAsync().catch(() => undefined);
-    }
-  } catch {
-    // No haptics on this device.
-  }
+  if (phase.action === 'inhale') cue('breathIn');
+  else if (phase.action === 'exhale') cue('breathOut');
 }
 
 /** A moment that a bell would mark, with the sound off. */
 export function tickMoment(): void {
-  try {
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
-  } catch {
-    // No haptics on this device.
-  }
+  cue('moment');
 }
 
 /**

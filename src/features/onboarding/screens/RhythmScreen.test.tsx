@@ -1,10 +1,10 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
-import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { Dimensions, Platform } from 'react-native';
 
 import { showToast } from '@/components/Toast';
 import { copy } from '@/content/copy';
+import { cue } from '@/design/haptics';
 import { dialSize } from '@/features/onboarding/rhythm/TimeDial';
 import { initialOnboarding, useOnboarding } from '@/state/onboarding';
 import { render } from '@/testing/render';
@@ -13,10 +13,7 @@ import { commitReminder } from '@/features/onboarding/rhythm/commitReminder';
 
 import { RhythmScreen } from './RhythmScreen';
 
-jest.mock('expo-haptics', () => ({
-  impactAsync: jest.fn(),
-  ImpactFeedbackStyle: { Light: 'light' },
-}));
+jest.mock('@/design/haptics');
 jest.mock('expo-router', () => ({ router: { navigate: jest.fn() } }));
 jest.mock('@/features/onboarding/rhythm/commitReminder', () => ({
   commitReminder: jest.fn(),
@@ -170,10 +167,10 @@ describe('presets', () => {
     expect(preset(EVENING)).not.toBeChecked();
   });
 
-  it('gives a light haptic for each preset', async () => {
+  it('cues a tick for each preset', async () => {
     await render(<RhythmScreen />);
     await fireEvent.press(preset(EVENING));
-    expect(Haptics.impactAsync).toHaveBeenCalledWith('light');
+    expect(cue).toHaveBeenCalledWith('tick');
   });
 
   it('clears the preset when the dial is moved away', async () => {
@@ -239,27 +236,27 @@ describe('the dial', () => {
     expect(time('11:55 PM')).toBeTruthy();
   });
 
-  it('buzzes lightly once for each hour crossed, and not for each 5-minute step', async () => {
+  it('cues one fine tick for each hour crossed, and not for each 5-minute step', async () => {
     await render(<RhythmScreen />);
     // Starts at 21:30. Moving inside the 21:00 hour does not buzz.
     await touch('onBegin', onRing(angleOf(21, 35)));
     await touch('onUpdate', onRing(angleOf(21, 40)));
     await touch('onUpdate', onRing(angleOf(21, 55)));
-    expect(Haptics.impactAsync).not.toHaveBeenCalled();
+    expect(cue).not.toHaveBeenCalled();
 
     await touch('onUpdate', onRing(angleOf(22, 0)));
-    expect(Haptics.impactAsync).toHaveBeenCalledTimes(1);
-    expect(Haptics.impactAsync).toHaveBeenCalledWith('light');
+    expect(cue).toHaveBeenCalledTimes(1);
+    expect(cue).toHaveBeenCalledWith('fine');
 
     await touch('onUpdate', onRing(angleOf(22, 5)));
     await touch('onUpdate', onRing(angleOf(22, 20)));
-    expect(Haptics.impactAsync).toHaveBeenCalledTimes(1);
+    expect(cue).toHaveBeenCalledTimes(1);
 
     // Over midnight is an hour change too.
     await touch('onUpdate', onRing(angleOf(23, 55)));
-    expect(Haptics.impactAsync).toHaveBeenCalledTimes(2);
+    expect(cue).toHaveBeenCalledTimes(2);
     await touch('onUpdate', onRing(angleOf(0, 0)));
-    expect(Haptics.impactAsync).toHaveBeenCalledTimes(3);
+    expect(cue).toHaveBeenCalledTimes(3);
   });
 
   it('ignores a touch that starts near the centre, where the time is, or well outside the dial', async () => {
@@ -276,7 +273,7 @@ describe('the dial', () => {
     await render(<RhythmScreen />);
     await touch('onBegin', onRing(angleOf(21, 31)));
     expect(time('9:30 PM')).toBeTruthy();
-    expect(Haptics.impactAsync).not.toHaveBeenCalled();
+    expect(cue).not.toHaveBeenCalled();
   });
 });
 

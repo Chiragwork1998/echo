@@ -1,5 +1,4 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import * as Haptics from 'expo-haptics';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { SvgXml } from 'react-native-svg';
 
@@ -11,6 +10,7 @@ import { Icon } from '@/components/Icon';
 import { OnboardingHeading } from '@/components/OnboardingHeading';
 import { copy } from '@/content/copy';
 import { goldenCopy } from '@/content/goldenCopy';
+import { cue } from '@/design/haptics';
 import { useLayout } from '@/design/layout';
 import { iconXml } from '@/design/generated/vectors';
 import { useTheme } from '@/design/theme';
@@ -87,7 +87,7 @@ function WriteInstead() {
       accessibilityRole="button"
       accessibilityLabel={goldenCopy.nightWriteInstead}
       onPress={() => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        cue('tick');
         writeInstead();
       }}
       hitSlop={{ top: 6, bottom: 6, left: 8, right: 8 }}
@@ -113,7 +113,7 @@ function BreatheFirst() {
       accessibilityRole="button"
       accessibilityLabel={breatheCopy.breatheFirst}
       onPress={() => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        cue('tick');
         breathe();
       }}
       hitSlop={{ top: 6, bottom: 6, left: 8, right: 8 }}

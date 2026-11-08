@@ -36,10 +36,7 @@ function JournalSession(props: ComponentProps<typeof Session>) {
   return <Session plain {...props} />;
 }
 
-jest.mock('expo-haptics', () => ({
-  impactAsync: jest.fn(),
-  ImpactFeedbackStyle: { Light: 'light' },
-}));
+jest.mock('@/design/haptics');
 jest.mock('expo-router', () => {
   const { useEffect } = jest.requireActual('react');
   return {

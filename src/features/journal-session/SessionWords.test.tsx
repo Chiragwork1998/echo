@@ -28,10 +28,7 @@ import { JournalSession } from './JournalSession';
 import { sessionCopy } from './sessionCopy';
 import { QUIET_MS } from './sky';
 
-jest.mock('expo-haptics', () => ({
-  impactAsync: jest.fn(),
-  ImpactFeedbackStyle: { Light: 'light' },
-}));
+jest.mock('@/design/haptics');
 jest.mock('expo-router', () => {
   const { useEffect } = jest.requireActual('react');
   return {

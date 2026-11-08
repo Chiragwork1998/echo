@@ -1,20 +1,17 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react-native';
-import * as Haptics from 'expo-haptics';
 import { verifyLockAvailable } from '@/services/biometric';
 import { router } from 'expo-router';
 import { Dimensions, Platform } from 'react-native';
 
 import { copy } from '@/content/copy';
+import { cue } from '@/design/haptics';
 import { BIOMETRICS_UNAVAILABLE } from '@/features/onboarding/privacy/PrivacyControls';
 import { initialOnboarding, useOnboarding } from '@/state/onboarding';
 import { render } from '@/testing/render';
 
 import { PrivacyScreen } from './PrivacyScreen';
 
-jest.mock('expo-haptics', () => ({
-  impactAsync: jest.fn(),
-  ImpactFeedbackStyle: { Light: 'light' },
-}));
+jest.mock('@/design/haptics');
 jest.mock('@/services/biometric', () => ({ verifyLockAvailable: jest.fn() }));
 jest.mock('expo-router', () => ({ router: { navigate: jest.fn() } }));
 jest.mock(
@@ -81,11 +78,13 @@ describe('PrivacyScreen', () => {
     await fireEvent.press(backup());
     expect(useOnboarding.getState().privacy).toEqual({ biometricLock: false, privateBackup: true });
     expect(backup()).toBeChecked();
-    expect(Haptics.impactAsync).toHaveBeenCalledWith('light');
+    await waitFor(() => expect(cue).toHaveBeenCalledWith('on'));
     expect(verifyLock).not.toHaveBeenCalled();
 
     await fireEvent.press(backup());
     expect(useOnboarding.getState().privacy.privateBackup).toBe(false);
+    await waitFor(() => expect(cue).toHaveBeenLastCalledWith('off'));
+    expect(cue).toHaveBeenCalledTimes(2);
   });
 
   it('turns the lock on only after the person has passed it', async () => {
@@ -94,7 +93,8 @@ describe('PrivacyScreen', () => {
     await waitFor(() => expect(lock()).toBeChecked());
     expect(verifyLock).toHaveBeenCalledTimes(1);
     expect(useOnboarding.getState().privacy).toEqual({ biometricLock: true, privateBackup: false });
-    expect(Haptics.impactAsync).toHaveBeenCalledWith('light');
+    await waitFor(() => expect(cue).toHaveBeenCalledWith('on'));
+    expect(cue).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the two choices independent of each other', async () => {
@@ -113,6 +113,7 @@ describe('PrivacyScreen', () => {
     await fireEvent.press(lock());
     expect(lock()).not.toBeChecked();
     expect(verifyLock).not.toHaveBeenCalled();
+    await waitFor(() => expect(cue).toHaveBeenCalledWith('off'));
   });
 
   it('leaves the lock off, and available, when the person dismisses the prompt', async () => {
@@ -123,6 +124,9 @@ describe('PrivacyScreen', () => {
     expect(lock()).not.toBeChecked();
     expect(lock()).toBeEnabled();
     expect(useOnboarding.getState().privacy.biometricLock).toBe(false);
+    // The knob never moved, so there is nothing to feel.
+    await new Promise((done) => setTimeout(done, 80));
+    expect(cue).not.toHaveBeenCalled();
   });
 
   it.each([

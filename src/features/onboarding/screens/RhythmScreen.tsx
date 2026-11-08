@@ -1,4 +1,3 @@
-import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
@@ -8,6 +7,7 @@ import { OnboardingHeader } from '@/components/OnboardingHeader';
 import { PrimaryCTA } from '@/components/PrimaryCTA';
 import { ScreenShell } from '@/components/ScreenShell';
 import { copy } from '@/content/copy';
+import { cue } from '@/design/haptics';
 import { useLayout } from '@/design/layout';
 import { backPath, nextPath } from '@/features/onboarding/flow';
 import { commitReminder } from '@/features/onboarding/rhythm/commitReminder';
@@ -57,7 +57,7 @@ export function RhythmScreen() {
   const choose = useCallback((value: ReminderPreset) => {
     const target = PRESETS.find((item) => item.value === value);
     if (!target) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    cue('tick');
     setMinutes(target.minutes);
     setPreset(value);
   }, []);

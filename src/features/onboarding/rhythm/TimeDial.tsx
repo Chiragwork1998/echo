@@ -1,4 +1,3 @@
-import * as Haptics from 'expo-haptics';
 import { useCallback, useEffect, useRef } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
@@ -14,6 +13,7 @@ import Animated, {
 import { EchoText } from '@/components/EchoText';
 import { TrackedText } from '@/components/TrackedText';
 import { copy } from '@/content/copy';
+import { cue } from '@/design/haptics';
 
 import { DialFace, HandleLayer, REFERENCE_SIZE } from './DialFace';
 import { Glass } from './Glass';
@@ -98,7 +98,7 @@ export function TimeDial({
     },
     [onChange],
   );
-  const tick = useCallback(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light), []);
+  const tick = useCallback(() => cue('fine'), []);
 
   const follow = (x: number, y: number) => {
     'worklet';

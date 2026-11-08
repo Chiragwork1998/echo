@@ -13,11 +13,7 @@ import { becomeCopy } from './becomeCopy';
 
 let mockMorning = true;
 
-jest.mock('expo-haptics', () => ({
-  impactAsync: jest.fn(),
-  selectionAsync: jest.fn(),
-  ImpactFeedbackStyle: { Light: 'light', Medium: 'medium' },
-}));
+jest.mock('@/design/haptics');
 jest.mock('expo-router', () => ({
   router: { navigate: jest.fn(), push: jest.fn() },
   usePathname: () => '/home',

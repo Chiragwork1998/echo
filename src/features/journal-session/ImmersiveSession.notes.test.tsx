@@ -13,10 +13,7 @@ import { JournalSession } from './JournalSession';
 import { OPEN_GRACE_MS } from './ImmersiveSession';
 import { sessionCopy } from './sessionCopy';
 
-jest.mock('expo-haptics', () => ({
-  impactAsync: jest.fn(),
-  ImpactFeedbackStyle: { Light: 'light' },
-}));
+jest.mock('@/design/haptics');
 jest.mock('expo-router', () => {
   const { useEffect } = jest.requireActual('react');
   return {

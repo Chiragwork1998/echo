@@ -1,9 +1,9 @@
 import { fireEvent, screen, within } from '@testing-library/react-native';
-import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { Dimensions, StyleSheet } from 'react-native';
 
 import { copy } from '@/content/copy';
+import { cue } from '@/design/haptics';
 import { HorizonScreen } from '@/features/onboarding/screens/HorizonScreen';
 import { VoiceScreen } from '@/features/onboarding/screens/VoiceScreen';
 import { initialOnboarding, useOnboarding, type OnboardingState } from '@/state/onboarding';
@@ -11,10 +11,7 @@ import { render } from '@/testing/render';
 
 import { breakDetail, HORIZON_SCENE, VOICE_SCENE } from './scenes';
 
-jest.mock('expo-haptics', () => ({
-  impactAsync: jest.fn(),
-  ImpactFeedbackStyle: { Light: 'light' },
-}));
+jest.mock('@/design/haptics');
 jest.mock('expo-router', () => ({ router: { navigate: jest.fn() } }));
 jest.mock(
   'react-native-safe-area-context',
@@ -107,7 +104,7 @@ describe.each(cases)('$name', ({ Screen, text, field, values, step, back, next, 
     });
   });
 
-  it('selects one choice at a time, stores the right value, and gives a light haptic', async () => {
+  it('selects one choice at a time, stores the right value, and cues a tick', async () => {
     await render(<Screen />);
     for (const [i, value] of values.entries()) {
       await fireEvent.press(radio(i));
@@ -117,8 +114,8 @@ describe.each(cases)('$name', ({ Screen, text, field, values, step, back, next, 
       values.forEach((_, other) => {
         if (other !== i) expect(radio(other)).not.toBeChecked();
       });
-      expect(Haptics.impactAsync).toHaveBeenCalledTimes(i + 1);
-      expect(Haptics.impactAsync).toHaveBeenLastCalledWith('light');
+      expect(cue).toHaveBeenCalledTimes(i + 1);
+      expect(cue).toHaveBeenLastCalledWith('tick');
     }
   });
 
@@ -126,7 +123,7 @@ describe.each(cases)('$name', ({ Screen, text, field, values, step, back, next, 
     await render(<Screen />);
     await fireEvent.press(radio(1));
     await fireEvent.press(radio(1));
-    expect(Haptics.impactAsync).toHaveBeenCalledTimes(1);
+    expect(cue).toHaveBeenCalledTimes(1);
     expect(radio(1)).toBeChecked();
   });
 
@@ -210,7 +207,7 @@ describe.each(cases)('$name', ({ Screen, text, field, values, step, back, next, 
       await fireEvent.press(radio(1));
       expect(stored()).toBe(values[1]);
       expect(radio(1)).toBeChecked();
-      expect(Haptics.impactAsync).toHaveBeenCalledTimes(1);
+      expect(cue).toHaveBeenCalledTimes(1);
       await fireEvent.press(cta());
       expect(router.navigate).toHaveBeenCalledWith(next);
     });

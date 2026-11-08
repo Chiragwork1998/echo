@@ -1,4 +1,3 @@
-import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Pressable, StyleSheet, View } from 'react-native';
 
@@ -9,6 +8,7 @@ import { GlassCard } from '@/components/GlassCard';
 import { Icon } from '@/components/Icon';
 import { copy } from '@/content/copy';
 import { goldenCopy } from '@/content/goldenCopy';
+import { cue } from '@/design/haptics';
 import { useLayout } from '@/design/layout';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
@@ -98,7 +98,7 @@ function BeginCta() {
       accessibilityRole="button"
       accessibilityLabel={copy.home.begin}
       onPress={() => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        cue('commit');
         begin();
       }}
       style={({ pressed }) => [pressed && styles.ctaPressed]}
@@ -126,7 +126,7 @@ function BreatheFirst() {
       accessibilityRole="button"
       accessibilityLabel={breatheCopy.breatheFirst}
       onPress={() => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        cue('tick');
         breathe();
       }}
       hitSlop={{ top: 10, bottom: 10, left: 12, right: 12 }}
@@ -148,7 +148,7 @@ function WriteInstead() {
       accessibilityRole="button"
       accessibilityLabel={goldenCopy.dayWriteInstead}
       onPress={() => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        cue('tick');
         writeInstead();
       }}
       hitSlop={{ top: 10, bottom: 10, left: 12, right: 12 }}
