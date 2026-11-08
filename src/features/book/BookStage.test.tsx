@@ -164,6 +164,27 @@ describe('the cover as an object', () => {
     await render(book({ start: false, echoes: 9 }));
     expect(leaves()).toHaveLength(0);
   });
+
+  it('keeps the count of leaves it had when the cover began to swing', async () => {
+    await render(book({ start: true, echoes: 1 }));
+    expect(leaves()).toHaveLength(1);
+    await tick(FULL.rise + 50);
+    // The count arrives late, while the cover is swinging: the leaves already turning stay as they are.
+    await redraw({ start: true, echoes: 9 });
+    expect(leaves()).toHaveLength(1);
+  });
+
+  it('takes the count as it is until the cover begins to swing', async () => {
+    await render(book({ start: true, echoes: 1 }));
+    await redraw({ start: true, echoes: 9 });
+    expect(leaves()).toHaveLength(3);
+  });
+
+  it('draws the board and its leaves without a texture of their own', async () => {
+    await render(book({ start: true, echoes: 9 }));
+    expect(drawn('book-hinge')?.props.renderToHardwareTextureAndroid).toBeUndefined();
+    for (const leaf of leaves()) expect(leaf.props.renderToHardwareTextureAndroid).toBeUndefined();
+  });
 });
 
 describe('the unseating of the cover', () => {

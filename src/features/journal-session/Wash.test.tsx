@@ -5,6 +5,7 @@ import { fireEvent, screen } from '@testing-library/react-native';
 import { withTiming } from 'react-native-reanimated';
 
 import { ThemeProvider } from '@/design/theme';
+import { tokens } from '@/design/tokens';
 import { render } from '@/testing/render';
 
 import { QuietControls } from './QuietControls';
@@ -40,7 +41,7 @@ describe('the ground shade', () => {
     await rerender(shade(false));
     expect(last()[0]).toBe(0);
     expect(last()[1]).toMatchObject({ duration: QUIET_FADE.go });
-    expect(QUIET_FADE).toEqual({ come: 900, go: 200 });
+    expect(QUIET_FADE).toEqual({ come: 900, go: 200, reduced: tokens.motion.fast });
   });
 
   it('leaves the shades that are not the session’s as they were: 900 in and 600 out', async () => {
@@ -51,10 +52,10 @@ describe('the ground shade', () => {
     expect(last()[1]).toMatchObject({ duration: 600 });
   });
 
-  it('is a plain 160 ms fade under Reduce Motion, quiet or not', async () => {
+  it('is a plain fade under Reduce Motion: the quiet row’s own under the row, 160 ms elsewhere', async () => {
     mockReduced = true;
     const { rerender } = await rendered(<Wash kind="ground" quiet visible style={{}} />);
-    expect(last()[1]).toMatchObject({ duration: 160 });
+    expect(last()[1]).toMatchObject({ duration: QUIET_FADE.reduced });
     await rerender(<Wash kind="sky" visible={false} style={{}} />);
     expect(last()[1]).toMatchObject({ duration: 160 });
   });
@@ -81,6 +82,15 @@ describe('the quiet row', () => {
     expect(last()[1]).toMatchObject({ duration: QUIET_FADE.go });
     // The least a fade may be (docs/DESIGN_QUALITY.md).
     expect(QUIET_FADE.go).toBeGreaterThanOrEqual(200);
+  });
+
+  it('fades with its shade under Reduce Motion too, in the same 180 ms', async () => {
+    mockReduced = true;
+    const { rerender } = await rendered(row(true));
+    expect(last()[1]).toMatchObject({ duration: QUIET_FADE.reduced });
+    await rerender(row(false));
+    expect(last()[1]).toMatchObject({ duration: QUIET_FADE.reduced });
+    expect(QUIET_FADE.reduced).toBe(tokens.motion.fast);
   });
 
   it('brings Reflect up with the house curve rather than whole, and still presses', async () => {

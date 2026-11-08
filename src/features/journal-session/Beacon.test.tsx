@@ -5,7 +5,7 @@
 import { screen } from '@testing-library/react-native';
 import { act } from 'react';
 import { StyleSheet } from 'react-native';
-import { cancelAnimation, withRepeat, withTiming } from 'react-native-reanimated';
+import { cancelAnimation, withDelay, withRepeat, withTiming } from 'react-native-reanimated';
 
 import { tokens } from '@/design/tokens';
 import { ThemeProvider } from '@/design/theme';
@@ -18,6 +18,7 @@ jest.mock('react-native-reanimated', () => ({
   ...jest.requireActual('@/testing/reanimatedMock').reanimatedMock,
   withTiming: jest.fn((value: unknown) => value),
   withRepeat: jest.fn((value: unknown) => value),
+  withDelay: jest.fn((_delay: number, value: unknown) => value),
   cancelAnimation: jest.fn(),
 }));
 let mockReduced = false;
@@ -83,8 +84,27 @@ describe('the recording light', () => {
     await rerender(light({ live: true }));
     expect(timed(1).some((config) => config.duration === tokens.motion.fast)).toBe(true);
     expect(jest.mocked(withRepeat)).not.toHaveBeenCalled();
+  });
+
+  it('dips out and back across a move under Reduce Motion, and is placed while it is out', async () => {
+    mockReduced = true;
+    const { rerender } = await rendered(light({ live: true, y: 200 }));
+    jest.mocked(withTiming).mockClear();
     await rerender(light({ live: true, y: 300 }));
+    const half = tokens.motion.fast / 2;
+    // Out and back over the house fade, rather than a jump from one place to the other.
+    expect(timed(0).some((config) => config.duration === half)).toBe(true);
+    expect(timed(1).some((config) => config.duration === half)).toBe(true);
     expect(timed(300 - LIGHT / 2).some((config) => config.duration === 0)).toBe(true);
+    expect(jest.mocked(withDelay)).toHaveBeenCalledWith(half, 300 - LIGHT / 2);
+  });
+
+  it('does not dip when it has not moved', async () => {
+    mockReduced = true;
+    const { rerender } = await rendered(light({ live: true, y: 200 }));
+    jest.mocked(withTiming).mockClear();
+    await rerender(light({ live: false, y: 200 }));
+    expect(timed(0).some((config) => config.duration === tokens.motion.fast / 2)).toBe(false);
   });
 
   it('leaves the caret as it was: it follows typing and always beats', async () => {

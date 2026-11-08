@@ -76,6 +76,7 @@ type Voice = ReturnType<typeof useVoiceRecorder>;
 let voice: Voice;
 let journal: Journal;
 let commitFails: boolean;
+let commitGone: boolean;
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -92,12 +93,15 @@ beforeEach(() => {
   usePreferences.setState({ lastMode: 'write', voiceConsent: null });
   const inner = createMemoryJournal({ entries: [] });
   commitFails = false;
+  commitGone = false;
   journal = {
     ...inner,
     commitEntry: (id, content) =>
-      commitFails
-        ? Promise.resolve({ ok: false, error: { code: 'write_failed', retryable: true } })
-        : inner.commitEntry(id, content),
+      commitGone
+        ? Promise.resolve({ ok: false, error: { code: 'not_found', retryable: false } })
+        : commitFails
+          ? Promise.resolve({ ok: false, error: { code: 'write_failed', retryable: true } })
+          : inner.commitEntry(id, content),
   };
   setJournal(journal);
   voice = {
@@ -320,14 +324,28 @@ describe('JournalSession Reflect', () => {
   });
 });
 
+describe('JournalSession, when its entry has gone', () => {
+  it('leaves First Echo by popping back to Arrival', async () => {
+    const input = await open();
+    await write(input);
+    commitGone = true;
+    await fireEvent.press(reflect());
+    await waitFor(() => expect(router.dismissTo).toHaveBeenCalledWith('/onboarding/arrival'));
+    expect(router.navigate).not.toHaveBeenCalled();
+  });
+});
+
 describe('JournalSession Back', () => {
   const back = () => screen.getByRole('button', { name: 'Back' });
 
-  it('leaves at once when there is nothing to keep', async () => {
+  // First Echo is pushed over Arrival in the onboarding stack. `navigate` would push a second
+  // Arrival over it; going back pops to the one that is already there, as the daily session does.
+  it('leaves at once when there is nothing to keep, by popping back to Arrival', async () => {
     await open();
     await fireEvent.press(back());
     expect(openDialog()).toBeNull();
-    expect(router.navigate).toHaveBeenCalledWith('/onboarding/arrival');
+    expect(router.dismissTo).toHaveBeenCalledWith('/onboarding/arrival');
+    expect(router.navigate).not.toHaveBeenCalled();
   });
 
   // The daily session is pushed above Home in the same stack. `navigate` would push a second Home
@@ -371,7 +389,8 @@ describe('JournalSession Back', () => {
     await write(input);
     await fireEvent.press(back());
     await chooseInDialog(sessionCopy.leave.keep);
-    expect(router.navigate).toHaveBeenCalledWith('/onboarding/arrival');
+    expect(router.dismissTo).toHaveBeenCalledWith('/onboarding/arrival');
+    expect(router.navigate).not.toHaveBeenCalled();
     const saved = await latestDraft();
     expect(saved).toMatchObject({ ok: true, value: { body: BODY } });
   });
@@ -381,7 +400,8 @@ describe('JournalSession Back', () => {
     await write(input);
     await fireEvent.press(back());
     await chooseInDialog(sessionCopy.leave.discard);
-    expect(router.navigate).toHaveBeenCalledWith('/onboarding/arrival');
+    expect(router.dismissTo).toHaveBeenCalledWith('/onboarding/arrival');
+    expect(router.navigate).not.toHaveBeenCalled();
     expect(await latestDraft()).toMatchObject({ ok: true, value: null });
   });
 

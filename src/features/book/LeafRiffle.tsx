@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 
 import type { PaperLook } from './paper';
-import { leafOpacity, leafProgress, leafShade } from './standing';
+import { leafProgress, leafShade, riffleOpacity } from './standing';
 
 const PERSPECTIVE = 1800;
 
@@ -13,8 +13,6 @@ type Props = {
   /** The cover's swing (0 to 1). Every leaf is driven by it, so a tap or a practised book scales them for free. */
   cover: SharedValue<number>;
   look: PaperLook;
-  /** True while the book is shut and its cover still to open: only then are the leaves worth a texture. */
-  active: boolean;
 };
 
 /**
@@ -22,26 +20,23 @@ type Props = {
  * the edge of a thick book. Plain sheets in the page's own paper, with no grain and no SVG: they are
  * on screen for half a second, in motion, and take no touches.
  */
-export function LeafRiffle({ count, cover, look, active }: Props) {
+export function LeafRiffle({ count, cover, look }: Props) {
   return (
     <>
       {Array.from({ length: count }, (_, index) => (
-        <Leaf key={index} index={index} cover={cover} look={look} active={active} />
+        <Leaf key={index} index={index} cover={cover} look={look} />
       ))}
     </>
   );
 }
 
-function Leaf({
-  index,
-  cover,
-  look,
-  active,
-}: { index: number } & Pick<Props, 'cover' | 'look' | 'active'>) {
+function Leaf({ index, cover, look }: { index: number } & Pick<Props, 'cover' | 'look'>) {
   const turn = useAnimatedStyle(() => {
-    const progress = leafProgress(cover.get(), index);
+    const c = cover.get();
+    const progress = leafProgress(c, index);
     return {
-      opacity: leafOpacity(progress),
+      // It leaves with the board as the board comes to rest, never cut off at the end.
+      opacity: riffleOpacity(c, index),
       transform: [{ perspective: PERSPECTIVE }, { rotateY: `${-180 * progress}deg` }],
     };
   });
@@ -52,7 +47,6 @@ function Leaf({
   return (
     <Animated.View
       pointerEvents="none"
-      renderToHardwareTextureAndroid={active}
       testID={`book-leaf-${index}`}
       style={[styles.leaf, { backgroundColor: look.fill }, turn]}
     >

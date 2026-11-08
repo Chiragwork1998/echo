@@ -5,6 +5,7 @@ import {
   closingLeafOpacity,
   clothLightAt,
   coverAngle,
+  coverHurry,
   coverEdge,
   frontOpacity,
   frontShade,
@@ -19,6 +20,7 @@ import {
   ribbonSway,
   ribbonTuck,
   riffleLeaves,
+  riffleOpacity,
   riseOpacity,
   shadowOpacity,
   PERSPECTIVE,
@@ -196,6 +198,25 @@ describe('the leaves that riffle', () => {
     expect(leafShade(0)).toBe(0);
     expect(leafShade(0.5)).toBeCloseTo(0.16);
     expect(leafShade(1)).toBe(0);
+  });
+
+  it('leave with the board as it comes to rest, so none is cut off when the book is open', () => {
+    // A leaf lying open is still faintly there; the board fading takes it to nothing with it.
+    expect(leafOpacity(leafProgress(1, 0))).toBeGreaterThan(0);
+    for (const index of [0, 1, 2]) {
+      expect(riffleOpacity(1, index)).toBe(0);
+      expect(riffleOpacity(0.7, index)).toBeCloseTo(leafOpacity(leafProgress(0.7, index)), 5);
+      expect(riffleOpacity(0.9, index)).toBeLessThan(leafOpacity(leafProgress(0.9, index)));
+    }
+  });
+});
+
+describe('a tap that says enough to the opening', () => {
+  it('starts a cover still at rest from rest, and carries on a cover already moving', () => {
+    expect(coverHurry(0)).toBe('inOut');
+    expect(coverHurry(0.02)).toBe('inOut');
+    expect(coverHurry(0.03)).toBe('out');
+    expect(coverHurry(0.6)).toBe('out');
   });
 });
 

@@ -10,7 +10,6 @@ import Animated, {
 
 import { OneLineLabel } from '@/components/OneLineLabel';
 import { copy } from '@/content/copy';
-import { tokens } from '@/design/tokens';
 import { useReduceMotion } from '@/design/useReduceMotion';
 
 import { Arrive } from './Arrive';
@@ -96,7 +95,7 @@ export function QuietControls({
   useEffect(() => {
     shown.set(
       withTiming(visible ? 1 : 0, {
-        duration: reduced ? tokens.motion.instant : visible ? QUIET_FADE.come : QUIET_FADE.go,
+        duration: reduced ? QUIET_FADE.reduced : visible ? QUIET_FADE.come : QUIET_FADE.go,
         easing: Easing.out(Easing.quad),
         reduceMotion: ReduceMotion.Never,
       }),

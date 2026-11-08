@@ -66,16 +66,14 @@ async function closed(closing: (() => Promise<void>) | null) {
   }
 }
 /**
- * Leaves for the screen this one opened from. The daily session is pushed over Home in the same
- * stack, and `navigate` pushes a second Home over it instead of closing it. The session then stays
- * mounted behind a Home that is still dissolved, and the person sees only the photograph.
- * `dismissTo` pops to the Home that is already there, which closes the session and brings Home back.
+ * Leaves for the screen this one opened from. Both sessions are pushed over it in the same stack,
+ * and `navigate` would push a second copy over the session instead of closing it: the daily session
+ * would stay mounted behind a Home that is still dissolved, and First Echo behind a second Arrival.
+ * `dismissTo` pops to the screen that is already there, which closes the session.
  */
 const goBack = (variant: SessionVariant) => {
   const path = TARGETS[variant].back;
-  if (!path) return;
-  if (variant === 'daily') router.dismissTo(path as never);
-  else go(path);
+  if (path) router.dismissTo(path as never);
 };
 
 /** Where a touch on the open sky starts another take: not mid-question, and not before the microphone is allowed. */

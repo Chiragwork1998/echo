@@ -38,6 +38,7 @@ import {
   liningShade,
   pageSheen,
   PERSPECTIVE,
+  coverHurry,
   riffleLeaves,
   riseOpacity,
   shadowOpacity,
@@ -153,6 +154,13 @@ export function BookStage({
   const cover = useSharedValue(0);
   const [opened, setOpened] = useState(false);
   const [headed, setHeaded] = useState(false);
+  // The count of leaves that riffle, taken as the cover begins to swing: a count that arrives later
+  // does not add or take away a leaf in the middle of its turn.
+  const [latched, setLatched] = useState<number | null>(null);
+  const counted = useRef(echoes);
+  useEffect(() => {
+    counted.current = echoes;
+  });
   // The harness can hold the opening at a moment, to look at it (./qaPins). Never set in a real app.
   const [pin] = useState(() => ({ cover: coverPin(), rise: risePin() }));
   const phase = !start ? 'waiting' : closing ? 'closing' : opened ? 'open' : 'closed';
@@ -183,6 +191,7 @@ export function BookStage({
     // When the page's head arrives: once the cover has swung well off the page.
     let head: number;
     let unseat: ReturnType<typeof setTimeout> | undefined;
+    let latch: ReturnType<typeof setTimeout> | undefined;
     if (reduced) {
       // Reduce Motion: the book fades in already open, in the time of a blink.
       cover.set(1);
@@ -198,16 +207,35 @@ export function BookStage({
       cancelAnimation(cover);
       if (arrive.get() < BARELY) still.set(1);
       const from = cover.get();
+      // A cover already moving carries on and decelerates; one still at rest starts gently.
+      const carried = coverHurry(from) === 'out';
       arrive.set(withTiming(1, timing(HURRY_MS, Easing.out(Easing.cubic))));
-      cover.set(withTiming(1, timing(HURRY_MS, Easing.inOut(Easing.cubic))));
+      cover.set(
+        withTiming(
+          1,
+          timing(HURRY_MS, carried ? Easing.out(Easing.cubic) : Easing.inOut(Easing.cubic)),
+        ),
+      );
       total = HURRY_MS;
-      head = from >= HEAD_AT ? 0 : HURRY_MS * swingTimeAt((HEAD_AT - from) / (1 - from));
+      head =
+        from >= HEAD_AT
+          ? 0
+          : HURRY_MS *
+            (carried
+              ? 1 - Math.cbrt(1 - (HEAD_AT - from) / (1 - from))
+              : swingTimeAt((HEAD_AT - from) / (1 - from)));
+      // The leaves that riffle are counted as the cover begins to move, and kept.
+      latch = setTimeout(() => setLatched((count) => count ?? riffleLeaves(counted.current)), 0);
     } else {
       const first = rising ? ritual.rise : ritual.forward;
       arrive.set(withTiming(1, timing(first)));
       cover.set(withDelay(first, withTiming(1, timing(ritual.cover, Easing.inOut(Easing.cubic)))));
       total = first + ritual.cover;
       head = first + ritual.cover * swingTimeAt(HEAD_AT);
+      latch = setTimeout(
+        () => setLatched((count) => count ?? riffleLeaves(counted.current)),
+        first,
+      );
       // One small click as the board unseats: a book does not buzz while it rises, or while its
       // leaves riffle. It is felt once, where the cover first leaves the page: the board starts
       // from rest, so that is a little after the swing begins, not on its first frame.
@@ -223,6 +251,7 @@ export function BookStage({
       clearTimeout(done);
       clearTimeout(headTimer);
       if (unseat) clearTimeout(unseat);
+      if (latch) clearTimeout(latch);
     };
   }, [start, opened, hurry, reduced, entrance, ritual, arrive, cover, still, pin]);
 
@@ -342,7 +371,7 @@ export function BookStage({
   const cloth = volume.cloth;
   const vellum = surface === 'vellum';
   const lining = mixColor(cloth, '#000000', LINING_DARKER);
-  const leaves = reduced ? 0 : riffleLeaves(echoes);
+  const leaves = reduced ? 0 : (latched ?? riffleLeaves(echoes));
 
   return (
     <Animated.View
@@ -387,7 +416,7 @@ export function BookStage({
         headed || opened || (pin.cover ?? 0) >= HEAD_AT,
       )}
       {/* A few leaves lift from the spine in the wake of the cover. */}
-      {closed && <LeafRiffle active count={leaves} cover={cover} look={look} />}
+      {closed && <LeafRiffle count={leaves} cover={cover} look={look} />}
       {/* What the cover does to the page as it leaves it: its shadow, and the light it uncovers. */}
       {covering && (
         <View pointerEvents="none" style={styles.pageClip}>
@@ -439,12 +468,7 @@ export function BookStage({
         />
       )}
       {covering && (
-        <Animated.View
-          pointerEvents="none"
-          renderToHardwareTextureAndroid
-          testID="book-hinge"
-          style={[styles.hinge, swing]}
-        >
+        <Animated.View pointerEvents="none" testID="book-hinge" style={[styles.hinge, swing]}>
           <Animated.View style={front}>
             <BookCover
               height={height}

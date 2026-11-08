@@ -134,6 +134,26 @@ export function leafShade(progress: number): number {
   return 0.16 * 4 * progress * (1 - progress);
 }
 
+/**
+ * How visible riffling leaf `index` is with the cover at `c`: fainter as it turns, and gone with the
+ * board as the board comes to rest, so no leaf is cut off when the book is open.
+ */
+export function riffleOpacity(c: number, index: number): number {
+  'worklet';
+  return leafOpacity(leafProgress(c, index)) * hingeOpacity(c);
+}
+
+/** A cover this far into its swing is moving: a tap carries it on rather than starting it again. */
+const COVER_STARTED = 0.02;
+
+/**
+ * The curve that finishes the cover when a tap says enough: a cover still at rest starts gently, in
+ * and out; one already moving carries on and decelerates, so it never slows and speeds up again.
+ */
+export function coverHurry(c: number): 'out' | 'inOut' {
+  return c > COVER_STARTED ? 'out' : 'inOut';
+}
+
 /** The light that crosses the cloth as the book comes to rest. It is only in the second half of the rise. */
 export function clothLightAlpha(a: number): number {
   'worklet';

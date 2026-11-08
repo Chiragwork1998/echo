@@ -10,6 +10,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { useTheme } from '@/design/theme';
+import { tokens } from '@/design/tokens';
 import { useReduceMotion } from '@/design/useReduceMotion';
 
 /**
@@ -28,9 +29,10 @@ const GO_MS = 600;
 /**
  * How the quiet row and the shade under it come and go. They are one thing, so they share both the
  * lengths and the curve: the words are never left standing on bright foliage while the shade is
- * still on its way, and no dark band is left behind them when they have gone.
+ * still on its way, and no dark band is left behind them when they have gone. Under Reduce Motion
+ * both are the house's short fade.
  */
-export const QUIET_FADE = { come: 900, go: 200 } as const;
+export const QUIET_FADE = { come: 900, go: 200, reduced: tokens.motion.fast } as const;
 
 type Props = {
   kind: 'sky' | 'ground';
@@ -50,7 +52,7 @@ export function Wash({ kind, visible, quiet = false, style }: Props) {
     const go = quiet ? QUIET_FADE.go : GO_MS;
     shown.set(
       withTiming(visible ? 1 : 0, {
-        duration: reduced ? 160 : visible ? come : go,
+        duration: reduced ? (quiet ? QUIET_FADE.reduced : 160) : visible ? come : go,
         easing: quiet ? Easing.out(Easing.quad) : Easing.inOut(Easing.quad),
         reduceMotion: ReduceMotion.Never,
       }),

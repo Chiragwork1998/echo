@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { StyleSheet } from 'react-native';
 import Animated, {
   Easing,
@@ -6,6 +6,7 @@ import Animated, {
   cancelAnimation,
   useAnimatedStyle,
   useSharedValue,
+  withDelay,
   withRepeat,
   withSequence,
   withTiming,
@@ -55,6 +56,9 @@ export function Beacon({ kind, visible, live = false, x, y }: Props) {
   // the sky while someone speaks, so going from one to the other is a blend and never a step.
   const mix = useSharedValue(0);
   const slide = useSharedValue(y - LIGHT / 2);
+  // Under Reduce Motion the light does not travel: it dips out, is placed, and comes back.
+  const dip = useSharedValue(1);
+  const placed = useRef(y);
   const caret = kind === 'caret';
   // The breath runs on while the light lets it go, so nothing drops from wherever it was.
   const [lingering, setLingering] = useState(live);
@@ -88,15 +92,30 @@ export function Beacon({ kind, visible, live = false, x, y }: Props) {
   }, [caret, live, mix, reduced]);
 
   useEffect(() => {
-    if (caret) return;
-    slide.set(
-      withTiming(y - LIGHT / 2, {
-        duration: reduced ? 0 : SLIDE_MS,
-        easing: HOUSE,
+    if (caret || placed.current === y) return;
+    placed.current = y;
+    if (!reduced) {
+      slide.set(
+        withTiming(y - LIGHT / 2, {
+          duration: SLIDE_MS,
+          easing: HOUSE,
+          reduceMotion: ReduceMotion.Never,
+        }),
+      );
+      return;
+    }
+    const half = tokens.motion.fast / 2;
+    const fade = (to: number) =>
+      withTiming(to, {
+        duration: half,
+        easing: Easing.out(Easing.quad),
         reduceMotion: ReduceMotion.Never,
-      }),
+      });
+    dip.set(withSequence(fade(0), fade(1)));
+    slide.set(
+      withDelay(half, withTiming(y - LIGHT / 2, { duration: 0, reduceMotion: ReduceMotion.Never })),
     );
-  }, [caret, reduced, slide, y]);
+  }, [caret, dip, reduced, slide, y]);
 
   useEffect(() => {
     if (!pulsing) {
@@ -121,7 +140,7 @@ export function Beacon({ kind, visible, live = false, x, y }: Props) {
     const m = mix.get();
     const breath = reduced ? 0.9 : 0.5 + 0.5 * b;
     return {
-      opacity: presence.get() * (REST + (breath - REST) * m),
+      opacity: presence.get() * dip.get() * (REST + (breath - REST) * m),
       transform: [
         { translateY: slide.get() },
         { scale: reduced ? 1 : 1 + (0.85 + 0.45 * b - 1) * m },
