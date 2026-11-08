@@ -23,9 +23,9 @@ import { tokens } from '@/design/tokens';
 import { useReduceMotion } from '@/design/useReduceMotion';
 import { useScreenReader } from '@/features/journal-session/useScreenReader';
 
+import { useUiBegun, watchAnimation, type Watch } from './animationEnd';
 import { bookCopy } from './bookCopy';
 import { BookCover } from './CoverArt';
-import { ANIMATION_NET_MS } from './ritual';
 import { Ribbon } from './Ribbon';
 import { BOOK_W, STEP, VOLUMES, centred, volumeIndex, type Volume } from './volumes';
 
@@ -127,7 +127,8 @@ export function Shelf({ initial, onChoose, onLeft, offset }: Props) {
   const drag = useRef({ start: 0 });
   const leaving = useRef(false);
   const chooseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const leftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const leftWatch = useRef<Watch | null>(null);
+  const begun = useUiBegun();
   const here = useRef(true);
 
   // A volume chosen and then left (Back within the exit) must not arrive on the screen that is going.
@@ -137,7 +138,7 @@ export function Shelf({ initial, onChoose, onLeft, offset }: Props) {
     return () => {
       here.current = false;
       if (chooseTimer.current) clearTimeout(chooseTimer.current);
-      if (leftTimer.current) clearTimeout(leftTimer.current);
+      leftWatch.current?.cancel();
     };
   }, []);
 
@@ -185,12 +186,8 @@ export function Shelf({ initial, onChoose, onLeft, offset }: Props) {
     if (leaving.current) return;
     leaving.current = true;
     setAt(index);
-    let said = false;
     const left = () => {
-      if (said || !here.current) return;
-      said = true;
-      if (leftTimer.current) clearTimeout(leftTimer.current);
-      onLeft?.();
+      if (here.current) onLeft?.();
     };
     if (reduced) {
       out.set(1);
@@ -199,10 +196,15 @@ export function Shelf({ initial, onChoose, onLeft, offset }: Props) {
       return;
     }
     // The shelf has left when its own fade has ended, which a phone that is behind the clock reaches
-    // late; and the book is asked for well before that, so that there is never a frame of neither.
-    const faded = (finished?: boolean) => {
+    // late (the UI thread of the walked emulator began it 1.8 to 2.1 s after it was asked); and the book is
+    // asked for well before that, so that there is never a frame of neither. The net for a fade that is
+    // lost is set from the fade's first frame on the UI thread, never from the tap.
+    const watch = watchAnimation(OUT_MS, left);
+    leftWatch.current = watch;
+    const { ended } = watch;
+    const faded = () => {
       'worklet';
-      if (finished) runOnJS(left)();
+      runOnJS(ended)();
     };
     out.set(
       withTiming(
@@ -215,8 +217,8 @@ export function Shelf({ initial, onChoose, onLeft, offset }: Props) {
         faded,
       ),
     );
+    begun(watch.began);
     chooseTimer.current = setTimeout(() => onChoose(index), CHOOSE_AT_MS);
-    leftTimer.current = setTimeout(left, OUT_MS + ANIMATION_NET_MS);
   };
 
   // The handlers read the drag only when a finger moves, never while rendering.
@@ -257,7 +259,13 @@ export function Shelf({ initial, onChoose, onLeft, offset }: Props) {
   const row = useAnimatedStyle(() => ({ transform: [{ translateX: offset.get() }] }));
 
   return (
-    <Animated.View style={[styles.stage, stage]}>
+    <Animated.View
+      testID="shelf-stage"
+      style={[styles.stage, stage]}
+      // The books, the rail and the plank overlap, and the shelf leaves with an opacity: faded one by
+      // one on Android they would show through each other. This fades the shelf as one picture.
+      needsOffscreenAlphaCompositing
+    >
       <View style={styles.clip} {...swipe.panHandlers} accessibilityRole="list" testID="book-shelf">
         <View style={styles.rail} />
         <Animated.View style={[styles.row, row]}>

@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { router } from 'expo-router';
-import { AccessibilityInfo } from 'react-native';
+import { AccessibilityInfo, StyleSheet } from 'react-native';
 import { withTiming } from 'react-native-reanimated';
 
 import { copy } from '@/content/copy';
@@ -15,6 +15,8 @@ import type { Entry } from '@/features/journal/types';
 import { ImmersiveSession } from '@/features/journal-session/ImmersiveSession';
 import { JournalSession } from '@/features/journal-session/JournalSession';
 import { useSessionController } from '@/features/journal-session/useSessionController';
+import { ThemeProvider } from '@/design/theme';
+import { tokens } from '@/design/tokens';
 import { initialOnboarding, useOnboarding } from '@/state/onboarding';
 import { resetPreferences, usePreferences } from '@/state/preferences';
 import { render } from '@/testing/render';
@@ -252,6 +254,48 @@ describe('the opening ritual (D-008)', () => {
     await fireEvent.press(screen.getByTestId('session-scenery'));
     await tick(HURRY_MS + 50);
     expect(editable()).toBe(true);
+  });
+
+  describe('with Reduce Motion switched on while ECHO is running', () => {
+    // The system's answer comes after the first draw, which has read Reduce Motion as it was when the app
+    // began: the book is drawn once as the full ritual and then again as a fade. It must open where it rests.
+    // A new element each time, so that the screen is drawn again, as it is when the system answers.
+    const session = () => (
+      <ThemeProvider crossfade={false}>
+        <JournalSession variant="daily" initialMode="write" />
+      </ThemeProvider>
+    );
+    const stage = () =>
+      StyleSheet.flatten(
+        screen.getByTestId('book-stage', { includeHiddenElements: true }).props.style,
+      );
+
+    it('opens where it rests when the system answers as the next session begins', async () => {
+      mockReduced = false;
+      await render(session());
+      mockReduced = true;
+      await screen.rerender(session());
+      expect(editable()).toBe(false);
+      await tick(tokens.motion.fast + 50);
+      expect(editable()).toBe(true);
+      expect(stage().opacity).toBe(1);
+      expect(stage().transform).toEqual([{ translateY: 0 }, { scale: 1 }]);
+      expect(screen.queryByTestId('book-hinge', { includeHiddenElements: true })).toBeNull();
+    });
+
+    it('opens where it rests when it is switched on while the book is rising', async () => {
+      mockReduced = false;
+      await render(session());
+      await tick(FULL.stillness + 400);
+      expect(editable()).toBe(false);
+      mockReduced = true;
+      await screen.rerender(session());
+      await tick(tokens.motion.fast + 50);
+      expect(editable()).toBe(true);
+      expect(stage().opacity).toBe(1);
+      expect(stage().transform).toEqual([{ translateY: 0 }, { scale: 1 }]);
+      expect(usePreferences.getState().bookOpens).toBe(1);
+    });
   });
 
   it('is about half as long once the book has opened five times', async () => {

@@ -22,12 +22,13 @@ import { mixColor } from '@/design/mixColor';
 import { tokens } from '@/design/tokens';
 import { useReduceMotion } from '@/design/useReduceMotion';
 
+import { useUiBegun, watchAnimation } from './animationEnd';
 import { BookCover, type Inscribing } from './CoverArt';
 import { LeafRiffle } from './LeafRiffle';
 import { usePaperLook, type Surface } from './paper';
 import { coverPin, risePin } from './qaPins';
 import { Ribbon } from './Ribbon';
-import { ANIMATION_NET_MS, CLOSE_REDUCED_MS, HURRY_MS, type Ritual } from './ritual';
+import { CLOSE_REDUCED_MS, HURRY_MS, type Ritual } from './ritual';
 import {
   clothLightAlpha,
   clothLightAt,
@@ -45,7 +46,6 @@ import {
   riseOpacity,
   shadowOpacity,
   SINK,
-  SINK_GONE,
 } from './standing';
 import type { ClosingState } from './useBookClosing';
 import { VOLUMES, type Volume } from './volumes';
@@ -112,13 +112,16 @@ type Props = {
   /** The name has been stamped on the cover. */
   onStamped?: () => void;
   onOpened?: () => void;
-  /** The closing: the cover has come down, as its own animation ends (see ./useBookClosing). */
+  /**
+   * The closing: the cover has come down, as its own animation ends (see ./useBookClosing). A UI thread
+   * that never says so is let go of a net after the cover was due, counted from its first frame.
+   */
   onLanded?: () => void;
   /**
-   * The closing: the book has sunk far enough for the next screen to come (all the way, when hurried).
-   * Said as it is half gone, and again as it finishes sinking, in case the first was missed.
+   * The closing: the book has begun to sink, as the UI thread takes the sink up, however late that is.
+   * The next screen is asked for as it does, when a tap has hurried the closing.
    */
-  onGone?: () => void;
+  onSinkBegun?: () => void;
   /**
    * The page, which is there from the first moment, and is told when the cover has opened and when
    * it has swung far enough off the page for the page's own head to arrive (`headed`).
@@ -159,7 +162,7 @@ export function BookStage({
   onStamped,
   onOpened,
   onLanded,
-  onGone,
+  onSinkBegun,
   children,
 }: Props) {
   const reduced = useReduceMotion();
@@ -184,14 +187,16 @@ export function BookStage({
   const covering = !reduced && (phase === 'closed' || phase === 'closing' || (preparing && opened));
   const report = useRef(onOpened);
   const reportLanded = useRef(onLanded);
-  const reportGone = useRef(onGone);
+  const reportSinking = useRef(onSinkBegun);
   useEffect(() => {
     report.current = onOpened;
     reportLanded.current = onLanded;
-    reportGone.current = onGone;
+    reportSinking.current = onSinkBegun;
   });
   const hasLanded = useCallback(() => reportLanded.current?.(), []);
-  const hasGone = useCallback(() => reportGone.current?.(), []);
+  const hasSunk = useCallback(() => reportSinking.current?.(), []);
+  // Says, from the UI thread's first frame, that what was just set has begun. The nets are set from it.
+  const begun = useUiBegun();
 
   // The leaves that riffle are counted as the cover begins to move, and kept.
   const latchLeaves = useCallback(
@@ -228,11 +233,17 @@ export function BookStage({
       easing,
       reduceMotion: ReduceMotion.Never,
     });
+    if (!reduced && (pin.cover !== undefined || pin.rise !== undefined)) {
+      unseating.set(0);
+      arrive.set(pin.rise ?? 1);
+      cover.set(pin.cover ?? 0);
+      return;
+    }
     let live = true;
-    let total: number;
     let latch: ReturnType<typeof setTimeout> | undefined;
-    // The opening is over when the cover's own animation says so. The hinge, the board's lining, its
-    // shadow, the sheen and the leaves belong to that swing, and stay until then.
+    // The opening is over when the cover's own animation says so, and not when a clock does: the hinge,
+    // the board's lining, its shadow, the sheen and the leaves belong to that swing, and stay until then.
+    // The UI thread of a slow phone begins the swing seconds after JS asks for it.
     const finish = () => {
       if (!live) return;
       live = false;
@@ -240,21 +251,23 @@ export function BookStage({
       setHeaded(true);
       report.current?.();
     };
-    // Run by the UI thread when the animation ends. One that a tap cancelled says it did not finish.
-    const landed = (finished?: boolean) => {
+    const first = rising ? ritual.rise : ritual.forward;
+    const total = reduced ? tokens.motion.fast : hurry ? HURRY_MS : first + ritual.cover;
+    const watch = watchAnimation(total, finish);
+    // Run by the UI thread when the animation ends. A swing that finished, and one that something else
+    // cancelled, are both over, and nothing more will come from it: a swing that THIS run replaced (a tap,
+    // Reduce Motion switched on) is reported by the run that replaced it, and the run it replaced has been
+    // cancelled, so what it says is not heard.
+    const { ended } = watch;
+    const landed = () => {
       'worklet';
-      if (finished) runOnJS(finish)();
+      runOnJS(ended)();
     };
     unseating.set(0);
     if (reduced) {
       // Reduce Motion: the book fades in already open, in the time of a blink.
       cover.set(1);
       arrive.set(withTiming(1, timing(tokens.motion.fast), landed));
-      total = tokens.motion.fast;
-    } else if (pin.cover !== undefined || pin.rise !== undefined) {
-      arrive.set(pin.rise ?? 1);
-      cover.set(pin.cover ?? 0);
-      return;
     } else if (hurry) {
       cancelAnimation(arrive);
       cancelAnimation(cover);
@@ -270,25 +283,23 @@ export function BookStage({
           landed,
         ),
       );
-      total = HURRY_MS;
       latch = setTimeout(latchLeaves, 0);
     } else {
-      const first = rising ? ritual.rise : ritual.forward;
       arrive.set(withTiming(1, timing(first)));
       cover.set(
         withDelay(first, withTiming(1, timing(ritual.cover, Easing.inOut(Easing.cubic)), landed)),
       );
-      total = first + ritual.cover;
       // One small click as the board unseats: a book does not buzz while it rises, or while its
       // leaves riffle. It is felt once, where the cover first leaves the page: the board starts
       // from rest, so that is a little after the swing begins, not on its first frame.
       unseating.set(1);
     }
-    // A UI thread that never answers must not hold the book shut for ever.
-    const net = setTimeout(finish, total + ANIMATION_NET_MS);
+    // The net is set when the UI thread has begun this, and a backstop stands behind it for a UI thread
+    // that never does: neither is the clock of the swing.
+    begun(watch.began);
     return () => {
       live = false;
-      clearTimeout(net);
+      watch.cancel();
       if (latch) clearTimeout(latch);
     };
   }, [
@@ -304,6 +315,7 @@ export function BookStage({
     pin,
     unseating,
     latchLeaves,
+    begun,
   ]);
 
   // The closing: the cover comes back down about the spine, lands softly, and the book sinks as the
@@ -323,12 +335,15 @@ export function BookStage({
       easing,
       reduceMotion: ReduceMotion.Never,
     });
-    // The cover's own landing, which the closing waits for: that is when it is felt, and when the book
-    // may sink. The UI thread can be a second behind the clock, and a timer would call it down in the
-    // air. A descent a tap cancelled says it did not finish.
-    const down = (finished?: boolean) => {
+    const landing = close.coverAt + close.cover;
+    // The cover's own landing, which the closing waits for: that is when it is felt, and when the next
+    // screen is asked for. The UI thread can be a second or two behind the clock, and a timer would call
+    // it down in the air: so the net is set from the descent's first frame, and not before.
+    const watch = watchAnimation(shutHurry ? HURRY_MS : landing, hasLanded);
+    const { ended } = watch;
+    const down = () => {
       'worklet';
-      if (finished) runOnJS(hasLanded)();
+      runOnJS(ended)();
     };
     if (shutHurry) {
       cancelAnimation(cover);
@@ -337,60 +352,55 @@ export function BookStage({
       glint.set(0);
       cover.set(withTiming(0, timing(HURRY_MS), down));
       tuck.set(withTiming(1, timing(HURRY_MS)));
-      return;
-    }
-    const landing = close.coverAt + close.cover;
-    cover.set(withDelay(close.coverAt, withTiming(0, timing(close.cover, SHUT), down)));
-    // The light along the board's edge comes and goes in the last of its time; the ribbon's tail is
-    // drawn up as the pages are pressed.
-    glint.set(
-      withDelay(
-        landing - close.glint,
-        withSequence(
-          withTiming(1, timing(close.glint * 0.4, Easing.out(Easing.quad))),
-          withTiming(0, timing(close.glint * 0.6, Easing.inOut(Easing.quad))),
+    } else {
+      cover.set(withDelay(close.coverAt, withTiming(0, timing(close.cover, SHUT), down)));
+      // The light along the board's edge comes and goes in the last of its time; the ribbon's tail is
+      // drawn up as the pages are pressed.
+      glint.set(
+        withDelay(
+          landing - close.glint,
+          withSequence(
+            withTiming(1, timing(close.glint * 0.4, Easing.out(Easing.quad))),
+            withTiming(0, timing(close.glint * 0.6, Easing.inOut(Easing.quad))),
+          ),
         ),
-      ),
-    );
-    tuck.set(withDelay(landing - close.tuck, withTiming(1, timing(close.tuck))));
-  }, [shutting, shutHurry, shutReduced, shutRitual, cover, glint, tuck, hasLanded]);
+      );
+      tuck.set(withDelay(landing - close.tuck, withTiming(1, timing(close.tuck))));
+    }
+    begun(watch.began);
+    return () => watch.cancel();
+  }, [shutting, shutHurry, shutReduced, shutRitual, cover, glint, tuck, hasLanded, begun]);
   const sinking = closing?.sinking ?? false;
-  // The next screen is asked for as the book is half gone, however long that takes the UI thread. A
-  // hurried book, or one that fades, is asked for when it has finished.
-  const asksAtHalf = useSharedValue(0);
-  useAnimatedReaction(
-    () => asksAtHalf.get() === 1 && sink.get() >= SINK_GONE,
-    (now, before) => {
-      if (now && !before) runOnJS(hasGone)();
-    },
-  );
   useEffect(() => {
     if (!sinking || !shutRitual) return;
     const duration = shutReduced ? CLOSE_REDUCED_MS : shutHurry ? HURRY_MS : shutRitual.close.sink;
-    const sunk = (finished?: boolean) => {
-      'worklet';
-      if (finished) runOnJS(hasGone)();
-    };
-    asksAtHalf.set(shutReduced || shutHurry ? 0 : 1);
+    let live = true;
     sink.set(
-      withTiming(
-        1,
-        {
-          duration,
-          easing: shutReduced ? Easing.out(Easing.quad) : EASE,
-          reduceMotion: ReduceMotion.Never,
-        },
-        sunk,
-      ),
+      withTiming(1, {
+        duration,
+        easing: shutReduced ? Easing.out(Easing.quad) : EASE,
+        reduceMotion: ReduceMotion.Never,
+      }),
     );
-  }, [sinking, shutHurry, shutReduced, shutRitual, sink, asksAtHalf, hasGone]);
+    // The closing is told when the UI thread has taken the sink up. A hurried closing asks for the next
+    // screen then, so that it arrives as the book goes: it does not wait for the book to be gone.
+    begun(() => {
+      if (live) hasSunk();
+    });
+    return () => {
+      live = false;
+    };
+  }, [sinking, shutHurry, shutReduced, shutRitual, sink, hasSunk, begun]);
 
   const motion = useAnimatedStyle(() => {
     const t = arrive.get();
     // The book going: it sinks a little, settles a little smaller, and is gone.
     const gone = sink.get();
-    // Reduce Motion: the book fades in where it rests. Nothing travels and nothing scales.
-    if (reduced) return { opacity: t * (1 - gone) };
+    // Reduce Motion: the book fades in where it rests. Nothing travels and nothing scales. That is said,
+    // and not left unsaid: a style that stops mentioning `transform` leaves the last one it mentioned on
+    // the native view, and the system's answer comes after the first draw, which began the book below the
+    // screen. Left unsaid, the book would fade in at the foot of the sky and nothing would bring it up.
+    if (reduced) return { opacity: t * (1 - gone), transform: [{ translateY: 0 }, { scale: 1 }] };
     const inPlace = still.get();
     const settle = 1 - SINK.scale * gone;
     if (entrance === 'rise') {
@@ -454,6 +464,10 @@ export function BookStage({
       testID="book-stage"
       style={[{ width, height }, motion]}
       pointerEvents={phase === 'open' ? 'box-none' : 'none'}
+      // The book is a page, a cover and boards, one over another, and arrives (and sinks) with an
+      // opacity. On Android each child would be faded by itself and the words would show through the
+      // cloth; this fades the book as one picture, and costs nothing while its opacity is 1.
+      needsOffscreenAlphaCompositing
     >
       {entrance === 'forward' && (
         <Animated.View

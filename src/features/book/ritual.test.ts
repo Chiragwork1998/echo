@@ -45,17 +45,17 @@ describe('the closing ritual', () => {
     expect(closeTimeline(FULL).endAt).toBeLessThan(1500);
   });
 
-  it('puts the cover down at 840 ms and asks for the next screen at 1150 ms, and at 450 and 620 once practised', () => {
-    expect(closeTimeline(FULL)).toEqual({ contactAt: 840, sinkAt: 920, goAt: 1150, endAt: 1380 });
-    expect(closeTimeline(SHORT)).toEqual({ contactAt: 450, sinkAt: 490, goAt: 620, endAt: 750 });
-    expect(closeTimeline(SHORT).goAt).toBeLessThanOrEqual(650);
+  it('puts the cover down at 840 ms and asks for the next screen with it, and at 450 once practised', () => {
+    expect(closeTimeline(FULL)).toEqual({ contactAt: 840, goAt: 840, sinkAt: 920, endAt: 1380 });
+    expect(closeTimeline(SHORT)).toEqual({ contactAt: 450, goAt: 450, sinkAt: 490, endAt: 750 });
   });
 
-  it('asks for the next screen in the middle of the sink, so its fade begins as the book is half gone', () => {
+  it('asks for the next screen as the cover lands, before the book sinks, so it arrives over the sink', () => {
     for (const ritual of [FULL, SHORT]) {
-      const { sinkAt, goAt, endAt } = closeTimeline(ritual);
-      expect(goAt - sinkAt).toBe(ritual.close.sink / 2);
-      expect(endAt - goAt).toBe(ritual.close.sink / 2);
+      const { contactAt, goAt, sinkAt, endAt } = closeTimeline(ritual);
+      expect(goAt).toBe(contactAt);
+      expect(sinkAt).toBeGreaterThan(goAt);
+      expect(endAt - sinkAt).toBe(ritual.close.sink);
     }
   });
 

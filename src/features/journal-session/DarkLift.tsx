@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { StyleSheet } from 'react-native';
 import Animated, {
   ReduceMotion,
+  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -10,6 +11,7 @@ import Animated, {
 import { EASE } from '@/design/ease';
 import { tokens } from '@/design/tokens';
 import { useReduceMotion } from '@/design/useReduceMotion';
+import { useUiBegun, watchAnimation } from '@/features/book/animationEnd';
 
 /** How long the dark takes to lift: slow enough to be a dawn, not a cut. */
 const LIFT_MS = 700;
@@ -23,13 +25,25 @@ export function DarkLift({ from }: { from: number }) {
   const reduced = useReduceMotion();
   const dark = useSharedValue(from);
   const [gone, setGone] = useState(from <= 0);
+  const begun = useUiBegun();
   useEffect(() => {
     if (from <= 0) return;
     const ms = reduced ? tokens.motion.fast : LIFT_MS;
-    dark.set(withTiming(0, { duration: ms, easing: EASE, reduceMotion: ReduceMotion.Never }));
-    const timer = setTimeout(() => setGone(true), ms + 50);
-    return () => clearTimeout(timer);
-  }, [dark, from, reduced]);
+    // The dark is taken away when its own lift has ended, and not when a clock says it should have: the
+    // UI thread of a slow phone begins the lift seconds after it is asked, and the dark would be taken
+    // away in the middle of it, which is the cut that the lift is there to prevent.
+    const watch = watchAnimation(ms, () => setGone(true));
+    const { ended } = watch;
+    const lifted = () => {
+      'worklet';
+      runOnJS(ended)();
+    };
+    dark.set(
+      withTiming(0, { duration: ms, easing: EASE, reduceMotion: ReduceMotion.Never }, lifted),
+    );
+    begun(watch.began);
+    return () => watch.cancel();
+  }, [begun, dark, from, reduced]);
   const style = useAnimatedStyle(() => ({ opacity: dark.get() }));
   if (gone) return null;
   return (

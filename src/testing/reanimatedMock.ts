@@ -10,6 +10,12 @@
 //   stepped  values walk to where they are going, every 16 ms and in a straight line, instead of
 //            jumping there, and useAnimatedReaction sees each step. Without it a reaction sees the
 //            animation's end at once. Either way a style is only read when the screen is drawn.
+//   silent   the UI thread begins every animation but never says that one has ended: the callbacks
+//            of animations that last more than a millisecond are never run. (An animation of a
+//            millisecond says it has begun, which is how the app learns that the UI thread has picked
+//            it up.)
+// The lag is a UI thread that is late to begin as well as late to end: it starts every animation `lag`
+// ms after it was asked, which is how a slow phone was measured (1.8 to 2.1 s late to begin).
 import { useEffect, useRef, useState } from 'react';
 import { Image, ScrollView, Text, View } from 'react-native';
 
@@ -34,9 +40,11 @@ type Mock = {
 export const animationClock = {
   lag: 0,
   stepped: false,
+  silent: false,
   reset() {
     this.lag = 0;
     this.stepped = false;
+    this.silent = false;
   },
 };
 const FRAME_MS = 16;
@@ -114,7 +122,7 @@ function begin(mock: Mock, animation: Animation) {
     mock.running = undefined;
     mock.value = to;
     settle(mock);
-    callback?.(true);
+    if (!animationClock.silent || duration <= 1) callback?.(true);
   };
   if (!animationClock.stepped) {
     mock.value = to;
@@ -126,7 +134,8 @@ function begin(mock: Mock, animation: Animation) {
   let elapsed = 0;
   const step = () => {
     elapsed += FRAME_MS;
-    const progress = Math.min(1, Math.max(0, (elapsed - wait) / duration));
+    const run = elapsed - wait;
+    const progress = duration === 0 ? (run >= 0 ? 1 : 0) : Math.min(1, Math.max(0, run / duration));
     if (progress >= 1) return done();
     mock.value = from + (to - from) * progress;
     settle(mock);
