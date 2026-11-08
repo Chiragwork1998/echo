@@ -43,6 +43,13 @@ const answered = new WeakSet<Dialog>();
 const nothing = () => undefined;
 
 /**
+ * Takes back a dialog whose question no longer stands, unanswered: what it waited on has happened.
+ * `instead` runs in an answer's place, so a dialog it asks for takes this one's window without a
+ * flicker. Returns false, and runs nothing, once the dialog has been answered.
+ */
+export type WithdrawDialog = (instead?: () => void) => boolean;
+
+/**
  * Asks the person something, in ECHO's own sheet. The arguments are Alert.alert's, and it works from
  * anywhere, in a component or not. Asked while another dialog is open, it waits its turn. Keep the
  * words to the app's own: never anything the person wrote.
@@ -52,9 +59,10 @@ export function showDialog(
   message: string,
   buttons: readonly [DialogButton, ...DialogButton[]],
   options?: DialogOptions,
-): void {
+): WithdrawDialog {
   const dialog: Dialog = { title, message, buttons, options };
   useDialogs.setState(({ queue }) => ({ queue: [...queue, dialog] }));
+  return (instead = nothing) => settle(dialog, instead);
 }
 
 /** Removes every dialog, answered or not. Tests use it to start clean. */
@@ -93,9 +101,10 @@ function dismissal({ buttons, options }: Dialog): (() => void) | null {
 /**
  * Does what was chosen, then takes the dialog away. A dialog that the choice asks for is queued
  * behind this one first, so it takes this one's place in the same window, without a flicker.
+ * Returns whether it settled: a dialog is answered once.
  */
-function settle(dialog: Dialog, choice: () => void) {
-  if (answered.has(dialog)) return;
+function settle(dialog: Dialog, choice: () => void): boolean {
+  if (answered.has(dialog)) return false;
   answered.add(dialog);
   try {
     choice();
@@ -105,6 +114,7 @@ function settle(dialog: Dialog, choice: () => void) {
       last: dialog,
     }));
   }
+  return true;
 }
 
 /**

@@ -15,7 +15,14 @@ import {
   tapOutsideDialog,
 } from '@/testing/dialogs';
 
-import { arrange, clearDialogs, DialogHost, showDialog, type DialogButton } from './Dialog';
+import {
+  arrange,
+  clearDialogs,
+  DialogHost,
+  showDialog,
+  type DialogButton,
+  type WithdrawDialog,
+} from './Dialog';
 
 const names = ({ primary, quiet }: ReturnType<typeof arrange>) => ({
   primary: primary?.text ?? null,
@@ -241,6 +248,87 @@ describe('more than one dialog', () => {
     expect(dialogChoices()).toEqual(['Delete everything', 'Cancel']);
     await chooseInDialog('Delete everything');
     expect(run).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('a question that no longer stands', () => {
+  const waiting = 'Still turning your voice into words';
+
+  it('is taken back unanswered, once, and none of its buttons is pressed', async () => {
+    const wait = jest.fn();
+    const goOn = jest.fn();
+    const instead = jest.fn();
+    await renderDialogHost();
+    let withdraw: WithdrawDialog = () => false;
+    await act(() => {
+      withdraw = showDialog(waiting, 'Plain words.', [
+        { text: 'Wait', onPress: wait },
+        { text: 'Go on', onPress: goOn },
+      ]);
+    });
+    let taken = false;
+    await act(() => {
+      taken = withdraw(instead);
+    });
+    expect(taken).toBe(true);
+    expect(instead).toHaveBeenCalledTimes(1);
+    expect(openDialog()).toBeNull();
+    expect(wait).not.toHaveBeenCalled();
+    expect(goOn).not.toHaveBeenCalled();
+    expect(withdraw(instead)).toBe(false);
+    expect(instead).toHaveBeenCalledTimes(1);
+  });
+
+  it('cannot be taken back once the person has answered it', async () => {
+    const instead = jest.fn();
+    await renderDialogHost();
+    let withdraw: WithdrawDialog = () => false;
+    await act(() => {
+      withdraw = showDialog('Record again?', 'Plain words.', [
+        { text: 'Record again' },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+    });
+    await chooseInDialog('Record again');
+    expect(withdraw(instead)).toBe(false);
+    expect(instead).not.toHaveBeenCalled();
+  });
+
+  it('gives its window to the question asked in its place', async () => {
+    await renderDialogHost();
+    let withdraw: WithdrawDialog = () => false;
+    await act(() => {
+      withdraw = showDialog(waiting, 'Plain words.', [{ text: 'Wait' }, { text: 'Go on' }]);
+    });
+    await act(() => {
+      withdraw(() =>
+        showDialog('Your recording has no words yet', 'Plain words.', [
+          { text: 'Try again' },
+          { text: 'Go on' },
+        ]),
+      );
+    });
+    expect(screen.getByRole('header', { name: 'Your recording has no words yet' })).toBeTruthy();
+    expect(screen.queryByRole('header', { name: waiting })).toBeNull();
+    expect(dialogChoices()).toEqual(['Try again', 'Go on']);
+  });
+
+  it('leaves the dialog in front alone when it was still waiting its turn', async () => {
+    await renderDialogHost();
+    await ask('Delete this echo?', [
+      { text: 'Delete', style: 'destructive' },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+    let withdraw: WithdrawDialog = () => false;
+    await act(() => {
+      withdraw = showDialog('Record again?', 'Plain words.', [{ text: 'Record again' }]);
+    });
+    await act(() => {
+      withdraw();
+    });
+    expect(screen.getByRole('header', { name: 'Delete this echo?' })).toBeTruthy();
+    await chooseInDialog('Cancel');
+    expect(openDialog()).toBeNull();
   });
 });
 

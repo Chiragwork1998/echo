@@ -442,6 +442,33 @@ describe('Reflect while the words are on their way', () => {
     });
   });
 
+  it('takes its question back when the words arrive before an answer, and reflects with them', async () => {
+    const request = await begin();
+    await fireEvent.press(reflect());
+    const { title } = sessionCopy.transcribe.waiting;
+    expect(screen.getByRole('header', { name: title })).toBeTruthy();
+
+    await act(async () => request.settle(said('All of it, in my own voice.')));
+    await waitFor(() => expect(router.navigate).toHaveBeenCalledWith('/onboarding/completion'));
+    expect(screen.queryByRole('header', { name: title })).toBeNull();
+    const kept = await journal.getEntry('draft-1');
+    expect(kept).toMatchObject({
+      ok: true,
+      value: { status: 'committed', body: 'All of it, in my own voice.', audio: { id: 'a1' } },
+    });
+  });
+
+  it('asks the question that stands when the words fail before an answer', async () => {
+    const request = await begin();
+    await fireEvent.press(reflect());
+    await act(async () => request.settle(failed('offline')));
+    const { title, retry, goOn } = sessionCopy.transcribe.missing;
+    expect(await screen.findByRole('header', { name: title })).toBeTruthy();
+    expect(screen.queryByRole('header', { name: sessionCopy.transcribe.waiting.title })).toBeNull();
+    expect(dialogChoices()).toEqual([retry, goOn]);
+    expect(router.navigate).not.toHaveBeenCalled();
+  });
+
   it('does not wait on its own if the words fail while the person waits', async () => {
     const request = await begin();
     await fireEvent.press(reflect());

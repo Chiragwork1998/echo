@@ -9,7 +9,7 @@ import { BECOME_PROMPT_ID, becomeCopy } from '@/features/become/becomeCopy';
 import { routeAfterReflect } from '@/features/become/rehearsal';
 import { useDraft, useVoiceRecorder, type JournalErrorCode } from '@/features/journal';
 import { backPath, nextPath, onboardingSteps } from '@/features/onboarding/flow';
-import { showDialog } from '@/features/tab-pages/Dialog';
+import { showDialog, type WithdrawDialog } from '@/features/tab-pages/Dialog';
 import {
   getMicrophonePermission,
   openAppSettings,
@@ -398,13 +398,10 @@ export function useSessionController({ variant, initialMode, draftId, become }: 
   // Words are never abandoned for a person who is waiting: Reflect asks, and either answer keeps
   // the recording with the echo.
   const waitingToReflect = useRef(false);
+  /** Reflect's question while the words were on their way, until they arrive or fail. */
+  const askedToWait = useRef<WithdrawDialog | null>(null);
   const transcribing = transcription.active;
   const transcriptionKind = transcription.phase.kind;
-  useEffect(() => {
-    if (!waitingToReflect.current || transcribing) return;
-    waitingToReflect.current = false;
-    if (transcriptionKind === 'idle') void latestFinish.current();
-  }, [transcribing, transcriptionKind]);
 
   const wordsMissing =
     (transcription.phase.kind === 'failed' &&
@@ -415,7 +412,7 @@ export function useSessionController({ variant, initialMode, draftId, become }: 
     if (reflecting.current || !canReflect) return;
     if (transcription.active) {
       const { title, message, wait, goOn } = sessionCopy.transcribe.waiting;
-      showDialog(title, message, [
+      askedToWait.current = showDialog(title, message, [
         { text: wait, onPress: () => void (waitingToReflect.current = true) },
         {
           text: goOn,
@@ -443,6 +440,23 @@ export function useSessionController({ variant, initialMode, draftId, become }: 
     }
     await finish();
   };
+  const latestReflect = useRef(reflect);
+  useEffect(() => {
+    latestReflect.current = reflect;
+  });
+
+  useEffect(() => {
+    if (transcribing) return;
+    // The words arrived, or failed, before the person answered: the question no longer stands. It
+    // is taken back, and Reflect asks again now that the outcome is known. Words go on to Reflect,
+    // as either answer would have; none ask whether to try again.
+    const asked = askedToWait.current;
+    askedToWait.current = null;
+    if (asked?.(() => void latestReflect.current())) return;
+    if (!waitingToReflect.current) return;
+    waitingToReflect.current = false;
+    if (transcriptionKind === 'idle') void latestFinish.current();
+  }, [transcribing, transcriptionKind]);
 
   const keepDraft = async () => {
     if (voice.state === 'recording') await voice.stop();
