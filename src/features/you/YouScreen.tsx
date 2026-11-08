@@ -206,7 +206,6 @@ function Data() {
           detail={youCopy.deleteAllDetail}
           busy={deleting.state === 'deleting'}
           disabled={working}
-          destructive
           onPress={deleting.confirm}
         />
       </Section>

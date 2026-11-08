@@ -195,7 +195,6 @@ type RowProps = {
   selected?: boolean;
   busy?: boolean;
   disabled?: boolean;
-  destructive?: boolean;
   hint?: string;
   trailing?: ReactNode;
   /** A small chevron: this row opens something. */
@@ -214,7 +213,6 @@ export function Row({
   selected,
   busy,
   disabled,
-  destructive,
   hint,
   trailing,
   chevron,
@@ -226,11 +224,9 @@ export function Row({
   const body = (
     <View style={styles.row}>
       <View style={styles.text}>
-        <EchoText
-          variant="bodyM"
-          style={destructive ? { color: colors.danger } : undefined}
-          maxFontSizeMultiplier={1.6}
-        >
+        {/* Even a row that deletes is set in the page's ink, never orange (D-013): its dialog
+            carries the weight. */}
+        <EchoText variant="bodyM" maxFontSizeMultiplier={1.6}>
           {label}
         </EchoText>
         {detail ? (

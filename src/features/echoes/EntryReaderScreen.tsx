@@ -5,7 +5,15 @@ import { EchoText } from '@/components/EchoText';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 import type { Entry } from '@/features/journal';
-import { Loading, Notice, Quiet, SkeletonLine, Surface } from '@/features/tab-pages/parts';
+import {
+  Loading,
+  Notice,
+  OnPlate,
+  Quiet,
+  SkeletonLine,
+  Surface,
+  usePlateText,
+} from '@/features/tab-pages/parts';
 import { TabPage } from '@/features/tab-pages/TabPage';
 import { detail, ownWords, question, textAction } from '@/features/tab-pages/textStyles';
 
@@ -133,31 +141,35 @@ function Words({ entry }: { entry: Entry }) {
   );
 }
 
-/** Delete sits at the foot of the page, quiet, and still asks before anything goes. */
+/**
+ * Delete sits at the foot of the page, quiet, and still asks before anything goes. It is set in the
+ * page's own ink, never orange (D-013), on the plate's feathered shade with the plate's shadow, as
+ * the page's other words on the photograph are: bare, Day's snow and river washed it out (walk v6).
+ */
 function DeleteAction({ state, onPress }: { state: DeleteState; onPress: () => void }) {
-  const { colors } = useTheme();
+  const shadow = usePlateText();
   const deleting = state === 'deleting';
   const label = deleting ? echoesCopy.deleting : echoesCopy.delete;
   return (
     <>
       {state === 'error' && <Notice message={echoesCopy.deleteError} />}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={label}
-        accessibilityState={{ disabled: deleting, busy: deleting }}
-        disabled={deleting}
-        onPress={onPress}
-        hitSlop={6}
-        style={({ pressed }) => [styles.delete, (pressed || deleting) && styles.pressed]}
-      >
-        <EchoText
-          variant="bodyM"
-          style={[textAction, { color: colors.danger }]}
-          maxFontSizeMultiplier={1.6}
-        >
-          {label}
-        </EchoText>
-      </Pressable>
+      <View style={styles.deleteSpot}>
+        <OnPlate hug="center">
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={label}
+            accessibilityState={{ disabled: deleting, busy: deleting }}
+            disabled={deleting}
+            onPress={onPress}
+            hitSlop={6}
+            style={({ pressed }) => [styles.delete, (pressed || deleting) && styles.pressed]}
+          >
+            <EchoText variant="bodyM" style={[textAction, shadow]} maxFontSizeMultiplier={1.6}>
+              {label}
+            </EchoText>
+          </Pressable>
+        </OnPlate>
+      </View>
     </>
   );
 }
@@ -239,11 +251,10 @@ const styles = StyleSheet.create({
   waiting: { opacity: 0.5 },
   recordingText: { flex: 1, gap: 2 },
   pressed: { opacity: 0.6 },
+  deleteSpot: { marginTop: tokens.space[8] },
   delete: {
     minHeight: tokens.size.tapTarget,
-    alignSelf: 'center',
     justifyContent: 'center',
     paddingHorizontal: tokens.space[16],
-    marginTop: tokens.space[8],
   },
 });

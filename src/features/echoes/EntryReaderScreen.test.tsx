@@ -1,7 +1,8 @@
-import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react-native';
 import { router } from 'expo-router';
-import { Dimensions } from 'react-native';
+import { Dimensions, StyleSheet } from 'react-native';
 
+import { tokens } from '@/design/tokens';
 import { createMemoryJournal, openEntryAudio, setJournal, type Entry } from '@/features/journal';
 import { usePreferences } from '@/state/preferences';
 import {
@@ -94,6 +95,20 @@ describe('EntryReaderScreen', () => {
     await render(<EntryReaderScreen id="one" />);
     expect(await screen.findByText(/Morning · 6 min/)).toBeTruthy();
   });
+
+  it.each(['night', 'day'] as const)(
+    'sets Delete in the page’s ink with the plate’s shadow on the %s sky, never orange',
+    async (theme) => {
+      usePreferences.setState({ theme });
+      seed(base);
+      await render(<EntryReaderScreen id="one" />);
+      const button = await screen.findByRole('button', { name: echoesCopy.delete });
+      const word = StyleSheet.flatten(within(button).getByText(echoesCopy.delete).props.style);
+      expect(word.color).toBe(tokens.color[theme].textPrimary);
+      expect(word.color).not.toBe(tokens.color[theme].danger);
+      expect(word.textShadowColor).toBeTruthy();
+    },
+  );
 
   it('goes back from the Back button', async () => {
     seed(base);

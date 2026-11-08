@@ -1,10 +1,11 @@
-import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react-native';
 import { router } from 'expo-router';
-import { Dimensions, Linking } from 'react-native';
+import { Dimensions, Linking, StyleSheet } from 'react-native';
 
 import { showToast } from '@/components/Toast';
 import { links } from '@/config/links';
 import { copy } from '@/content/copy';
+import { tokens } from '@/design/tokens';
 import { supportCopy } from '@/features/patterns/supportResources';
 import { commitReminder } from '@/features/onboarding/rhythm/commitReminder';
 import { deleteAllLocal } from '@/services/deleteAllLocal';
@@ -354,6 +355,15 @@ describe('You: delete all data', () => {
     await renderWithDialogs(<YouScreen />);
     await fireEvent.press(button(new RegExp(youCopy.deleteAll)));
   };
+
+  it('sets its row in the page’s ink, never orange: the dialogs carry the weight', async () => {
+    await render(<YouScreen />);
+    const night = tokens.color.night;
+    const label = within(button(new RegExp(youCopy.deleteAll))).getByText(youCopy.deleteAll);
+    const ink = StyleSheet.flatten(label.props.style).color;
+    expect(ink).toBe(night.textPrimary);
+    expect(ink).not.toBe(night.danger);
+  });
 
   it('asks twice, and states that it cannot be undone, before anything is deleted', async () => {
     await start();
