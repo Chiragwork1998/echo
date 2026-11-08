@@ -20,7 +20,11 @@ import { useReduceMotion } from './useReduceMotion';
 export type ThemePreference = ThemeName | 'automatic';
 
 type ThemeValue = {
-  /** The theme the controls are drawn in. During a change it flips as their colours begin to move. */
+  /**
+   * The theme the controls are drawn in. During a change it flips as their colours pass the half
+   * way mark, which is where the two plates are level: a heading that picks cream or ink by name
+   * must not turn dark over a sky that is still Night.
+   */
   name: ThemeName;
   colors: ThemeColors;
   /** The theme the person has asked for, which plates cross-fade toward from the first moment. */
@@ -32,8 +36,9 @@ type ThemeValue = {
 const ThemeContext = createContext<ThemeValue | null>(null);
 
 // A change of theme: the two plates cross-fade over 900 ms (EchoBackground), and the controls'
-// colours move over 320 ms in the middle of that, where the two plates are at their most even.
-// Reduce Motion: opacity only, and no more than 180 ms.
+// colours move over 320 ms in the middle of that, where the two plates are at their most even. The
+// name flips half way through those 320 ms, at 450 ms, when the plates are level. Reduce Motion:
+// opacity only, and no more than 180 ms, with the name flipping at 90.
 const CONTROLS_MS = tokens.motion.standard;
 const LEAD_MS = (tokens.motion.atmosphere - CONTROLS_MS) / 2;
 const REDUCED_MS = tokens.motion.fast;
@@ -44,7 +49,7 @@ const ease = (t: number) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
 
 /**
  * The colours the controls show. At rest they are the theme's own tokens, the very same object. When
- * the theme changes they are mixed from the old to the new, and `name` flips as that begins.
+ * the theme changes they are mixed from the old to the new, and `name` flips half way through.
  */
 function useShownTheme(target: ThemeName, animate: boolean): Shown {
   const reduced = useReduceMotion();
@@ -66,7 +71,10 @@ function useShownTheme(target: ThemeName, animate: boolean): Shown {
     let started = 0;
     const step = () => {
       const t = Math.min(1, (Date.now() - started) / span);
-      setShown({ name: target, colors: t >= 1 ? to : mixColors(from, to, ease(t)) });
+      setShown({
+        name: t < 0.5 ? name : target,
+        colors: t >= 1 ? to : mixColors(from, to, ease(t)),
+      });
       if (t < 1) frame = requestAnimationFrame(step);
     };
     const begin = setTimeout(() => {

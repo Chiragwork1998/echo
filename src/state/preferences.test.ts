@@ -51,4 +51,21 @@ describe('preferences', () => {
     resetPreferences();
     expect(usePreferences.getState().patternsConsent).toBeNull();
   });
+
+  it('remembers that Home has welcomed, and Delete everything lets it welcome again', async () => {
+    await hydratePreferences(rt.db, rt.serial);
+    expect(usePreferences.getState().homeWelcomed).toBe(false);
+    usePreferences.getState().setHomeWelcomed(true);
+    await rt.serial(async () => undefined);
+    expect(await stored('homeWelcomed')).toEqual({ value: 'true' });
+
+    resetPreferences();
+    expect(usePreferences.getState().homeWelcomed).toBe(false);
+    await hydratePreferences(rt.db, rt.serial);
+    expect(usePreferences.getState().homeWelcomed).toBe(true);
+
+    // Reset is what Delete everything calls: it comes back as a first launch.
+    resetPreferences();
+    expect(usePreferences.getState().homeWelcomed).toBe(false);
+  });
 });

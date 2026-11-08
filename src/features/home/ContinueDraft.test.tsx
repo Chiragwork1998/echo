@@ -21,6 +21,7 @@ import { resetPreferences, usePreferences, VOICE_POLICY_VERSION } from '@/state/
 import { render } from '@/testing/render';
 
 import { HomeScreen } from './screens/HomeScreen';
+import { useStoneMemory } from './today/stoneMemory';
 
 let mockParams: Record<string, string> = {};
 
@@ -84,6 +85,7 @@ const tick = (ms: number) => act(() => void jest.advanceTimersByTime(ms));
 beforeEach(() => {
   jest.useFakeTimers();
   jest.clearAllMocks();
+  useStoneMemory.getState().reset();
   resetPreferences();
   mockParams = {};
   const metrics = { width: 393, height: 852, scale: 2, fontScale: 1 };

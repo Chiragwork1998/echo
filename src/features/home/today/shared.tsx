@@ -2,13 +2,22 @@ import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
+import Animated, {
+  ReduceMotion,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withTiming,
+} from 'react-native-reanimated';
 import Svg, { Path } from 'react-native-svg';
 
 import { EchoText } from '@/components/EchoText';
 import { GlassCard } from '@/components/GlassCard';
+import { EASE } from '@/design/ease';
 import { backgroundSources } from '@/design/generated/backgrounds';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
+import { useReduceMotion } from '@/design/useReduceMotion';
 import type { HomeSummary } from '@/features/journal';
 
 import { homeLabels } from './homeLabels';
@@ -89,20 +98,44 @@ export function ArrowGlyph({ color, size = 14 }: { color: string; size?: number 
   );
 }
 
-/** Quiet placeholder while the first read finishes. Same footprint as the card it stands in for. */
+/** A read that is done sooner than this shows no placeholder at all: a card for a frame is a flicker. */
+const SKELETON_DELAY_MS = 150;
+
+/**
+ * Quiet placeholder while the first read finishes. Same footprint as the card it stands in for, and
+ * it comes in only if the read is taking a moment. The slot keeps its height meanwhile, so nothing
+ * moves when the card, or the real thing, arrives.
+ */
 export function CardSkeleton({ height }: { height: number }) {
+  const reduced = useReduceMotion();
+  const shown = useSharedValue(0);
+  useEffect(() => {
+    shown.set(
+      withDelay(
+        SKELETON_DELAY_MS,
+        withTiming(1, {
+          duration: reduced ? tokens.motion.fast : tokens.motion.standard,
+          easing: EASE,
+          reduceMotion: ReduceMotion.Never,
+        }),
+      ),
+    );
+  }, [reduced, shown]);
+  const fade = useAnimatedStyle(() => ({ opacity: shown.get() }));
   return (
-    <GlassCard radius={tokens.radius.medium}>
-      <View
-        style={[styles.skeleton, { height }]}
-        accessible
-        accessibilityLabel={homeLabels.loading}
-        accessibilityState={{ busy: true }}
-      >
-        <View style={[styles.bar, { width: '38%' }]} />
-        <View style={[styles.bar, { width: '70%', height: 12 }]} />
-      </View>
-    </GlassCard>
+    <Animated.View style={fade}>
+      <GlassCard radius={tokens.radius.medium}>
+        <View
+          style={[styles.skeleton, { height }]}
+          accessible
+          accessibilityLabel={homeLabels.loading}
+          accessibilityState={{ busy: true }}
+        >
+          <View style={[styles.bar, { width: '38%' }]} />
+          <View style={[styles.bar, { width: '70%', height: 12 }]} />
+        </View>
+      </GlassCard>
+    </Animated.View>
   );
 }
 

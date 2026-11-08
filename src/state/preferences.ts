@@ -14,6 +14,7 @@ const SHOWN_KEY = 'wordsShown';
 const VOLUME_KEY = 'volume';
 const OPENS_KEY = 'bookOpens';
 const PRACTICE_KEY = 'practice';
+const WELCOMED_KEY = 'homeWelcomed';
 
 /**
  * The version of the words people agree to before their voice leaves the phone (D-005). Change what
@@ -99,6 +100,12 @@ type Preferences = {
   countBookOpen: () => void;
   practice: PracticePrefs;
   updatePractice: (patch: Partial<PracticePrefs>) => void;
+  /**
+   * Home has had its first look since onboarding. The welcome (the loop waking slowly, the first
+   * cairn built) plays once, and Delete everything plays it again for whoever begins afresh.
+   */
+  homeWelcomed: boolean;
+  setHomeWelcomed: (on: boolean) => void;
 };
 
 let persist: ((key: string, value: string | null) => Promise<unknown>) | null = null;
@@ -173,6 +180,11 @@ export const usePreferences = create<Preferences>((set, get) => ({
     const practice = { ...get().practice, ...patch };
     set({ practice });
     save(PRACTICE_KEY, JSON.stringify(practice));
+  },
+  homeWelcomed: false,
+  setHomeWelcomed: (homeWelcomed) => {
+    set({ homeWelcomed });
+    save(WELCOMED_KEY, homeWelcomed ? 'true' : null);
   },
 }));
 
@@ -253,7 +265,7 @@ export async function hydratePreferences(
   serial: WriteQueue = (task) => task(),
 ): Promise<void> {
   const rows = await db.all<{ key: string; value: string }>(
-    'SELECT key, value FROM preferences WHERE key IN (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    'SELECT key, value FROM preferences WHERE key IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [
       THEME_KEY,
       PATTERNS_CONSENT_KEY,
@@ -264,6 +276,7 @@ export async function hydratePreferences(
       VOLUME_KEY,
       OPENS_KEY,
       PRACTICE_KEY,
+      WELCOMED_KEY,
     ],
   );
   const stored = new Map(rows.map((row) => [row.key, row.value]));
@@ -279,6 +292,7 @@ export async function hydratePreferences(
     volume: stored.get(VOLUME_KEY) ?? null,
     bookOpens: Math.max(0, Math.floor(Number(stored.get(OPENS_KEY))) || 0),
     practice: parsePractice(stored.get(PRACTICE_KEY)),
+    homeWelcomed: stored.get(WELCOMED_KEY) === 'true',
   });
   persist = (key, value) =>
     serial(() =>
@@ -304,5 +318,6 @@ export function resetPreferences(): void {
     volume: null,
     bookOpens: 0,
     practice: DEFAULT_PRACTICE,
+    homeWelcomed: false,
   });
 }

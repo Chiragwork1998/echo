@@ -12,6 +12,7 @@ import { copy } from '@/content/copy';
 import { goldenCopy } from '@/content/goldenCopy';
 import { cue } from '@/design/haptics';
 import { useLayout } from '@/design/layout';
+import { useReduceMotion } from '@/design/useReduceMotion';
 import { iconXml } from '@/design/generated/vectors';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
@@ -24,6 +25,7 @@ import { useSessionEntry } from '../dissolve';
 import { dayLabel, entryDisplay, homeLabels, minutesOf } from './homeLabels';
 import { LimestoneStone } from './LimestoneStone';
 import { CardSkeleton, ErrorNotice, go, openEntry, PlateThumb, useClock, YOU_PATH } from './shared';
+import type { StoneView } from './useStoneArrival';
 import { WeekRhythm } from './WeekRhythm';
 
 // Measured from the Night golden (868 x 1812, normalised to 393 x 852).
@@ -82,6 +84,7 @@ function Header({ inset }: { inset: number }) {
 
 function WriteInstead() {
   const { writeInstead } = useSessionEntry();
+  const reduced = useReduceMotion();
   return (
     <Pressable
       accessibilityRole="button"
@@ -91,7 +94,10 @@ function WriteInstead() {
         writeInstead();
       }}
       hitSlop={{ top: 6, bottom: 6, left: 8, right: 8 }}
-      style={({ pressed }) => [styles.pillTouch, pressed && styles.pillPressed]}
+      style={({ pressed }) => [
+        styles.pillTouch,
+        pressed && (reduced ? styles.pillPressedReduced : styles.pillPressed),
+      ]}
     >
       <GlassCard radius={PILL_HEIGHT / 2}>
         <View style={styles.pill}>
@@ -108,6 +114,7 @@ function WriteInstead() {
 /** Breathe, before the session or instead of it: the same quiet pill as Write instead, beside it. */
 function BreatheFirst() {
   const { breathe } = useSessionEntry();
+  const reduced = useReduceMotion();
   return (
     <Pressable
       accessibilityRole="button"
@@ -117,7 +124,10 @@ function BreatheFirst() {
         breathe();
       }}
       hitSlop={{ top: 6, bottom: 6, left: 8, right: 8 }}
-      style={({ pressed }) => [styles.pillTouch, pressed && styles.pillPressed]}
+      style={({ pressed }) => [
+        styles.pillTouch,
+        pressed && (reduced ? styles.pillPressedReduced : styles.pillPressed),
+      ]}
       testID="home-breathe-first"
     >
       <GlassCard radius={PILL_HEIGHT / 2}>
@@ -206,7 +216,7 @@ export function NightFloor() {
 }
 
 /** Night: Living Landscape. The stone is the way in. */
-export function NightHome({ summary }: { summary: HomeSummary }) {
+export function NightHome({ summary, stones }: { summary: HomeSummary; stones?: StoneView }) {
   const { accessibleLayout } = useLayout();
   const { begin } = useSessionEntry();
   const morning = useMorning();
@@ -237,7 +247,7 @@ export function NightHome({ summary }: { summary: HomeSummary }) {
       </View>
       <View style={styles.spaceBelow} />
       <View style={{ paddingHorizontal: 4 }}>
-        <WeekRhythm rhythm={rhythm} loading={loading} />
+        <WeekRhythm rhythm={rhythm} loading={loading} stones={stones} />
       </View>
       <View style={styles.cardSlot}>
         {status === 'error' && <ErrorNotice summary={summary} />}
@@ -287,6 +297,8 @@ const styles = StyleSheet.create({
   },
   pillTouch: { height: PILL_HEIGHT },
   pillPressed: { opacity: 0.8, transform: [{ scale: 0.98 }] },
+  // Reduce Motion: pressed is dimmer, and nothing else.
+  pillPressedReduced: { opacity: 0.8 },
   pill: {
     height: PILL_HEIGHT - 2,
     paddingHorizontal: 16,
