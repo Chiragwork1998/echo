@@ -22,6 +22,8 @@ import {
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 
+import { OnGlass } from './arrival';
+
 type BlurTarget = RefObject<ComponentRef<typeof View> | null>;
 const BlurTargetContext = createContext<BlurTarget | null>(null);
 
@@ -100,7 +102,9 @@ export function GlassCard({ strength = 'regular', radius, style, contentStyle, c
             { backgroundColor: strong ? colors.surfaceGlassStrong : colors.surfaceGlass },
           ]}
         />
-        <View style={contentStyle}>{children}</View>
+        <OnGlass style={contentStyle} wrap>
+          {children}
+        </OnGlass>
       </View>
     </View>
   );

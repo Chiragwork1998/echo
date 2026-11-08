@@ -19,6 +19,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
+import { ArrivalContext, useGlassAware } from '@/components/arrival';
 import { EASE } from '@/design/ease';
 import { tokens } from '@/design/tokens';
 import { useReduceMotion } from '@/design/useReduceMotion';
@@ -47,7 +48,7 @@ const ArrivingContext = createContext(false);
 export const useIsArriving = () => useContext(ArrivingContext);
 
 /** True while content is arriving from a skeleton that was seen, so rows may arrive one by one. */
-const ArrivalContext = createContext(false);
+const ArrivalOrderContext = createContext(false);
 
 /**
  * A skeleton's body. The skeleton stays mounted, and in the accessibility tree, from the first
@@ -75,8 +76,15 @@ export function Bars({ children, immediate = false }: PropsWithChildren<{ immedi
       }),
     );
   }, [reduced, shown, visible]);
-  const style = useAnimatedStyle(() => ({ opacity: shown.get() }));
-  return <Animated.View style={style}>{children}</Animated.View>;
+  const { glass, arrival } = useGlassAware(shown);
+  const fade = useAnimatedStyle(() => ({ opacity: shown.get() }));
+  // Glass is drawn whole while the bars are on their way, and not at all before they are.
+  const whole = useAnimatedStyle(() => ({ opacity: shown.get() > 0 ? 1 : 0 }));
+  return (
+    <ArrivalContext.Provider value={arrival}>
+      <Animated.View style={glass ? whole : fade}>{children}</Animated.View>
+    </ArrivalContext.Provider>
+  );
 }
 
 type RiseProps = PropsWithChildren<{
@@ -126,19 +134,28 @@ export function Rise({
     );
     return () => clearTimeout(over);
   }, [delay, duration, moving, reduced, shown]);
+  const { glass, arrival } = useGlassAware(shown);
   const motion = useAnimatedStyle(() => ({
     opacity: shown.get(),
     transform: [{ translateY: reduced ? 0 : (1 - shown.get()) * distance }],
   }));
+  // A block with glass in it is whole from the moment it moves, and rises with no fade: the words on
+  // the glass are what fade in.
+  const block = useAnimatedStyle(() => ({
+    opacity: shown.get() > 0 ? 1 : 0,
+    transform: [{ translateY: reduced ? 0 : (1 - shown.get()) * distance }],
+  }));
   return (
     <ArrivingContext.Provider value={busy}>
-      <Animated.View style={[style, motion]}>{children}</Animated.View>
+      <ArrivalContext.Provider value={arrival}>
+        <Animated.View style={[style, glass ? block : motion]}>{children}</Animated.View>
+      </ArrivalContext.Provider>
     </ArrivingContext.Provider>
   );
 }
 
 /** True while content arrives from a skeleton the person saw: a row may then wait its turn. */
-export const useArriving = () => useContext(ArrivalContext);
+export const useArriving = () => useContext(ArrivalOrderContext);
 
 /** A row of a list that arrives with the others, one step after the one before, and only then. */
 export function ArriveInOrder({
@@ -160,16 +177,21 @@ function Leaving({ children }: PropsWithChildren) {
       withTiming(0, { duration: SKELETON_OUT_MS, easing: EASE, reduceMotion: ReduceMotion.Never }),
     );
   }, [gone]);
-  const style = useAnimatedStyle(() => ({ opacity: gone.get() }));
+  const { glass, arrival } = useGlassAware(gone);
+  const fade = useAnimatedStyle(() => ({ opacity: gone.get() }));
+  // Glass is held whole under the arrival while its bars fade, and cut once they are gone.
+  const whole = useAnimatedStyle(() => ({ opacity: gone.get() > 0 ? 1 : 0 }));
   return (
-    <Animated.View
-      pointerEvents="none"
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
-      style={[styles.leaving, style]}
-    >
-      <BarsContext.Provider value>{children}</BarsContext.Provider>
-    </Animated.View>
+    <ArrivalContext.Provider value={arrival}>
+      <Animated.View
+        pointerEvents="none"
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        style={[styles.leaving, glass ? whole : fade]}
+      >
+        <BarsContext.Provider value>{children}</BarsContext.Provider>
+      </Animated.View>
+    </ArrivalContext.Provider>
   );
 }
 
@@ -256,7 +278,7 @@ export function Resolve({
   return (
     <View style={style}>
       {leaving ? <Leaving>{skeleton}</Leaving> : null}
-      <ArrivalContext.Provider value={ordered && arriving}>
+      <ArrivalOrderContext.Provider value={ordered && arriving}>
         {items.map((item, index) =>
           ordered ? (
             <Fragment key={keyOf(item, index)}>{item}</Fragment>
@@ -272,7 +294,7 @@ export function Resolve({
             </Rise>
           ),
         )}
-      </ArrivalContext.Provider>
+      </ArrivalOrderContext.Provider>
     </View>
   );
 }

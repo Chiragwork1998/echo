@@ -16,6 +16,7 @@ import {
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
+import { OnGlass } from '@/components/arrival';
 import { EchoText } from '@/components/EchoText';
 import { GlassBlur } from '@/components/GlassCard';
 import { Icon } from '@/components/Icon';
@@ -121,7 +122,7 @@ export function Surface({
       {tint && !reduced ? (
         <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: tint }]} />
       ) : null}
-      {children}
+      <OnGlass>{children}</OnGlass>
     </View>
   );
 }

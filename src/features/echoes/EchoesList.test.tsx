@@ -3,6 +3,7 @@ import type { ReactElement } from 'react';
 
 import { ThemeProvider } from '@/design/theme';
 
+import { mostFadedGlass } from '@/testing/glass';
 import { reanimatedMock } from '@/testing/reanimatedMock';
 import { render } from '@/testing/render';
 import type { EntrySummary } from '@/features/journal';
@@ -10,6 +11,7 @@ import type { EntrySummary } from '@/features/journal';
 import { echoesCopy } from './echoesCopy';
 import { EchoesList } from './EchoesList';
 
+const realTiming = reanimatedMock.withTiming;
 const delay = jest.spyOn(reanimatedMock, 'withDelay');
 const timing = jest.spyOn(reanimatedMock, 'withTiming');
 
@@ -35,6 +37,9 @@ beforeEach(() => {
   delay.mockClear();
   timing.mockClear();
 });
+afterEach(() => {
+  timing.mockImplementation(realTiming as never);
+});
 
 describe('EchoesList while a search runs', () => {
   it('says the search is running, once, and hides the rows it is not offering', async () => {
@@ -56,6 +61,14 @@ describe('EchoesList while a search runs', () => {
     expect(delay).toHaveBeenCalledTimes(1);
     expect(delay.mock.calls[0]?.[0]).toBe(400);
     expect(timing).toHaveBeenCalledWith(0.6, expect.objectContaining({ duration: 320 }));
+  });
+
+  it('dims the rows on the glass and never the glass: a dimmed ancestor takes Android’s blur away', async () => {
+    const view = await render(<EchoesList rows={[row('a')]} onOpen={() => undefined} waiting />);
+    // Caught on the way to 0.6.
+    timing.mockImplementation((() => 0.6) as never);
+    await view.rerender(wrap(<EchoesList rows={[row('a')]} onOpen={() => undefined} waiting />));
+    expect(mostFadedGlass()).toBe(1);
   });
 
   it('comes back over 180 ms when the answer lands', async () => {
