@@ -297,3 +297,128 @@ export const CardBack = memo(function CardBack({
     </Svg>
   );
 });
+
+/**
+ * The ground of the face: the same navy, linen and foil as the back, so the card is one object.
+ * A double foil frame inside the gilded edge, a fine double rule around the scene's window like a
+ * mount, and a low warm light where the name sits.
+ */
+export const FaceGround = memo(function FaceGround({
+  width,
+  height,
+  radius,
+  window,
+}: {
+  width: number;
+  height: number;
+  radius: number;
+  window: { x: number; y: number; size: number };
+}) {
+  const cx = width / 2;
+  const below = window.y + window.size;
+  return (
+    <Svg width={width} height={height} style={{ position: 'absolute' }} pointerEvents="none">
+      <Defs>
+        <RadialGradient id="cf-navy" cx="50%" cy="42%" rx="72%" ry="64%">
+          <Stop offset={0} stopColor="#16305A" />
+          <Stop offset={0.55} stopColor="#0C1B35" />
+          <Stop offset={1} stopColor="#050B17" />
+        </RadialGradient>
+        <LinearGradient
+          id="cf-foil"
+          x1={0}
+          y1={0}
+          x2={width}
+          y2={height}
+          gradientUnits="userSpaceOnUse"
+        >
+          {foilStops()}
+        </LinearGradient>
+        <RadialGradient id="cf-warm" cx="50%" cy="50%" rx="50%" ry="50%">
+          <Stop offset={0} stopColor="#E2C37F" stopOpacity={0.13} />
+          <Stop offset={1} stopColor="#E2C37F" stopOpacity={0} />
+        </RadialGradient>
+        <Pattern id="cf-linen" width={5} height={5} patternUnits="userSpaceOnUse">
+          <Path
+            d="M0 5 L5 0 M-1 1 L1 -1 M4 6 L6 4"
+            stroke="#FFFFFF"
+            strokeWidth={0.45}
+            opacity={0.05}
+          />
+          <Path d="M0 0 L5 5" stroke="#000000" strokeWidth={0.45} opacity={0.12} />
+        </Pattern>
+      </Defs>
+      <Rect x={0} y={0} width={width} height={height} fill="url(#cf-navy)" />
+      <Rect x={0} y={0} width={width} height={height} fill="url(#cf-linen)" />
+      <Ellipse
+        cx={cx}
+        cy={below + (height - below) / 2}
+        rx={width * 0.55}
+        ry={(height - below) * 0.7}
+        fill="url(#cf-warm)"
+      />
+      <Rect
+        x={FRAME}
+        y={FRAME}
+        width={width - FRAME * 2}
+        height={height - FRAME * 2}
+        rx={radius - FRAME / 2}
+        fill="none"
+        stroke="url(#cf-foil)"
+        strokeWidth={1.1}
+      />
+      <Rect
+        x={FRAME_INNER}
+        y={FRAME_INNER}
+        width={width - FRAME_INNER * 2}
+        height={height - FRAME_INNER * 2}
+        rx={radius - FRAME_INNER / 2}
+        fill="none"
+        stroke="url(#cf-foil)"
+        strokeWidth={0.55}
+        opacity={0.75}
+      />
+      <Rect
+        x={window.x - 4.5}
+        y={window.y - 4.5}
+        width={window.size + 9}
+        height={window.size + 9}
+        rx={3.5}
+        fill="none"
+        stroke="url(#cf-foil)"
+        strokeWidth={0.55}
+        opacity={0.8}
+      />
+    </Svg>
+  );
+});
+
+/** The fine foil line on the scene's own edge, drawn over the picture. */
+export function WindowLine({ size }: { size: number }) {
+  return (
+    <Svg width={size} height={size} style={{ position: 'absolute' }} pointerEvents="none">
+      <Defs>
+        <LinearGradient
+          id="cw-foil"
+          x1={0}
+          y1={0}
+          x2={size}
+          y2={size}
+          gradientUnits="userSpaceOnUse"
+        >
+          {foilStops()}
+        </LinearGradient>
+      </Defs>
+      <Rect
+        x={0.6}
+        y={0.6}
+        width={size - 1.2}
+        height={size - 1.2}
+        rx={2}
+        fill="none"
+        stroke="url(#cw-foil)"
+        strokeWidth={1.2}
+      />
+    </Svg>
+  );
+}
