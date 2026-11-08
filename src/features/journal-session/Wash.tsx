@@ -37,17 +37,19 @@ type Props = {
   visible: boolean;
   /** Rides with the quiet row: the same curve and the same quick leave (QUIET_FADE). */
   quiet?: boolean;
+  /** How long it takes to go, where something else is going as slowly (Breathe's dark): 600 ms. */
+  goMs?: number;
   /** Where it sits: `top` or `bottom`, and `height`. It always spans the width. */
   style: ComponentProps<typeof Animated.View>['style'];
 };
 
-export function Wash({ kind, visible, quiet = false, style }: Props) {
+export function Wash({ kind, visible, quiet = false, goMs = GO_MS, style }: Props) {
   const { name } = useTheme();
   const reduced = useReduceMotion();
   const shown = useSharedValue(0);
   useEffect(() => {
     const come = quiet ? QUIET_FADE.come : COME_MS;
-    const go = quiet ? QUIET_FADE.go : GO_MS;
+    const go = quiet ? QUIET_FADE.go : goMs;
     shown.set(
       withTiming(visible ? 1 : 0, {
         duration: reduced ? 160 : visible ? come : go,
@@ -55,7 +57,7 @@ export function Wash({ kind, visible, quiet = false, style }: Props) {
         reduceMotion: ReduceMotion.Never,
       }),
     );
-  }, [quiet, reduced, shown, visible]);
+  }, [goMs, quiet, reduced, shown, visible]);
   const fade = useAnimatedStyle(() => ({ opacity: shown.get() }));
 
   const tone = TONE[name];

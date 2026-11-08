@@ -1,6 +1,10 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { router } from 'expo-router';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
+import * as Reanimated from 'react-native-reanimated';
+
+import { useThemeHeld } from '@/design/themeHold';
+import { fingerAway, fingerDown } from '@/testing/pressed';
 
 import { DEFAULT_PRACTICE, usePreferences } from '@/state/preferences';
 import { useRequirePlus, usePlus } from '@/services/plus';
@@ -27,17 +31,23 @@ const mockAudio = {
   })),
 };
 let mockMorning = false;
+let mockReduced = false;
 
 jest.mock('@/services/nativeModules', () => ({ loadAudio: () => mockAudio }));
 jest.mock('@/design/haptics');
+jest.mock('@/design/useReduceMotion', () => ({ useReduceMotion: () => mockReduced }));
 jest.mock('expo-keep-awake', () => ({
   activateKeepAwakeAsync: jest.fn(async () => undefined),
   deactivateKeepAwake: jest.fn(async () => undefined),
 }));
-jest.mock('expo-router', () => ({
-  router: { push: jest.fn(), navigate: jest.fn(), dismissTo: jest.fn(), replace: jest.fn() },
-  usePathname: () => '/home/breathe',
-}));
+jest.mock('expo-router', () => {
+  const { useEffect } = jest.requireActual('react');
+  return {
+    router: { push: jest.fn(), navigate: jest.fn(), dismissTo: jest.fn(), replace: jest.fn() },
+    usePathname: () => '/home/breathe',
+    useFocusEffect: (effect: () => void | (() => void)) => useEffect(effect, [effect]),
+  };
+});
 jest.mock(
   'react-native-safe-area-context',
   () => jest.requireActual('react-native-safe-area-context/jest/mock').default,
@@ -63,6 +73,7 @@ beforeEach(() => {
   jest.useFakeTimers();
   jest.clearAllMocks();
   mockMorning = false;
+  mockReduced = false;
   usePreferences.setState({ practice: { ...DEFAULT_PRACTICE, begun: 1 } });
   as(false);
 });
@@ -220,6 +231,8 @@ describe('after a practice', () => {
     await render(<BreatheScreen />);
     await fireEvent.press(row(id));
     await fireEvent.press(screen.getByRole('button', { name: breatheCopy.begin }));
+    // The Before screen lets go (320 ms) and the practice comes up over the plate.
+    await act(async () => void jest.advanceTimersByTime(400));
     // The whole practice, on its own clock: there is no sound to follow under test.
     for (let i = 0; i < 40; i += 1) await act(async () => void jest.advanceTimersByTime(10_000));
   }
@@ -293,5 +306,156 @@ describe('after a practice', () => {
     await fireEvent.press(screen.getByTestId('feeling-check-skip'));
     await fireEvent.press(screen.getByTestId('after-done'));
     expect(router.dismissTo).toHaveBeenCalledWith('/home');
+  });
+});
+
+const timings = (spy: jest.SpyInstance) =>
+  spy.mock.calls.map(([, options]) => (options as { duration: number }).duration);
+
+describe('motion between the stages', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('settles each stage in over 600 ms', async () => {
+    const spy = jest.spyOn(Reanimated, 'withTiming');
+    await render(<BreatheScreen />);
+    expect(timings(spy)).toContain(600);
+  });
+
+  it('under Reduce Motion, settles in over 180 ms: a plain fade', async () => {
+    mockReduced = true;
+    const spy = jest.spyOn(Reanimated, 'withTiming');
+    await render(<BreatheScreen />);
+    expect(timings(spy)).toContain(180);
+    expect(timings(spy)).not.toContain(600);
+  });
+});
+
+describe('the theme under a practice', () => {
+  function Held() {
+    return <Text testID="held">{String(useThemeHeld())}</Text>;
+  }
+
+  it('is held while Breathe is open, so a phone that follows the sun cannot swap the plate mid-breath', async () => {
+    const view = await render(
+      <>
+        <Held />
+        <BreatheScreen />
+      </>,
+    );
+    expect(screen.getByTestId('held')).toHaveTextContent('true');
+    await view.unmount();
+    const after = await render(<Held />);
+    expect(screen.getByTestId('held')).toHaveTextContent('false');
+    await after.unmount();
+  });
+});
+
+describe('the quiet words on Before', () => {
+  async function openHeart() {
+    await render(<BreatheScreen />);
+    await fireEvent.press(row('heart'));
+  }
+  const opacityOf = (testID: string) =>
+    StyleSheet.flatten(screen.getByTestId(testID).props.style).opacity;
+
+  it('dim on a press, Back and Why this helps alike, and come back when the finger lifts', async () => {
+    await openHeart();
+    for (const testID of ['breathe-back', 'breathe-why']) {
+      expect(opacityOf(testID) ?? 1).toBe(1);
+      await fingerDown(screen.getByTestId(testID));
+      expect(opacityOf(testID)).toBe(0.6);
+      await fingerAway(screen.getByTestId(testID), () =>
+        act(async () => void jest.advanceTimersByTime(200)),
+      );
+      expect(opacityOf(testID) ?? 1).toBe(1);
+    }
+  });
+
+  it('crosses the switch’s fill and its outline over, instead of swapping them in one frame', async () => {
+    await openHeart();
+    const fill = () => opacityOf('setting-voice-fill');
+    const rim = () => opacityOf('setting-voice-rim');
+    expect([fill(), rim()]).toEqual([1, 0]);
+    // The knob and both layers travel together, on one value; the track itself is never a border.
+    await fireEvent.press(screen.getByRole('switch', { name: breatheCopy.voice }));
+    // Another render, so the mock applies the value the press set.
+    await fireEvent.press(screen.getByTestId('length-3'));
+    expect([fill(), rim()]).toEqual([0, 1]);
+    expect(screen.getByRole('switch', { name: breatheCopy.voice })).toHaveProp(
+      'accessibilityState',
+      { checked: false },
+    );
+    // Where the knob rests is the golden's, to the half point: 1.5 in from the track's edge when off and
+    // 0.5 in when on, so the track is 44 wide, padded 1.5, and the knob 24 travels 18.
+    const knob = (id: string) =>
+      JSON.stringify(screen.getByTestId(`setting-${id}-knob`).props.style);
+    expect(knob('sound')).toContain('"translateX":18');
+    expect(knob('voice')).toContain('"translateX":0');
+    const track = screen.getByTestId('setting-voice-fill').parent;
+    expect(JSON.stringify(track?.props.style)).not.toContain('borderWidth');
+  });
+
+  it('brings the reasons and the lines up over 320 ms, and over 180 under Reduce Motion', async () => {
+    const spy = jest.spyOn(Reanimated, 'withTiming');
+    await openHeart();
+    spy.mockClear();
+    await fireEvent.press(screen.getByTestId('breathe-why'));
+    expect(timings(spy)).toEqual([320]);
+    spy.mockClear();
+    await fireEvent.press(screen.getByRole('switch', { name: breatheCopy.voice }));
+    expect(timings(spy)).toContain(320);
+
+    mockReduced = true;
+    spy.mockClear();
+    await fireEvent.press(screen.getByRole('switch', { name: breatheCopy.voice }));
+    await fireEvent.press(screen.getByRole('switch', { name: breatheCopy.voice }));
+    expect(timings(spy).every((ms) => ms <= 180)).toBe(true);
+  });
+});
+
+describe('Begin', () => {
+  afterEach(() => jest.restoreAllMocks());
+  const begin = () => screen.getByRole('button', { name: breatheCopy.begin });
+  const practice = () => screen.queryByTestId('practice-sky', { includeHiddenElements: true });
+
+  async function openHeart() {
+    await render(<BreatheScreen />);
+    await fireEvent.press(row('heart'));
+  }
+
+  it('lets the Before screen fade away over 320 ms, takes no touch while it goes, and begins once', async () => {
+    await openHeart();
+    const spy = jest.spyOn(Reanimated, 'withTiming');
+    await fireEvent.press(begin());
+    // Not a cut: the screen is still there, going.
+    expect(practice()).toBeNull();
+    expect(
+      spy.mock.calls.some(([to, o]) => to === 0 && (o as { duration: number }).duration === 320),
+    ).toBe(true);
+    await fireEvent.press(begin());
+    await act(async () => void jest.advanceTimersByTime(300));
+    expect(practice()).toBeNull();
+    await act(async () => void jest.advanceTimersByTime(40));
+    expect(practice()).toBeTruthy();
+    expect(usePreferences.getState().practice.begun).toBe(2);
+  });
+
+  it('under Reduce Motion lets go in 180 ms', async () => {
+    mockReduced = true;
+    await openHeart();
+    await fireEvent.press(begin());
+    await act(async () => void jest.advanceTimersByTime(150));
+    expect(practice()).toBeNull();
+    await act(async () => void jest.advanceTimersByTime(50));
+    expect(practice()).toBeTruthy();
+  });
+
+  it('does not begin if the screen goes away while it lets go', async () => {
+    const view = await render(<BreatheScreen />);
+    await fireEvent.press(row('heart'));
+    await fireEvent.press(begin());
+    await view.unmount();
+    await act(async () => void jest.advanceTimersByTime(500));
+    expect(practice()).toBeNull();
   });
 });

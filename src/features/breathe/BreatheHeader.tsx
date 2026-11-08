@@ -18,7 +18,7 @@ export function BreatheHeader({ onBack }: { onBack: () => void }) {
       <Pressable
         onPress={onBack}
         hitSlop={4}
-        style={styles.back}
+        style={({ pressed }) => [styles.back, pressed && styles.pressed]}
         accessibilityRole="button"
         accessibilityLabel={breatheCopy.back}
         testID="breathe-back"
@@ -38,4 +38,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginLeft: -5,
   },
+  pressed: { opacity: 0.6 },
 });

@@ -18,13 +18,17 @@ import { useSkyInk } from '@/features/journal-session/sky';
 
 import { freeAt, lengthsFor, paceIsFree } from './access';
 import { breatheCopy } from './breatheCopy';
+import { Fade } from './Fade';
 import { HEART_PACES } from './timeline';
 import type { Practice } from './types';
 
 // The Privacy golden's switch, so a setting here reads as the same control.
 const TRACK = { width: 44, height: 25 };
 const KNOB = 24;
-const TRAVEL = TRACK.width - KNOB - 1;
+// The knob rests 1.5 pt in from the track when off and 0.5 pt when on, as the golden has it. The track
+// is padded by 1.5 pt on every side whichever way it is set, so the knob travels 18 pt: from 1.5 to 19.5.
+const TRACK_PAD = 1.5;
+const TRAVEL = TRACK.width - KNOB - 2;
 const CHIP_HEIGHT = 34;
 const DAY_SCRIM_ALPHA = 0.42;
 /**
@@ -52,6 +56,11 @@ function Switch({
     );
   }, [on, value]);
   const knob = useAnimatedStyle(() => ({ transform: [{ translateX: on.get() * TRAVEL }] }));
+  // The fill and the outline cross over as the knob travels, by opacity: the track is never one
+  // thing while the knob is still on its way to being the other, and no border comes and goes to
+  // nudge the knob a point.
+  const fill = useAnimatedStyle(() => ({ opacity: on.get() }));
+  const rim = useAnimatedStyle(() => ({ opacity: 1 - on.get() }));
   return (
     <Pressable
       accessibilityRole="switch"
@@ -64,15 +73,28 @@ function Switch({
       <EchoText variant="bodyM" style={styles.settingLabel}>
         {label}
       </EchoText>
-      <View
-        style={[
-          styles.track,
-          value
-            ? { backgroundColor: `${colors.accentWarm}B3` }
-            : { borderColor: colors.borderGlass, borderWidth: 1 },
-        ]}
-      >
-        <Animated.View style={[styles.knob, knob]} />
+      <View style={styles.track}>
+        <Animated.View
+          pointerEvents="none"
+          testID={`setting-${label.toLowerCase()}-fill`}
+          style={[
+            StyleSheet.absoluteFill,
+            styles.trackShape,
+            { backgroundColor: `${colors.accentWarm}B3` },
+            fill,
+          ]}
+        />
+        <Animated.View
+          pointerEvents="none"
+          testID={`setting-${label.toLowerCase()}-rim`}
+          style={[
+            StyleSheet.absoluteFill,
+            styles.trackShape,
+            { borderColor: colors.borderGlass, borderWidth: 1 },
+            rim,
+          ]}
+        />
+        <Animated.View testID={`setting-${label.toLowerCase()}-knob`} style={[styles.knob, knob]} />
       </View>
     </Pressable>
   );
@@ -220,7 +242,7 @@ export function BeforeStart(props: Props) {
           accessibilityState={{ expanded: why }}
           onPress={() => setWhy((open) => !open)}
           hitSlop={{ top: 10, bottom: 10, left: 24, right: 24 }}
-          style={styles.whyLink}
+          style={({ pressed }) => [styles.whyLink, pressed && styles.linkPressed]}
           testID="breathe-why"
         >
           <OneLineLabel
@@ -232,14 +254,16 @@ export function BeforeStart(props: Props) {
           </OneLineLabel>
         </Pressable>
         {why && (
-          <View style={styles.why} accessibilityLiveRegion="polite">
+          // The words come up rather than appearing whole. (The card below still steps down: a
+          // moving blur is for a phone to judge before it is added.)
+          <Fade inMs={tokens.motion.standard} style={styles.why} accessibilityLiveRegion="polite">
             <EchoText variant="bodyM" style={[styles.whyText, shadow]}>
               {practice.why}
             </EchoText>
             <EchoText variant="caption" color="textSecondary" style={[styles.source, shadow]}>
               {breatheCopy.source(practice.source)}
             </EchoText>
-          </View>
+          </Fade>
         )}
       </View>
 
@@ -307,7 +331,7 @@ export function BeforeStart(props: Props) {
       </View>
 
       {!voice && lines.length > 0 && (
-        <View style={styles.lines}>
+        <Fade inMs={tokens.motion.standard} style={styles.lines}>
           <EchoText variant="caption" color="textSecondary" style={[styles.linesTitle, shadow]}>
             {breatheCopy.linesTitle}
           </EchoText>
@@ -316,7 +340,7 @@ export function BeforeStart(props: Props) {
               {line}
             </EchoText>
           ))}
-        </View>
+        </Fade>
       )}
     </View>
   );
@@ -367,9 +391,10 @@ const styles = StyleSheet.create({
     width: TRACK.width,
     height: TRACK.height,
     borderRadius: TRACK.height / 2,
-    padding: 0.5,
+    padding: TRACK_PAD,
     justifyContent: 'center',
   },
+  trackShape: { borderRadius: TRACK.height / 2 },
   knob: { width: KNOB, height: KNOB, borderRadius: KNOB / 2, backgroundColor: '#FDFCFC' },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   chip: {
@@ -383,6 +408,7 @@ const styles = StyleSheet.create({
   chipLabel: { fontSize: 12, lineHeight: 16, letterSpacing: 0.2 },
   chipPlus: { fontSize: 9.5, lineHeight: 12, letterSpacing: 0.6, opacity: 0.8 },
   pressed: { opacity: 0.8 },
+  linkPressed: { opacity: 0.6 },
   paceHead: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
   paceValue: { fontSize: 11.5, letterSpacing: 0.3 },
   paceHint: { fontSize: 11.5, lineHeight: 16, letterSpacing: 0.2, opacity: 0.85 },

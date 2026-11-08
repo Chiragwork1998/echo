@@ -1,6 +1,10 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { router } from 'expo-router';
-import { AccessibilityInfo, AppState, BackHandler, StyleSheet } from 'react-native';
+import { AccessibilityInfo, AppState, BackHandler, StyleSheet, Text } from 'react-native';
+import * as Reanimated from 'react-native-reanimated';
+
+import { useThemeHeld } from '@/design/themeHold';
+import { fingerAway, fingerDown } from '@/testing/pressed';
 
 import { JOURNAL_AUDIO_MODE } from '@/features/breathe/audio';
 import { JournalSession } from '@/features/journal-session/JournalSession';
@@ -272,5 +276,157 @@ describe('the dark Arrive leaves behind', () => {
     await waitFor(() => expect(screen.getByLabelText(becomeCopy.question)).toBeTruthy());
     const lift = screen.getByTestId('arrive-lift');
     expect(StyleSheet.flatten(lift.props.style).opacity).toBe(0.9);
+  });
+});
+
+const timings = (spy: jest.SpyInstance) =>
+  spy.mock.calls.map(([to, options]) => ({
+    to: to as number,
+    duration: (options as { duration: number }).duration,
+  }));
+
+describe('Rehearse, line to line', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    // An earlier test turned the screen reader on; these are about a person without one.
+    jest.spyOn(AccessibilityInfo, 'isScreenReaderEnabled').mockResolvedValue(false);
+  });
+  afterEach(() => jest.restoreAllMocks());
+  const feel = () => becomeCopy.feel.replace('it, ', 'it,\n');
+  const step = (ms: number) => act(async () => void jest.advanceTimersByTime(ms));
+
+  it('lets the feel line fade out before "Go and live it." comes in, as every other line does', async () => {
+    const spy = jest.spyOn(Reanimated, 'withTiming');
+    await render(<RehearseScreen />);
+    expect(screen.getByText(feel())).toBeTruthy();
+    // The thirty-second breath ends: the line begins to leave.
+    let left = false;
+    for (let at = 0; at < 60_000 && !left; at += 100) {
+      await step(100);
+      left = timings(spy).some((timing) => timing.to === 0 && timing.duration === 500);
+    }
+    expect(left).toBe(true);
+    await step(100);
+    expect(screen.getByText(feel())).toBeTruthy();
+    expect(screen.queryByText(becomeCopy.go)).toBeNull();
+    // 500 ms out, 250 ms of nothing, then the next line.
+    await step(700);
+    expect(screen.queryByText(feel())).toBeNull();
+    expect(screen.getByText(becomeCopy.go)).toBeTruthy();
+    expect(router.replace).not.toHaveBeenCalled();
+    await step(3900);
+    expect(router.replace).toHaveBeenCalledWith('/home/complete');
+  });
+
+  it('brings Skip up over 450 ms on a touch and takes it away over 350, out of reach the whole time it is hidden', async () => {
+    const spy = jest.spyOn(Reanimated, 'withTiming');
+    holdRehearsal(WORDS);
+    await render(<RehearseScreen />);
+    // Hidden: nothing to reach or to announce, whatever its opacity is doing.
+    let hidden = false;
+    for (
+      let node = screen.getByTestId('rehearse-skip', { includeHiddenElements: true }).parent;
+      node;
+      node = node.parent
+    ) {
+      if (node.props.importantForAccessibility === 'no-hide-descendants') hidden = true;
+    }
+    expect(hidden).toBe(true);
+    await fireEvent.press(screen.getByTestId('rehearse-sky'));
+    expect(timings(spy)).toContainEqual({ to: 1, duration: 450 });
+    expect(screen.getByRole('button', { name: becomeCopy.skip })).toBeTruthy();
+    await step(4100);
+    expect(timings(spy)).toContainEqual({ to: 0, duration: 350 });
+    expect(screen.queryByRole('button', { name: becomeCopy.skip })).toBeNull();
+  });
+
+  it('fades Skip over 180 ms under Reduce Motion', async () => {
+    mockReduced = true;
+    const spy = jest.spyOn(Reanimated, 'withTiming');
+    holdRehearsal(WORDS);
+    await render(<RehearseScreen />);
+    await fireEvent.press(screen.getByTestId('rehearse-sky'));
+    await step(4100);
+    const skip = timings(spy).filter((timing) => timing.to === 1 || timing.to === 0);
+    expect(skip.every((timing) => timing.duration <= 700)).toBe(true);
+    expect(timings(spy).filter((timing) => timing.duration === 180).length).toBeGreaterThanOrEqual(
+      2,
+    );
+  });
+
+  it('dims Skip while it is pressed, as every quiet word is', async () => {
+    holdRehearsal(WORDS);
+    await render(<RehearseScreen />);
+    await fireEvent.press(screen.getByTestId('rehearse-sky'));
+    const skip = () => screen.getByTestId('rehearse-skip');
+    expect(StyleSheet.flatten(skip().props.style).opacity).toBe(1);
+    await fingerDown(skip());
+    expect(StyleSheet.flatten(skip().props.style).opacity).toBe(0.6);
+    await fingerAway(skip(), () => step(200));
+    expect(StyleSheet.flatten(skip().props.style).opacity).toBe(1);
+  });
+});
+
+describe('the theme through the morning', () => {
+  beforeEach(() => void jest.useFakeTimers());
+  const seen: boolean[] = [];
+  function Held() {
+    const held = useThemeHeld();
+    seen.push(held);
+    return <Text testID="held">{String(held)}</Text>;
+  }
+
+  it('is held through Arrive and handed to the book with no gap between', async () => {
+    seen.length = 0;
+    mockParams = { mode: 'write', prompt: 'become', arrive: '1' };
+    await render(
+      <>
+        <Held />
+        <DailySessionScreen />
+      </>,
+    );
+    expect(screen.getByTestId('held')).toHaveTextContent('true');
+    await fireEvent.press(screen.getByTestId('practice-sky', { includeHiddenElements: true }));
+    await waitFor(() => expect(screen.getByLabelText(becomeCopy.question)).toBeTruthy());
+    expect(screen.getByTestId('held')).toHaveTextContent('true');
+    // The first render is before the hold is taken. After it, the hold is never let go.
+    expect(seen.slice(1).includes(false)).toBe(false);
+  });
+
+  it('is held through Rehearse, and let go when it goes', async () => {
+    const view = await render(
+      <>
+        <Held />
+        <RehearseScreen />
+      </>,
+    );
+    expect(screen.getByTestId('held')).toHaveTextContent('true');
+    await view.unmount();
+    const after = await render(<Held />);
+    expect(screen.getByTestId('held')).toHaveTextContent('false');
+    await after.unmount();
+  });
+});
+
+describe('Arrive’s Skip', () => {
+  beforeEach(() => void jest.useFakeTimers());
+
+  it('dims while it is pressed', async () => {
+    mockParams = { mode: 'write', prompt: 'become', arrive: '1' };
+    await render(<DailySessionScreen />);
+    const skip = () => screen.getByTestId('practice-end', { includeHiddenElements: true });
+    expect(StyleSheet.flatten(skip().props.style).opacity).toBe(1);
+    await fingerDown(skip());
+    expect(StyleSheet.flatten(skip().props.style).opacity).toBe(0.6);
+    await fingerAway(skip(), () => act(async () => void jest.advanceTimersByTime(200)));
+    expect(StyleSheet.flatten(skip().props.style).opacity).toBe(1);
+  });
+
+  it('comes up over 650 ms, all of it together, rather than appearing whole', async () => {
+    const spy = jest.spyOn(Reanimated, 'withTiming');
+    mockParams = { mode: 'write', prompt: 'become', arrive: '1' };
+    await render(<DailySessionScreen />);
+    expect(timings(spy)).toContainEqual({ to: 1, duration: 650 });
+    spy.mockRestore();
   });
 });
