@@ -1,6 +1,7 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import { AccessibilityInfo } from 'react-native';
+import { withTiming } from 'react-native-reanimated';
 
 import { copy } from '@/content/copy';
 import {
@@ -10,6 +11,7 @@ import {
   type Journal,
 } from '@/features/journal';
 import { emptyContent } from '@/features/journal/content';
+import type { Entry } from '@/features/journal/types';
 import { ImmersiveSession } from '@/features/journal-session/ImmersiveSession';
 import { JournalSession } from '@/features/journal-session/JournalSession';
 import { useSessionController } from '@/features/journal-session/useSessionController';
@@ -38,6 +40,8 @@ jest.mock(
 );
 jest.mock('react-native-reanimated', () => ({
   ...jest.requireActual('@/testing/reanimatedMock').reanimatedMock,
+  // Resolves to its end at once, as in every other test, and remembers how it was asked to.
+  withTiming: jest.fn((value: unknown) => value),
   useAnimatedKeyboard: () => ({ height: { get: () => 0 }, state: { get: () => 0 } }),
 }));
 // Motion is covered by eye. By default the book arrives and opens at once, which is what Reduce Motion
@@ -259,5 +263,87 @@ describe('the opening ritual (D-008)', () => {
     // Hidden from the page, and from a screen reader, with no page count to give them away.
     expect(screen.queryByLabelText(copy.home.prompt)).toBeNull();
     expect(screen.queryByTestId('book-next')).toBeNull();
+  });
+});
+
+describe('First Echo at the shelf: the studio and the book', () => {
+  /** Every testID on the screen, in the order things are drawn: later is on top. */
+  const order = () => {
+    const ids: string[] = [];
+    const walk = (node: unknown) => {
+      if (!node || typeof node !== 'object') return;
+      const { props, children } = node as {
+        props?: { testID?: string };
+        children?: unknown[] | null;
+      };
+      if (props?.testID) ids.push(props.testID);
+      children?.forEach(walk);
+    };
+    const tree = screen.toJSON();
+    (Array.isArray(tree) ? tree : [tree]).forEach(walk);
+    return ids;
+  };
+  const durations = () =>
+    jest
+      .mocked(withTiming)
+      .mock.calls.map(([, config]) => (config as { duration?: number } | undefined)?.duration);
+
+  it('draws the studio colour under the book, so a book coming forward is never seen through it', async () => {
+    await render(<JournalSession variant="onboarding" />);
+    await fireEvent.press(volume('your-echo'));
+    await tick(400);
+    const ids = order();
+    expect(ids).toContain('shelf-backdrop');
+    expect(ids).toContain('book-stage');
+    expect(ids.indexOf('shelf-backdrop')).toBeLessThan(ids.indexOf('book-stage'));
+  });
+
+  it('clears the studio in a fade of at most 180 ms under Reduce Motion, and in 700 ms otherwise', async () => {
+    await render(<JournalSession variant="onboarding" />);
+    await fireEvent.press(volume('your-echo'));
+    await tick(400);
+    expect(durations()).toContain(180);
+    expect(durations()).not.toContain(700);
+  });
+
+  it('keeps the studio\u2019s own 700 ms where nothing is asked to be quiet', async () => {
+    mockReduced = false;
+    await render(<JournalSession variant="onboarding" />);
+    expect(durations()).toContain(700);
+  });
+});
+
+describe('a book with echoes in it', () => {
+  const echo = (n: number): Entry => ({
+    ...emptyContent({ body: `a stone on a wall, number ${n}` }),
+    id: `seed-${n}`,
+    status: 'committed',
+    createdAt: Date.UTC(2026, 9, n),
+    updatedAt: Date.UTC(2026, 9, n),
+    committedAt: Date.UTC(2026, 9, n),
+    localDay: `2026-10-${String(n).padStart(2, '0')}`,
+  });
+  const leaves = () => screen.queryAllByTestId(/^book-leaf-\d$/, { includeHiddenElements: true });
+
+  it.each([
+    [0, 0],
+    [1, 1],
+    [5, 3],
+  ])('riffles as many leaves as its %i echoes call for (%i)', async (count, expected) => {
+    mockReduced = false;
+    setJournal(
+      createMemoryJournal({ entries: Array.from({ length: count }, (_, i) => echo(i + 1)) }),
+    );
+    await render(<JournalSession variant="daily" initialMode="write" />);
+    // The stillness, and the book has begun: the count has long since arrived.
+    await tick(FULL.stillness + 100);
+    await waitFor(() => expect(leaves()).toHaveLength(expected));
+  });
+
+  it('does not riffle under Reduce Motion, however many echoes it holds', async () => {
+    setJournal(createMemoryJournal({ entries: Array.from({ length: 9 }, (_, i) => echo(i + 1)) }));
+    await render(<JournalSession variant="daily" initialMode="write" />);
+    await tick(400);
+    expect(leaves()).toHaveLength(0);
   });
 });

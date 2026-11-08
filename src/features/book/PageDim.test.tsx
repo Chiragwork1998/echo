@@ -5,6 +5,7 @@
 // screen reader, and they come back at once when the note goes.
 import { act, fireEvent, screen } from '@testing-library/react-native';
 import { AccessibilityInfo, StyleSheet } from 'react-native';
+import { withTiming } from 'react-native-reanimated';
 
 import { copy } from '@/content/copy';
 import { ThemeProvider } from '@/design/theme';
@@ -38,6 +39,8 @@ jest.mock(
 );
 jest.mock('react-native-reanimated', () => ({
   ...jest.requireActual('@/testing/reanimatedMock').reanimatedMock,
+  // Resolves to its end at once, as everywhere else, and remembers how it was asked to.
+  withTiming: jest.fn((value: unknown) => value),
   useAnimatedKeyboard: () => ({ height: { get: () => 0 }, state: { get: () => 0 } }),
 }));
 // The book arrives and opens at once, as it does under Reduce Motion.
@@ -112,6 +115,17 @@ describe('the words on the page while a note is drawn', () => {
     expect(PAGE_DIMMED).toBeGreaterThan(0);
     expect(PAGE_DIMMED).toBeLessThan(0.3);
     expect(screen.getByLabelText(copy.home.prompt).props.value).toBe(BODY);
+  });
+
+  it('drop in a short fade under Reduce Motion, so they never go in one frame beside a note that is coming up', async () => {
+    await open(true);
+    const asked = jest
+      .mocked(withTiming)
+      .mock.calls.filter(([to]) => to === PAGE_DIMMED)
+      .map(([, config]) => (config as { duration?: number }).duration);
+    // Not 0: the words are dimmed over the time of a blink (180 ms), and never longer.
+    expect(asked.length).toBeGreaterThan(0);
+    expect(asked.every((duration) => duration === 180)).toBe(true);
   });
 
   it('are not hidden from a screen reader', async () => {

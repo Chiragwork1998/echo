@@ -16,6 +16,7 @@ import Animated, {
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 
 import { EchoText } from '@/components/EchoText';
+import { EASE } from '@/design/ease';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 import { useReduceMotion } from '@/design/useReduceMotion';
@@ -23,6 +24,7 @@ import { useScreenReader } from '@/features/journal-session/useScreenReader';
 
 import { bookCopy } from './bookCopy';
 import { BookCover } from './CoverArt';
+import { Ribbon } from './Ribbon';
 import { BOOK_W, STEP, VOLUMES, centred, volumeIndex, type Volume } from './volumes';
 
 // The original shelf: eight volumes roll past over 3.2 s and settle, each growing and turning to face
@@ -34,6 +36,8 @@ const ROLL_MS = 3200;
 const SETTLE = { stiffness: 266, damping: 28, mass: 1 } as const;
 const GLOW = { stiffness: 230, damping: 19, mass: 1 } as const;
 const OUT_MS = 320;
+/** The ribbon on a shelf volume: the stage's ribbon at 4 pt wide, its tail tucked into the shut book. */
+const RIBBON_W = 4;
 
 type Props = {
   /** Where the roll ends and the shelf rests: the person's own volume, or the journal. */
@@ -61,7 +65,11 @@ export function ShelfBackdrop({
   const { name } = useTheme();
   const fade = useAnimatedStyle(() => ({ opacity: visible.get() }));
   return (
-    <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.backdrop, fade]}>
+    <Animated.View
+      pointerEvents="none"
+      testID="shelf-backdrop"
+      style={[StyleSheet.absoluteFill, styles.backdrop, fade]}
+    >
       {VOLUMES.map((volume, index) => (
         <Scene key={volume.id} colour={volume.scene} at={centred(index, width)} offset={offset} />
       ))}
@@ -108,6 +116,16 @@ export function Shelf({ initial, onChoose, offset }: Props) {
   const [at, setAt] = useState(initial);
   const drag = useRef({ start: 0 });
   const leaving = useRef(false);
+  const chooseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // A volume chosen and then left (Back within the exit) must not arrive on the screen that is going.
+  // A separate effect, so that the roll's early return under Reduce Motion cannot skip it.
+  useEffect(
+    () => () => {
+      if (chooseTimer.current) clearTimeout(chooseTimer.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     if (reduced) {
@@ -139,7 +157,14 @@ export function Shelf({ initial, onChoose, offset }: Props) {
     setAt(next);
     setReady(true);
     offset.set(withSpring(centred(next, width), { ...SETTLE, reduceMotion: ReduceMotion.Never }));
-    glow.set(1);
+    // The hint, the halo and the lift come back as the row settles, not in one frame while it moves.
+    glow.set(
+      withTiming(1, {
+        duration: reduced ? tokens.motion.fast : tokens.motion.standard,
+        easing: EASE,
+        reduceMotion: ReduceMotion.Never,
+      }),
+    );
   };
 
   const choose = (index: number) => {
@@ -158,7 +183,7 @@ export function Shelf({ initial, onChoose, offset }: Props) {
         reduceMotion: ReduceMotion.Never,
       }),
     );
-    setTimeout(() => onChoose(index), OUT_MS);
+    chooseTimer.current = setTimeout(() => onChoose(index), OUT_MS);
   };
 
   // The handlers read the drag only when a finger moves, never while rendering.
@@ -171,7 +196,13 @@ export function Shelf({ initial, onChoose, offset }: Props) {
         onPanResponderGrant: () => {
           cancelAnimation(offset);
           drag.current.start = offset.get();
-          glow.set(0);
+          glow.set(
+            withTiming(0, {
+              duration: tokens.motion.fast,
+              easing: EASE,
+              reduceMotion: ReduceMotion.Never,
+            }),
+          );
         },
         onPanResponderMove: (_, g) => offset.set(drag.current.start + g.dx),
         onPanResponderRelease: (_, g) => {
@@ -280,7 +311,9 @@ function ShelfSlot(props: {
             <View style={styles.bookShadow} />
             <View style={styles.pageBlock} />
             <BookCover height={volume.height} index={index} volume={volume} width={BOOK_W} />
-            <View style={[styles.bookRibbon, { backgroundColor: volume.foil }]} />
+            <View pointerEvents="none" style={styles.bookRibbon}>
+              <Ribbon foil={volume.foil} tucked width={RIBBON_W} />
+            </View>
           </View>
         </Animated.View>
       </Pressable>
@@ -331,12 +364,6 @@ const styles = StyleSheet.create({
     borderRadius: 1,
     backgroundColor: '#EDE6D8',
   },
-  bookRibbon: {
-    position: 'absolute',
-    bottom: -9,
-    left: '30%',
-    width: 4,
-    height: 12,
-    borderRadius: 1,
-  },
+  // Out of the foot of the book, a third of the way across (4 by 12 pt, tail tucked 6 pt of the stage's).
+  bookRibbon: { position: 'absolute', bottom: -9, left: '30%' },
 });

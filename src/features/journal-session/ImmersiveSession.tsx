@@ -17,17 +17,21 @@ import { EchoText } from '@/components/EchoText';
 import { copy } from '@/content/copy';
 import { useLayout } from '@/design/layout';
 import { useTheme } from '@/design/theme';
+import { tokens } from '@/design/tokens';
 import { BookPage, useBookFrame } from '@/features/book/BookPage';
-import { keyboardRise, restingDrop } from '@/features/book/bookPlace';
+import { controlsBottom, keyboardRise, restingDrop } from '@/features/book/bookPlace';
 import { PaperProvider, usePaperLook, type Surface } from '@/features/book/paper';
+import { volumePin } from '@/features/book/qaPins';
 import { ritualFor } from '@/features/book/ritual';
 import { Shelf, ShelfBackdrop, useShelfOffset } from '@/features/book/Shelf';
 import { volumeById, volumeIndex, VOLUMES } from '@/features/book/volumes';
+import { useRhythm } from '@/features/journal';
 import { usePreferences } from '@/state/preferences';
 import { useWhileHere } from '@/features/home/dissolve';
 import { usePlateFrame, usePlatePoint } from '@/design/usePlatePoint';
 import { useReduceMotion } from '@/design/useReduceMotion';
 
+import { Arrive } from './Arrive';
 import { Beacon } from './Beacon';
 import { HEADER_HEIGHT } from './geometry';
 import { QuietControls } from './QuietControls';
@@ -124,7 +128,10 @@ export function ImmersiveSession({
   const rememberVolume = usePreferences((state) => state.setVolume);
   const [picked, setPicked] = useState<string | null>(null);
   const [opened, setOpened] = useState(!book);
-  const volume = volumeById(picked ?? remembered ?? undefined);
+  const volume = volumeById(picked ?? volumePin() ?? remembered ?? undefined);
+  // How many echoes the book holds: a count and nothing else, so that a thicker book riffles a few
+  // leaves as it opens. It arrives long before the cover starts, a second or more after the screen.
+  const echoes = useRhythm().data?.totalReflections ?? 0;
   const clearOfKeyboard = useBookFrame(insets.top + (onboarding ? HEADER_HEIGHT - 5 : 0));
   // The daily book rests in the middle of the screen. First Echo keeps its place under the header.
   const bookDrop = onboarding
@@ -140,12 +147,12 @@ export function ImmersiveSession({
   useEffect(() => {
     studio.set(
       withTiming(shelf ? 1 : 0, {
-        duration: 700,
+        duration: reduced ? tokens.motion.fast : 700,
         easing: Easing.inOut(Easing.quad),
         reduceMotion: ReduceMotion.Never,
       }),
     );
-  }, [shelf, studio]);
+  }, [shelf, studio, reduced]);
   const choose = (index: number) => {
     const chosen = VOLUMES[index];
     if (!chosen) return;
@@ -178,13 +185,13 @@ export function ImmersiveSession({
   const qaKeyboard = qaKeyboardHeight();
   const lift = useAnimatedStyle(() => {
     const height = Math.max(keyboard.height.get(), qaKeyboard);
-    return { bottom: height > 0 ? height + CONTROLS.aboveKeyboard : resting };
+    return { bottom: controlsBottom(height, resting, CONTROLS.aboveKeyboard) };
   });
 
   // The shade under the controls reaches from the bottom of the screen to above them.
   const span = useAnimatedStyle(() => {
     const height = Math.max(keyboard.height.get(), qaKeyboard);
-    return { height: (height > 0 ? height + CONTROLS.aboveKeyboard : resting) + GROUND_FADE };
+    return { height: controlsBottom(height, resting, CONTROLS.aboveKeyboard) + GROUND_FADE };
   });
 
   // The book rises with the keyboard, just far enough for the words being typed to stay in view.
@@ -262,6 +269,9 @@ export function ImmersiveSession({
           photograph Home was showing, still or alive (D-009), is drawn beneath the stack by
           app/home/_layout.tsx. Another copy here would cover the loop and cut it off. */}
       {onboarding && book && <EchoBackground screen="first-echo" />}
+      {/* The studio colour is the book's ground: it sits above the photograph and below the book, so a
+          book coming forward is never drawn through a veil that has not cleared yet. */}
+      {onboarding && book && <ShelfBackdrop offset={shelfOffset} visible={studio} />}
       {book && <Stack.Screen options={{ gestureEnabled: false }} />}
       {/* The clock and the icons go with everything else. */}
       <StatusBar hidden={here ? true : undefined} animated />
@@ -321,6 +331,7 @@ export function ImmersiveSession({
             ritual={ritual}
             // A screen reader is not made to wait for the book either.
             hurry={tapped || screenReader}
+            echoes={echoes}
             concealed={hidden}
             dimmed={noteDrawn}
             arrival={session.arrival}
@@ -381,7 +392,10 @@ export function ImmersiveSession({
       )}
 
       {noteDrawn && (
-        <View
+        <Arrive
+          testID="session-note"
+          delay={120}
+          ms={350}
           pointerEvents="box-none"
           style={[
             styles.centre,
@@ -418,12 +432,11 @@ export function ImmersiveSession({
               />
             )}
           </PaperProvider>
-        </View>
+        </Arrive>
       )}
 
       {onboarding && book && (
         <>
-          <ShelfBackdrop offset={shelfOffset} visible={studio} />
           <View
             pointerEvents="box-none"
             style={[

@@ -20,3 +20,12 @@ export function keyboardRise(
   const overlap = keyboardHeight + ROW_CLEARANCE + restingBottom - screenHeight;
   return Math.min(drop, Math.max(0, overlap));
 }
+
+/**
+ * Distance from the bottom of the screen to the quiet row. It keeps its place until the keys would
+ * reach it, and then rides with them one to one, so that it never jumps as the keyboard comes or goes.
+ */
+export function controlsBottom(keyboardHeight: number, resting: number, above: number) {
+  'worklet';
+  return Math.max(resting, keyboardHeight + above);
+}

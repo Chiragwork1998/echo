@@ -10,14 +10,14 @@ export type Ritual = {
   stillness: number;
   /** The book rising from the lower edge (the daily echo). */
   rise: number;
-  /** The book coming forward from the shelf (First Echo). */
+  /** The book coming forward from the shelf (First Echo): it travels a little and settles. */
   forward: number;
   /** The cover swinging open. */
   cover: number;
 };
 
-export const FULL: Ritual = { stillness: 1500, rise: 1500, forward: 420, cover: 1100 };
-export const SHORT: Ritual = { stillness: 750, rise: 800, forward: 260, cover: 550 };
+export const FULL: Ritual = { stillness: 1500, rise: 1500, forward: 520, cover: 1100 };
+export const SHORT: Ritual = { stillness: 750, rise: 800, forward: 300, cover: 550 };
 
 /** What is left of the ritual once a tap says enough: everything finishes together, quickly. */
 export const HURRY_MS = 300;

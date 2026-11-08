@@ -188,15 +188,12 @@ export function Pages({
   const dim = useSharedValue(1);
   const shownAt = concealed ? 0 : dimmed ? PAGE_DIMMED : 1;
   const veil = useSharedValue(shownAt);
-  const wasConcealed = useRef(concealed);
   useEffect(() => {
-    // Hiding and showing keep their short fade under Reduce Motion. Dimming for a note does not fade
-    // at all there: the page simply is the way it will be.
-    const hides = concealed || wasConcealed.current;
-    wasConcealed.current = concealed;
+    // Hiding, dimming and showing all keep their short fade under Reduce Motion, so that the words
+    // never drop in one frame while a note beside them is arriving.
     veil.set(
       withTiming(shownAt, {
-        duration: reduced ? (hides ? FADE_MS : 0) : VEIL_MS,
+        duration: reduced ? FADE_MS : VEIL_MS,
         easing: Easing.out(Easing.quad),
         reduceMotion: ReduceMotion.Never,
       }),

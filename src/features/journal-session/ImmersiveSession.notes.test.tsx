@@ -3,9 +3,10 @@
 // nothing behind it to read it against. So it waits for the page. And a book that cannot open must not
 // swallow it: after a grace the note comes anyway, because a person with nothing to read is worse off.
 import { act, screen } from '@testing-library/react-native';
-import { AccessibilityInfo } from 'react-native';
+import { AccessibilityInfo, StyleSheet } from 'react-native';
 
 import { createMemoryJournal, setJournal, useVoiceRecorder } from '@/features/journal';
+import { ThemeProvider } from '@/design/theme';
 import { resetPreferences } from '@/state/preferences';
 import { render } from '@/testing/render';
 
@@ -115,5 +116,31 @@ describe('a note over the daily book', () => {
     expect(screen.queryByText(sessionCopy.errors.unreadable)).toBeNull();
     await act(async () => mockOpen?.());
     expect(screen.queryByText(sessionCopy.errors.unreadable)).toBeTruthy();
+  });
+});
+
+describe('how a note arrives', () => {
+  // The stand-in for Reanimated reads a shared value only when the screen is drawn again.
+  const redraw = () =>
+    screen.rerender(
+      <ThemeProvider crossfade={false}>
+        <JournalSession variant="daily" initialMode="speak" />
+      </ThemeProvider>,
+    );
+  const noteOpacity = () =>
+    StyleSheet.flatten(
+      screen.getByTestId('session-note', { includeHiddenElements: true }).props.style,
+    ).opacity;
+
+  it('comes up from nothing, and is not there in one frame at full strength', async () => {
+    await render(<JournalSession variant="daily" initialMode="speak" />);
+    await tick(500);
+    await act(async () => mockOpen?.());
+    expect(unavailable()).toBeTruthy();
+    // On its first drawing it is transparent: it is about to come up, not to appear whole.
+    expect(noteOpacity()).toBe(0);
+    await redraw();
+    expect(noteOpacity()).toBe(1);
+    expect(unavailable()).toBeTruthy();
   });
 });

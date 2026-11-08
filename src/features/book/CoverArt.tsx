@@ -1,4 +1,5 @@
 import { LinearGradient } from 'expo-linear-gradient';
+import type { ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Svg, { Circle, Defs, Ellipse, Path, Pattern, Rect } from 'react-native-svg';
 
@@ -199,13 +200,19 @@ export function CoverArt({ volume }: { volume: Volume }) {
   }
 }
 
-/** A cloth cover with its foil art and title. `width` scales the whole of it from the 150 pt shelf size. */
+/**
+ * A cloth cover with its foil art and title. `width` scales the whole of it from the 150 pt shelf
+ * size. Anything passed as children is drawn over the cloth inside the cover's own clip, so a light
+ * or a shade laid on the board stops at the board's edge.
+ */
 export function BookCover({
+  children,
   height,
   index,
   volume,
   width,
 }: {
+  children?: ReactNode;
   height: number;
   index: number;
   volume: Volume;
@@ -293,6 +300,7 @@ export function BookCover({
       >
         {volume.subtitle}
       </EchoText>
+      {children}
     </View>
   );
 }

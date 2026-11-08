@@ -49,6 +49,8 @@ type Props = {
   ritual: Ritual;
   /** A tap said enough: the opening finishes at once. */
   hurry: boolean;
+  /** How many echoes the book holds: a count, so that a book with more in it riffles a few leaves. */
+  echoes?: number;
   onOpened?: () => void;
   inputRef: RefObject<ComponentRef<typeof TextInput> | null>;
   value: string;
@@ -84,6 +86,7 @@ export function BookPage(props: Props) {
     riseFrom,
     ritual,
     hurry,
+    echoes,
     onOpened,
     children,
     ...page
@@ -107,6 +110,7 @@ export function BookPage(props: Props) {
         riseFrom={riseFrom}
         ritual={ritual}
         hurry={hurry}
+        echoes={echoes}
         onOpened={onOpened}
       >
         {(open) => (
