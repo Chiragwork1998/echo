@@ -182,6 +182,18 @@ describe('Before it starts', () => {
     expect(screen.getByTestId('breathe-caution')).toBeTruthy();
   });
 
+  it('lays a patch behind the warning on either sky, so the moon and snow never wash it out', async () => {
+    for (const theme of ['night', 'day'] as const) {
+      usePreferences.setState({ theme });
+      requirePlus.mockReturnValueOnce(true);
+      const view = await render(<BreatheScreen />);
+      await fireEvent.press(row('sleep'));
+      expect(screen.getByTestId('breathe-caution')).toBeTruthy();
+      expect(screen.getByTestId('breathe-heading-patch')).toBeTruthy();
+      await view.unmount();
+    }
+  });
+
   it('gives no warning before a practice that does not hold the breath', async () => {
     await render(<BreatheScreen />);
     await fireEvent.press(row('heart'));

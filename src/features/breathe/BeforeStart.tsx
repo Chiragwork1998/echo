@@ -14,6 +14,7 @@ import { OneLineLabel } from '@/components/OneLineLabel';
 import { SoftScrim } from '@/components/SoftScrim';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
+import { useSkyInk } from '@/features/journal-session/sky';
 
 import { freeAt, lengthsFor, paceIsFree } from './access';
 import { breatheCopy } from './breatheCopy';
@@ -26,12 +27,13 @@ const KNOB = 24;
 const TRAVEL = TRACK.width - KNOB - 1;
 const CHIP_HEIGHT = 34;
 const DAY_SCRIM_ALPHA = 0.42;
+/**
+ * Night's moon and snow are as bright as the pale caption ink, and the moon sits at the very edge of
+ * the words, where a round patch fades to nothing. So Night's patch runs wide past the screen and a
+ * little above and below the heading: every word sits in its even middle (walk v5).
+ */
+const NIGHT_SCRIM = { alpha: 0.5, x: 160, y: 48 };
 const CREAM_STOPS = ['#FBF8F2', '#EDE6DC'] as const; // tokens.gradient.creamButton
-const SHADOW = {
-  textShadowColor: 'rgba(3,11,22,0.32)',
-  textShadowRadius: 10,
-  textShadowOffset: { width: 0, height: 1 },
-} as const;
 
 function Switch({
   label,
@@ -99,7 +101,11 @@ function Chip(props: {
         {label}
       </OneLineLabel>
       {plus && (
-        <EchoText variant="caption" color="textSecondary" style={styles.chipPlus}>
+        <EchoText
+          variant="caption"
+          color={selected ? 'textInk' : 'textSecondary'}
+          style={styles.chipPlus}
+        >
           {breatheCopy.plus}
         </EchoText>
       )}
@@ -152,6 +158,9 @@ type Props = {
 export function BeforeStart(props: Props) {
   const { practice, minutes, pace, sound, voice, markPlus } = props;
   const { colors, name } = useTheme();
+  // Words on the open sky take the session's shadow. Night's moon and snow are as bright as the
+  // pale caption ink, and the hold caution, which is about safety, sat unread on them (walk v5).
+  const { shadow } = useSkyInk();
   const [why, setWhy] = useState(false);
   const heart = practice.steps.some(
     (step) => step.kind === 'breath' && step.pattern.kind === 'heart',
@@ -160,66 +169,79 @@ export function BeforeStart(props: Props) {
 
   return (
     <View>
-      {/* Day's sky is bright cloud behind the heading: a feathered patch keeps it legible, as the
-          onboarding headings do. Night's sky needs none. */}
-      {name === 'day' && (
-        <View pointerEvents="none" style={styles.scrim}>
-          <SoftScrim alpha={DAY_SCRIM_ALPHA} />
+      <View>
+        {/* Day's sky is bright cloud behind the heading, and Night's has the moon and the snow: a
+            feathered patch keeps the words legible, as the onboarding headings do. */}
+        <View
+          pointerEvents="none"
+          style={name === 'day' ? styles.dayScrim : styles.nightScrim}
+          testID="breathe-heading-patch"
+        >
+          <SoftScrim alpha={name === 'day' ? DAY_SCRIM_ALPHA : NIGHT_SCRIM.alpha} />
         </View>
-      )}
-      <EchoText
-        variant="caption"
-        color="textSecondary"
-        align="center"
-        style={[styles.feeling, SHADOW]}
-      >
-        {practice.feeling}
-      </EchoText>
-      <EchoText
-        variant="displayM"
-        align="center"
-        accessibilityRole="header"
-        style={[styles.name, SHADOW]}
-      >
-        {practice.name}
-      </EchoText>
-      <EchoText variant="bodyM" color="textSecondary" align="center" style={[styles.line, SHADOW]}>
-        {practice.line}
-      </EchoText>
-      {practice.caution ? (
         <EchoText
           variant="caption"
           color="textSecondary"
           align="center"
-          style={[styles.caution, SHADOW]}
-          testID="breathe-caution"
+          style={[styles.feeling, shadow]}
         >
-          {practice.caution}
+          {practice.feeling}
         </EchoText>
-      ) : null}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={breatheCopy.whyTitle}
-        accessibilityState={{ expanded: why }}
-        onPress={() => setWhy((open) => !open)}
-        hitSlop={{ top: 10, bottom: 10, left: 24, right: 24 }}
-        style={styles.whyLink}
-        testID="breathe-why"
-      >
-        <OneLineLabel variant="caption" color="textSecondary" style={styles.whyLinkText}>
-          {breatheCopy.whyTitle}
-        </OneLineLabel>
-      </Pressable>
-      {why && (
-        <View style={styles.why} accessibilityLiveRegion="polite">
-          <EchoText variant="bodyM" style={[styles.whyText, SHADOW]}>
-            {practice.why}
+        <EchoText
+          variant="displayM"
+          align="center"
+          accessibilityRole="header"
+          style={[styles.name, shadow]}
+        >
+          {practice.name}
+        </EchoText>
+        <EchoText
+          variant="bodyM"
+          color="textSecondary"
+          align="center"
+          style={[styles.line, shadow]}
+        >
+          {practice.line}
+        </EchoText>
+        {practice.caution ? (
+          <EchoText
+            variant="caption"
+            color="textSecondary"
+            align="center"
+            style={[styles.caution, shadow]}
+            testID="breathe-caution"
+          >
+            {practice.caution}
           </EchoText>
-          <EchoText variant="caption" color="textSecondary" style={[styles.source, SHADOW]}>
-            {breatheCopy.source(practice.source)}
-          </EchoText>
-        </View>
-      )}
+        ) : null}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={breatheCopy.whyTitle}
+          accessibilityState={{ expanded: why }}
+          onPress={() => setWhy((open) => !open)}
+          hitSlop={{ top: 10, bottom: 10, left: 24, right: 24 }}
+          style={styles.whyLink}
+          testID="breathe-why"
+        >
+          <OneLineLabel
+            variant="caption"
+            color="textSecondary"
+            style={[styles.whyLinkText, shadow]}
+          >
+            {breatheCopy.whyTitle}
+          </OneLineLabel>
+        </Pressable>
+        {why && (
+          <View style={styles.why} accessibilityLiveRegion="polite">
+            <EchoText variant="bodyM" style={[styles.whyText, shadow]}>
+              {practice.why}
+            </EchoText>
+            <EchoText variant="caption" color="textSecondary" style={[styles.source, shadow]}>
+              {breatheCopy.source(practice.source)}
+            </EchoText>
+          </View>
+        )}
+      </View>
 
       <View style={styles.group}>
         <GlassCard radius={tokens.radius.card}>
@@ -286,11 +308,11 @@ export function BeforeStart(props: Props) {
 
       {!voice && lines.length > 0 && (
         <View style={styles.lines}>
-          <EchoText variant="caption" color="textSecondary" style={[styles.linesTitle, SHADOW]}>
+          <EchoText variant="caption" color="textSecondary" style={[styles.linesTitle, shadow]}>
             {breatheCopy.linesTitle}
           </EchoText>
           {lines.map((line) => (
-            <EchoText key={line} variant="bodyM" style={[styles.lineText, SHADOW]}>
+            <EchoText key={line} variant="bodyM" style={[styles.lineText, shadow]}>
               {line}
             </EchoText>
           ))}
@@ -301,7 +323,14 @@ export function BeforeStart(props: Props) {
 }
 
 const styles = StyleSheet.create({
-  scrim: { position: 'absolute', left: -28, right: -28, top: 4, height: 260 },
+  dayScrim: { position: 'absolute', left: -28, right: -28, top: 4, height: 260 },
+  nightScrim: {
+    position: 'absolute',
+    left: -NIGHT_SCRIM.x,
+    right: -NIGHT_SCRIM.x,
+    top: -NIGHT_SCRIM.y,
+    bottom: -NIGHT_SCRIM.y,
+  },
   feeling: { marginTop: 22, fontSize: 12, letterSpacing: 1.2, opacity: 0.9 },
   name: { marginTop: 4 },
   line: {
