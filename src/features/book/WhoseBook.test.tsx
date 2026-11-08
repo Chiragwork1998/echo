@@ -8,10 +8,12 @@ import { copy } from '@/content/copy';
 import { cue } from '@/design/haptics';
 import { createMemoryJournal, setJournal, useVoiceRecorder } from '@/features/journal';
 import { JournalSession } from '@/features/journal-session/JournalSession';
+import { NAME_UNDRAW_MS } from '@/features/journal-session/ImmersiveSession';
 import { NAME_IDLE_MS } from '@/features/journal-session/NamePrompt';
 import { clearDialogs } from '@/features/tab-pages/Dialog';
 import { initialOnboarding, useOnboarding } from '@/state/onboarding';
 import { resetPreferences } from '@/state/preferences';
+import { animationClock } from '@/testing/reanimatedMock';
 import { render } from '@/testing/render';
 
 import { bookCopy } from './bookCopy';
@@ -66,6 +68,9 @@ const NAME = 'Wren Halloway';
 
 beforeEach(() => {
   mockReduced = false;
+  // The cover and the book are walked a frame at a time, as their own animations: the closing follows them.
+  animationClock.reset();
+  animationClock.stepped = true;
   mockRecord = { v: 1, name: null, asked: false, namedOpens: 0 };
   jest.useFakeTimers();
   jest.clearAllMocks();
@@ -89,15 +94,21 @@ beforeEach(() => {
   );
 });
 afterEach(() => {
+  animationClock.reset();
   setJournal(null);
   resetBookOwner();
   jest.restoreAllMocks();
 });
 
-const tick = (ms: number) =>
-  act(async () => {
-    await jest.advanceTimersByTimeAsync(ms);
-  });
+// A frame at a time, so that what a step asks of the screen is drawn before the next one.
+const FRAME_MS = 16;
+const tick = async (ms: number) => {
+  for (let left = ms; left > 0; left -= FRAME_MS) {
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(Math.min(FRAME_MS, left));
+    });
+  }
+};
 const navigated = () => jest.mocked(router.navigate).mock.calls.map(([path]) => path);
 const prompt = () => screen.queryByText(bookCopy.name.question);
 
@@ -214,10 +225,24 @@ describe('Not now', () => {
     await writeAndReflect();
     await toContact();
     await fireEvent.press(screen.getByTestId('name-not-now'));
-    await tick(320 + FULL.close.gap + FULL.close.sink / 2 + 50);
+    await tick(NAME_UNDRAW_MS + FULL.close.gap + FULL.close.sink / 2 + 50);
     expect(navigated()).toEqual(['/home/complete']);
     expect(mockRecord).toMatchObject({ name: null, asked: true });
     expect(cue).not.toHaveBeenCalledWith('fine');
+  });
+
+  it('lets the book go as the line is as good as gone, so its sink and the next screen come together', async () => {
+    await writeAndReflect();
+    await toContact();
+    await fireEvent.press(screen.getByTestId('name-not-now'));
+    // The line is taken back over 320 ms, decelerating: it is nearly all gone by half way, and the book
+    // does not wait for its last hair. It rests a beat, sinks, and the next screen is asked for as it
+    // is half gone: all of it in about half a second, where it was a good deal more than that.
+    await tick(NAME_UNDRAW_MS + FULL.close.gap + FULL.close.sink / 2 - 60);
+    expect(router.navigate).not.toHaveBeenCalled();
+    await tick(120);
+    expect(navigated()).toEqual(['/home/complete']);
+    expect(NAME_UNDRAW_MS + FULL.close.gap + FULL.close.sink / 2).toBeLessThan(520);
   });
 
   it('is what Back means while the book asks', async () => {
@@ -229,7 +254,7 @@ describe('Not now', () => {
     await writeAndReflect();
     await toContact();
     await act(() => void handlers.at(-1)?.());
-    await tick(320 + FULL.close.gap + FULL.close.sink / 2 + 50);
+    await tick(NAME_UNDRAW_MS + FULL.close.gap + FULL.close.sink / 2 + 50);
     expect(navigated()).toEqual(['/home/complete']);
     expect(mockRecord).toMatchObject({ name: null, asked: true });
   });
@@ -239,7 +264,7 @@ describe('Not now', () => {
     await toContact();
     await tick(NAME_IDLE_MS - 1000);
     expect(router.navigate).not.toHaveBeenCalled();
-    await tick(1000 + 320 + FULL.close.gap + FULL.close.sink / 2 + 50);
+    await tick(1000 + NAME_UNDRAW_MS + FULL.close.gap + FULL.close.sink / 2 + 50);
     expect(navigated()).toEqual(['/home/complete']);
     expect(mockRecord).toMatchObject({ name: null, asked: true });
   });

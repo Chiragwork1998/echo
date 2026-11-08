@@ -35,6 +35,7 @@ import { opensPin, volumePin } from '@/features/book/qaPins';
 import { CLOSE_REDUCED_MS, PART_MS, ritualFor } from '@/features/book/ritual';
 import { Shelf, ShelfBackdrop, useShelfOffset } from '@/features/book/Shelf';
 import { useBookClosing } from '@/features/book/useBookClosing';
+import { useEasedKeys } from '@/features/book/useEasedKeys';
 import { volumeById, volumeIndex, VOLUMES } from '@/features/book/volumes';
 import { useRhythm } from '@/features/journal';
 import { usePreferences } from '@/state/preferences';
@@ -69,8 +70,12 @@ const SERIF = 'CormorantGaramond_500Medium';
 
 /** The written name is held on the cover this long before the book goes. */
 const NAME_HOLD_MS = 400;
-/** Not now: the blank line on the cover is taken back over this long, and then the book goes. */
-const NAME_UNDRAW_MS = 320;
+/**
+ * Not now: the blank line on the cover is taken back, and the book goes once the line is as good as gone.
+ * The line takes 320 ms to leave (./CoverArt), decelerating, so it is all but gone by half of that; the
+ * book does not wait for the last hair of it, and its sink and the next screen come that much sooner.
+ */
+export const NAME_UNDRAW_MS = 160;
 /** The book keeps this far clear of the question while it is asked. */
 const PROMPT_GAP = 22;
 /** However tall the question grows, the book steps back no further than this. */
@@ -121,6 +126,8 @@ export function ImmersiveSession({
     closing,
     begin: shut,
     hurry: hurryClosing,
+    landed: coverLanded,
+    gone: bookGone,
   } = useBookClosing(ritual, reduced || screenReader);
   const parting = closing !== null;
   // From the moment the entry begins to be kept until the screen goes, unless keeping it fails: the
@@ -162,6 +169,9 @@ export function ImmersiveSession({
   const remembered = usePreferences((state) => state.volume);
   const rememberVolume = usePreferences((state) => state.setVolume);
   const [picked, setPicked] = useState<string | null>(null);
+  // The shelf stays until it has finished leaving, which is after the book has been asked for: the book
+  // comes as the shelf's last light goes, and there is never a frame of neither.
+  const [shelfLeaving, setShelfLeaving] = useState(false);
   const [opened, setOpened] = useState(!book);
   const volume = volumeById(picked ?? volumePin() ?? remembered ?? undefined);
   // How many echoes the book holds: a count and nothing else, so that a thicker book riffles a few
@@ -192,6 +202,7 @@ export function ImmersiveSession({
     const chosen = VOLUMES[index];
     if (!chosen) return;
     setPicked(chosen.id);
+    setShelfLeaving(true);
     rememberVolume(chosen.id);
   };
   const bookInView = book && !shelf;
@@ -345,8 +356,11 @@ export function ImmersiveSession({
   const promptRoom = useSharedValue(0);
   const bookTop = bookFrame.top;
   const bookHeight = bookFrame.height;
+  // The book sees the keys eased where they jump: a keyboard that goes without animating (or a late
+  // frame) would otherwise take the closed book from its stepped-back size to its full size in one frame.
+  const keys = useEasedKeys(keyboard.height, qaKeyboard);
   const bookRise = useAnimatedStyle(() => {
-    const height = Math.max(keyboard.height.get(), qaKeyboard);
+    const height = keys.get();
     const rise = keyboardRise(height, screenHeight, bookBottom, bookDrop);
     const room = promptRoom.get();
     if (room <= 0) return { transform: [{ translateY: -rise }] };
@@ -502,6 +516,8 @@ export function ImmersiveSession({
             owner={named}
             inscribing={inscribing}
             onStamped={stamped}
+            onLanded={coverLanded}
+            onGone={bookGone}
             concealed={hidden}
             dimmed={noteDrawn}
             arrival={session.arrival}
@@ -627,12 +643,13 @@ export function ImmersiveSession({
               timerState={session.timer.state}
             />
           </View>
-          {shelf && (
+          {(shelf || shelfLeaving) && (
             <View pointerEvents="box-none" style={styles.shelf}>
               <Shelf
                 initial={volumeIndex(remembered ?? undefined)}
                 offset={shelfOffset}
                 onChoose={choose}
+                onLeft={() => setShelfLeaving(false)}
               />
             </View>
           )}

@@ -60,9 +60,21 @@ export const SHORT: Ritual = {
 export const HURRY_MS = 300;
 
 /**
- * When each part of the closing happens, in ms from the moment it begins. The cover is down at
- * `contactAt`, the book begins to sink at `sinkAt`, the next screen is asked for at `goAt` (half way
- * through the sink, so its fade begins while the book is half gone), and all is still at `endAt`.
+ * The ritual follows the book's own animations, which run on the UI thread and can be a second behind
+ * the clock on a slow phone: the cover is open when its swing has finished, and the closing goes on
+ * when the cover has landed and the book has sunk. A UI thread that never answers must not hold the
+ * ritual for ever, so each wait has an end: this long after the animation ought to have finished.
+ */
+export const ANIMATION_NET_MS = 1500;
+
+/**
+ * When each part of the closing happens, in ms from the moment it begins, taking the cover and the sink
+ * as straight lines. The cover is down at `contactAt`, the book begins to sink at `sinkAt`, the next
+ * screen is asked for at `goAt` (half way through that line, so its fade begins while the book is half
+ * gone), and all is still at `endAt`. The closing does not run to this clock: it follows the cover
+ * landing and the book sinking (./useBookClosing), and uses these times only for the longest it will
+ * wait for either. The sink decelerates, so the book is in fact half gone, and the next screen asked
+ * for, in the first sixth of it.
  */
 export function closeTimeline(ritual: Ritual) {
   const { coverAt, cover, gap, sink } = ritual.close;

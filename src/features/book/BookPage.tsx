@@ -66,6 +66,9 @@ type Props = {
   inscribing?: Inscribing | null;
   onStamped?: () => void;
   onOpened?: () => void;
+  /** The closing: the cover has landed, and the book has sunk far enough for the next screen. */
+  onLanded?: () => void;
+  onGone?: () => void;
   inputRef: RefObject<ComponentRef<typeof TextInput> | null>;
   value: string;
   onChangeText: (text: string) => void;
@@ -107,6 +110,8 @@ export function BookPage(props: Props) {
     inscribing = null,
     onStamped,
     onOpened,
+    onLanded,
+    onGone,
     children,
     ...page
   } = props;
@@ -136,6 +141,8 @@ export function BookPage(props: Props) {
         inscribing={inscribing}
         onStamped={onStamped}
         onOpened={onOpened}
+        onLanded={onLanded}
+        onGone={onGone}
       >
         {(open, headed) => (
           <PaperProvider look={look}>
