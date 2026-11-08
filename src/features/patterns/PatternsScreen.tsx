@@ -17,6 +17,7 @@ import {
 import { TabPage } from '@/features/tab-pages/TabPage';
 import { detail, question, supporting } from '@/features/tab-pages/textStyles';
 
+import type { BreathCounts } from './computeBreath';
 import { PATTERNS_MIN, type MoodCounts, type Patterns, type WeekCounts } from './computePatterns';
 import { PatternCardsSection } from './PatternCardsSection';
 import { patternsCopy } from './patternsCopy';
@@ -144,11 +145,34 @@ function Label({ children }: { children: string }) {
 }
 
 /**
- * The plain counts, read as a short summary rather than a dashboard: the total in words, the last
- * four weeks as a ledger, and the moods chosen on arrival on one line. Counts only, worked out here,
- * which the summary says at its foot.
+ * Breathe's practices as two quiet lines: this week's, and how many ended calmer, then the practice
+ * that most often left the person calmer, when enough answers say so. Each line shows only when it
+ * has something to count.
  */
-function Rhythm({ patterns }: { patterns: Patterns }) {
+function Breath({ breath }: { breath: BreathCounts }) {
+  return (
+    <View style={styles.block}>
+      <Label>{patternsCopy.breathTitle}</Label>
+      {breath.practices > 0 && (
+        <EchoText variant="bodyM" style={detail} maxFontSizeMultiplier={1.6}>
+          {keepTogether(patternsCopy.breathWeek(breath.practices, breath.calmer))}
+        </EchoText>
+      )}
+      {breath.helpsMost && (
+        <EchoText variant="bodyM" color="textSecondary" style={detail} maxFontSizeMultiplier={1.6}>
+          {keepTogether(patternsCopy.helpsMost(breath.helpsMost))}
+        </EchoText>
+      )}
+    </View>
+  );
+}
+
+/**
+ * The plain counts, read as a short summary rather than a dashboard: the total in words, the last
+ * four weeks as a ledger, the moods chosen on arrival on one line, and Breathe's practices when
+ * there are any. Counts only, worked out here, which the summary says at its foot.
+ */
+function Rhythm({ patterns, breath }: { patterns: Patterns; breath: BreathCounts | null }) {
   return (
     <View style={styles.rhythm}>
       <Heading>{patternsCopy.rhythmTitle}</Heading>
@@ -202,6 +226,12 @@ function Rhythm({ patterns }: { patterns: Patterns }) {
             })}
           </View>
         </View>
+        {breath && (
+          <>
+            <Rule />
+            <Breath breath={breath} />
+          </>
+        )}
         <Rule />
         <View style={styles.foot}>
           <EchoText
@@ -210,7 +240,7 @@ function Rhythm({ patterns }: { patterns: Patterns }) {
             style={supporting}
             maxFontSizeMultiplier={1.6}
           >
-            {keepTogether(patternsCopy.intro)}
+            {keepTogether(breath ? patternsCopy.introWithBreath : patternsCopy.intro)}
           </EchoText>
         </View>
       </Surface>
@@ -250,7 +280,7 @@ export function PatternsScreen() {
         (state.patterns.unlocked ? (
           <>
             <PatternCardsSection entries={entries} />
-            <Rhythm patterns={state.patterns} />
+            <Rhythm patterns={state.patterns} breath={state.breath} />
           </>
         ) : (
           <Locked count={state.patterns.reflections} />
