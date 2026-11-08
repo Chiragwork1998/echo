@@ -1,15 +1,24 @@
 import { useEffect, useState, type PropsWithChildren } from 'react';
 import { AccessibilityInfo, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import Animated, {
+  ReduceMotion,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 
 import { ChoiceMarker } from '@/components/ChoiceMarker';
 import { EchoText } from '@/components/EchoText';
 import { Icon } from '@/components/Icon';
 import { links } from '@/config/links';
 import { copy } from '@/content/copy';
+import { EASE } from '@/design/ease';
+import { cue } from '@/design/haptics';
 import { useTheme, type ThemePreference } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 import { PlusSection } from '@/features/plus/PlusSection';
 import { Heading, Notice, Row, Section, Surface, SwitchRow } from '@/features/tab-pages/parts';
+import { Reveal } from '@/features/tab-pages/Reveal';
 import { TabPage } from '@/features/tab-pages/TabPage';
 import { keepTogether } from '@/features/tab-pages/keepTogether';
 import { detail, runIn } from '@/features/tab-pages/textStyles';
@@ -47,7 +56,11 @@ function Appearance() {
             detail={line}
             spoken={line ? `${label}. ${line}` : label}
             selected={preference === value}
-            onPress={() => setPreference(value)}
+            onPress={() => {
+              if (preference === value) return;
+              cue('tick');
+              setPreference(value);
+            }}
             trailing={<ChoiceMarker selected={preference === value} />}
           />
         ))}
@@ -104,6 +117,20 @@ const EXPLAINED = [
 function AboutThis() {
   const { colors } = useTheme();
   const [open, setOpen] = useState(false);
+  // The chevron turns over 320 ms with the words arriving beneath it. Reduce Motion: it turns at once.
+  const turn = useSharedValue(open ? 1 : 0);
+  useEffect(() => {
+    turn.set(
+      withTiming(open ? 1 : 0, {
+        duration: tokens.motion.standard,
+        easing: EASE,
+        reduceMotion: ReduceMotion.System,
+      }),
+    );
+  }, [open, turn]);
+  const chevron = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${90 + turn.get() * 180}deg` }],
+  }));
   return (
     <View>
       <Pressable
@@ -117,25 +144,27 @@ function AboutThis() {
         <EchoText variant="bodyM" color="textSecondary" style={[detail, styles.fill]}>
           {youCopy.aboutThis}
         </EchoText>
-        <View style={{ transform: [{ rotate: open ? '270deg' : '90deg' }] }}>
+        <Animated.View style={chevron}>
           <Icon name="arrow-right" size={16} color={colors.textSecondary} />
-        </View>
+        </Animated.View>
       </Pressable>
       {open && (
-        <View style={styles.explained}>
-          {EXPLAINED.map(({ name, text }) => (
-            <EchoText
-              key={name}
-              variant="bodyM"
-              color="textSecondary"
-              style={detail}
-              maxFontSizeMultiplier={1.6}
-            >
-              <Text style={[runIn, { color: colors.textPrimary }]}>{`${name}. `}</Text>
-              {keepTogether(text)}
-            </EchoText>
-          ))}
-        </View>
+        <Reveal duration={tokens.motion.standard}>
+          <View style={styles.explained}>
+            {EXPLAINED.map(({ name, text }) => (
+              <EchoText
+                key={name}
+                variant="bodyM"
+                color="textSecondary"
+                style={detail}
+                maxFontSizeMultiplier={1.6}
+              >
+                <Text style={[runIn, { color: colors.textPrimary }]}>{`${name}. `}</Text>
+                {keepTogether(text)}
+              </EchoText>
+            ))}
+          </View>
+        </Reveal>
       )}
     </View>
   );

@@ -1,6 +1,8 @@
 import { fireEvent, screen } from '@testing-library/react-native';
 
 import { cue } from '@/design/haptics';
+import { useReduceMotion } from '@/design/useReduceMotion';
+import { reanimatedMock } from '@/testing/reanimatedMock';
 import type { PatternCard } from '@/services/patterns';
 import { render } from '@/testing/render';
 
@@ -25,8 +27,16 @@ const card: PatternCard = {
 };
 
 jest.mock('@/design/haptics');
+jest.mock('@/design/useReduceMotion', () => ({ useReduceMotion: jest.fn(() => false) }));
 
-beforeEach(() => jest.clearAllMocks());
+const timing = jest.spyOn(reanimatedMock, 'withTiming');
+const revealMs = () =>
+  timing.mock.calls.map((call) => ((call as unknown[])[1] as { duration: number }).duration);
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  jest.mocked(useReduceMotion).mockReturnValue(false);
+});
 
 describe('PatternCardView', () => {
   it('sets the card first, its name and a line in the person’s words, then its reading in order', async () => {
@@ -46,6 +56,18 @@ describe('PatternCardView', () => {
       'What does enough mean on an ordinary day?',
     ].map((part) => (from = text.indexOf(part, from + 1)));
     expect(order.every((at) => at >= 0)).toBe(true);
+  });
+
+  it('arrives over 560 ms, and under Reduce Motion over no more than 180 ms of opacity', async () => {
+    const view = await render(<PatternCardView card={card} index={1} total={3} />);
+    expect(revealMs()).toContain(560);
+    await view.unmount();
+    timing.mockClear();
+    jest.mocked(useReduceMotion).mockReturnValue(true);
+    await render(<PatternCardView card={card} index={1} total={3} />);
+    expect(revealMs()).not.toContain(560);
+    expect(revealMs()).not.toContain(240);
+    expect(revealMs()).toContain(180);
   });
 
   it('shows a card already seen face up, with its reading', async () => {

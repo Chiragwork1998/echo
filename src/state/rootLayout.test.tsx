@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { router, usePathname } from 'expo-router';
 import * as ScreenCapture from 'expo-screen-capture';
 import * as SplashScreen from 'expo-splash-screen';
@@ -25,6 +25,7 @@ import RootLayout from '../../app/_layout';
 import { bootApp, RELOCK_AFTER_MS, resetGateForTests, unlock, useGate } from './gate';
 import { gateCopy } from './gateCopy';
 import { resetOnboarding, useOnboarding } from './onboarding';
+import { ownWindowOpen } from './ownWindows';
 
 // Lives here because Expo Router treats every file under app/ as a route.
 
@@ -533,6 +534,8 @@ describe('the privacy cover and ECHO’s own windows', () => {
     await ask();
     await windowEvent('blur');
     await chooseInDialog(gateCopy.keyLost.confirmCancel);
+    // The window is still ECHO’s own while it fades away, and stops being once it has gone.
+    await waitFor(() => expect(ownWindowOpen()).toBe(false));
     await windowEvent('focus');
     await windowEvent('blur');
     expect(cover()).toBeTruthy();

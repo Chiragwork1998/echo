@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { cue } from '@/design/haptics';
 import { showDialog } from '@/features/tab-pages/Dialog';
 import { deleteAllLocal } from '@/services/deleteAllLocal';
 import { exportJournal } from '@/services/exportJournal';
@@ -76,7 +77,15 @@ export function useDeleteAll() {
         onPress: () =>
           showDialog(youCopy.deleteFinalTitle, youCopy.deleteFinalBody, [
             cancel,
-            { text: youCopy.deleteConfirm, style: 'destructive', onPress: () => void run() },
+            {
+              text: youCopy.deleteConfirm,
+              style: 'destructive',
+              // The dialog already carried the weight: one thing coming to rest, no warning buzz.
+              onPress: () => {
+                cue('settle');
+                void run();
+              },
+            },
           ]),
       },
     ]);

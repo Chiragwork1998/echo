@@ -8,7 +8,6 @@ import {
 } from 'react';
 import {
   AccessibilityInfo,
-  ActivityIndicator,
   Platform,
   Pressable,
   StyleSheet,
@@ -17,22 +16,19 @@ import {
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
-import Animated, {
-  ReduceMotion,
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-} from 'react-native-reanimated';
-
 import { EchoText } from '@/components/EchoText';
 import { GlassBlur } from '@/components/GlassCard';
 import { Icon } from '@/components/Icon';
 import { SoftScrim } from '@/components/SoftScrim';
+import { SwitchTrack } from '@/components/SwitchTrack';
+import { TideLine } from '@/components/TideLine';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 
 import { keepTogether } from './keepTogether';
 import { pageCopy } from './pageCopy';
+import { Bars, useIsArriving } from './Resolve';
+import { Reveal } from './Reveal';
 import { detail as detailText, groupTitle, onPlate, textAction } from './textStyles';
 
 const ROW_PADDING = tokens.space[16];
@@ -223,7 +219,7 @@ export function Row({
   const spoken = override ?? (extra && role !== 'radio' ? `${label}. ${extra}` : label);
   const body = (
     <View style={styles.row}>
-      <View style={styles.text}>
+      <View style={[styles.text, busy && styles.working]}>
         {/* Even a row that deletes is set in the page's ink, never orange (D-013): its dialog
             carries the weight. */}
         <EchoText variant="bodyM" maxFontSizeMultiplier={1.6}>
@@ -250,8 +246,11 @@ export function Row({
           {value}
         </EchoText>
       ) : null}
-      {busy ? <ActivityIndicator size="small" color={colors.textSecondary} /> : trailing}
+      {trailing}
       {chevron && !busy ? <Icon name="arrow-right" size={16} color={colors.textSecondary} /> : null}
+      {/* Working is said by a hairline of warm light along the row's own rule, and in words by its
+          label (the row says what it is doing). No spinner. */}
+      {busy ? <TideLine inset={ROW_PADDING} /> : null}
     </View>
   );
   if (!onPress) {
@@ -277,38 +276,6 @@ export function Row({
     >
       {body}
     </Pressable>
-  );
-}
-
-// Measured from the Privacy goldens, as ToggleRow is (docs/SPEC_CONFLICTS.md, C-13).
-const TRACK = { width: 44, height: 25 };
-const KNOB = 24;
-const KNOB_INSET = 0.5;
-const TRAVEL = TRACK.width - KNOB - KNOB_INSET * 2;
-const KNOB_COLOUR = '#FDFCFC';
-const TRACK_ON_ALPHA = 'B3'; // accentWarm at 70%
-
-/** The golden's switch, drawn inside a row. Decorative: the row carries the role and the state. */
-function SwitchTrack({ value }: { value: boolean }) {
-  const { colors } = useTheme();
-  const on = useSharedValue(value ? 1 : 0);
-  useEffect(() => {
-    on.set(
-      withSpring(value ? 1 : 0, { ...tokens.motion.spring, reduceMotion: ReduceMotion.System }),
-    );
-  }, [value, on]);
-  const knob = useAnimatedStyle(() => ({ transform: [{ translateX: on.get() * TRAVEL }] }));
-  return (
-    <View
-      style={[
-        styles.track,
-        value
-          ? { backgroundColor: `${colors.accentWarm}${TRACK_ON_ALPHA}` }
-          : { borderColor: colors.borderGlass, borderWidth: 1 },
-      ]}
-    >
-      <Animated.View style={[styles.knob, knob]} />
-    </View>
   );
 }
 
@@ -341,24 +308,26 @@ export function SwitchRow({
       onPress={() => onChange(!value)}
       style={({ pressed }) => [pressed && styles.pressed, disabled && styles.disabled]}
     >
-      <View style={styles.row}>
-        <View style={styles.text}>
-          <EchoText variant="bodyM" maxFontSizeMultiplier={1.6}>
-            {label}
-          </EchoText>
-          {detail ? (
-            <EchoText
-              variant="bodyM"
-              color="textSecondary"
-              style={detailText}
-              maxFontSizeMultiplier={1.6}
-            >
-              {keepTogether(detail)}
+      {({ pressed }) => (
+        <View style={styles.row}>
+          <View style={styles.text}>
+            <EchoText variant="bodyM" maxFontSizeMultiplier={1.6}>
+              {label}
             </EchoText>
-          ) : null}
+            {detail ? (
+              <EchoText
+                variant="bodyM"
+                color="textSecondary"
+                style={detailText}
+                maxFontSizeMultiplier={1.6}
+              >
+                {keepTogether(detail)}
+              </EchoText>
+            ) : null}
+          </View>
+          <SwitchTrack value={value} pressed={pressed} />
         </View>
-        <SwitchTrack value={value} />
-      </View>
+      )}
     </Pressable>
   );
 }
@@ -411,15 +380,19 @@ export function Notice({
   actionLabel?: string;
   onAction?: () => void;
 }) {
+  // Inside a page that is itself arriving, the page's arrival is the notice's.
+  const arriving = useIsArriving();
   return (
-    <Surface strength="strong">
-      <View style={styles.notice} accessibilityLiveRegion="polite">
-        <EchoText variant="bodyM" style={[detailText, styles.text]} maxFontSizeMultiplier={1.6}>
-          {keepTogether(message)}
-        </EchoText>
-        {onAction ? <TextAction label={actionLabel} onPress={onAction} /> : null}
-      </View>
-    </Surface>
+    <Reveal duration={tokens.motion.standard} skip={arriving}>
+      <Surface strength="strong">
+        <View style={styles.notice} accessibilityLiveRegion="polite">
+          <EchoText variant="bodyM" style={[detailText, styles.text]} maxFontSizeMultiplier={1.6}>
+            {keepTogether(message)}
+          </EchoText>
+          {onAction ? <TextAction label={actionLabel} onPress={onAction} /> : null}
+        </View>
+      </Surface>
+    </Reveal>
   );
 }
 
@@ -455,10 +428,15 @@ export function SkeletonLine({
 }
 
 /**
- * A loading state shaped like what is coming. It says what it is waiting for to a screen reader,
- * and nothing in it moves.
+ * A loading state shaped like what is coming. It says what it is waiting for to a screen reader
+ * from the first moment, and nothing in it moves: the bars arrive by opacity only if the wait
+ * outlasts a quarter of a second (a local read rarely does), so a quick answer never flashes them.
  */
-export function Loading({ label, children }: PropsWithChildren<{ label: string }>) {
+export function Loading({
+  label,
+  immediate,
+  children,
+}: PropsWithChildren<{ label: string; immediate?: boolean }>) {
   return (
     <View
       accessible
@@ -466,7 +444,7 @@ export function Loading({ label, children }: PropsWithChildren<{ label: string }
       accessibilityState={{ busy: true }}
       accessibilityLiveRegion="polite"
     >
-      {children}
+      <Bars immediate={immediate}>{children}</Bars>
     </View>
   );
 }
@@ -500,15 +478,8 @@ const styles = StyleSheet.create({
   },
   text: { flex: 1, gap: 2 },
   pressed: { opacity: 0.66 },
+  working: { opacity: 0.72 },
   disabled: { opacity: 0.42 },
-  track: {
-    width: TRACK.width,
-    height: TRACK.height,
-    borderRadius: TRACK.height / 2,
-    padding: KNOB_INSET,
-    justifyContent: 'center',
-  },
-  knob: { width: KNOB, height: KNOB, borderRadius: KNOB / 2, backgroundColor: KNOB_COLOUR },
   action: {
     minHeight: tokens.size.tapTarget,
     justifyContent: 'center',

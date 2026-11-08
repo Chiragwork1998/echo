@@ -41,6 +41,15 @@ const useDialogs = create<Dialogs>(() => ({ queue: [], last: null }));
 /** Answered dialogs, so that a second tap on the way out, or Back as well, does nothing. */
 const answered = new WeakSet<Dialog>();
 const nothing = () => undefined;
+/** Each dialog's own number, so the sheet can tell one question from the next. */
+const identities = new WeakMap<Dialog, number>();
+let nextIdentity = 0;
+const identityOf = (dialog: Dialog): number => {
+  const known = identities.get(dialog);
+  if (known !== undefined) return known;
+  identities.set(dialog, ++nextIdentity);
+  return nextIdentity;
+};
 
 /**
  * Takes back a dialog whose question no longer stands, unanswered: what it waited on has happened.
@@ -141,6 +150,8 @@ export function DialogHost({ held = false }: { held?: boolean }) {
       visible={current !== null && !held}
       animated={!held}
       onClose={dismiss}
+      // A second question stays on the same sheet and fades in, rather than rising again.
+      contentKey={identityOf(dialog)}
       testID="dialog"
       footer={
         <>

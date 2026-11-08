@@ -102,6 +102,9 @@ export function usePatternCards(entries: readonly EntrySummary[]): PatternCards 
         };
         setSaved(fresh);
         setFreshAt(fresh.readAt);
+        // The skeleton goes in the same commit as the cards arrive, not after the save: kept above
+        // them for the length of an encrypted write, it would be taken out from under their reveal.
+        setReading(false);
         markReadingUsed();
         const kept = await saveReading(fresh);
         if (alive.current && !kept.ok) setNotice({ kind: 'not_kept' });

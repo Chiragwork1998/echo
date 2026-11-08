@@ -14,6 +14,7 @@ import {
   SkeletonLine,
   Surface,
 } from '@/features/tab-pages/parts';
+import { Resolve } from '@/features/tab-pages/Resolve';
 import { TabPage } from '@/features/tab-pages/TabPage';
 import { detail, question, supporting } from '@/features/tab-pages/textStyles';
 
@@ -272,24 +273,27 @@ export function PatternsScreen() {
   const { state, entries, retry } = usePatterns();
   return (
     <TabPage title={patternsCopy.title}>
-      {state.kind === 'loading' && <Counting />}
-      {state.kind === 'error' && (
-        <Notice message={patternsCopy.loadError} onAction={() => void retry()} />
-      )}
-      {state.kind === 'ready' &&
-        (state.patterns.unlocked ? (
-          <>
-            <PatternCardsSection entries={entries} />
-            <Rhythm patterns={state.patterns} breath={state.breath} />
-          </>
-        ) : (
-          <Locked count={state.patterns.reflections} />
-        ))}
+      <Resolve ready={state.kind !== 'loading'} skeleton={<Counting />} each style={styles.stack}>
+        {state.kind === 'error' ? (
+          <Notice key="error" message={patternsCopy.loadError} onAction={() => void retry()} />
+        ) : null}
+        {state.kind === 'ready' && state.patterns.unlocked ? (
+          <PatternCardsSection key="cards" entries={entries} />
+        ) : null}
+        {state.kind === 'ready' && state.patterns.unlocked ? (
+          <Rhythm key="rhythm" patterns={state.patterns} breath={state.breath} />
+        ) : null}
+        {state.kind === 'ready' && !state.patterns.unlocked ? (
+          <Locked key="locked" count={state.patterns.reflections} />
+        ) : null}
+      </Resolve>
     </TabPage>
   );
 }
 
 const styles = StyleSheet.create({
+  // The page's own rhythm, kept for what Resolve now wraps.
+  stack: { gap: tokens.space[24] },
   locked: {
     alignItems: 'center',
     gap: tokens.space[12],

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { AccessibilityInfo, StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
@@ -139,8 +139,14 @@ function Progress({ done, total }: { done: number; total: number }) {
  */
 export function RestoreSheet(props: Props) {
   const { state, visible, thisYear = new Date().getFullYear() } = props;
-  const shown = visible && SHEET_STATES.includes(state.kind);
-  const view = viewOf(state, thisYear, props);
+  const live = SHEET_STATES.includes(state.kind);
+  const shown = visible && live;
+  // Once it is closed the state is idle, which has nothing to say. The sheet is still on screen for
+  // the length of its exit, so it goes on drawing the last thing it said (counts and fixed words
+  // only, nothing the person wrote) instead of collapsing to its title as it fades.
+  const [lastLive, setLastLive] = useState(state);
+  if (live && state !== lastLive) setLastLive(state);
+  const view = viewOf(live ? state : lastLive, thisYear, props);
   const settled = state.kind === 'done' || state.kind === 'stopped' || state.kind === 'failed';
   const back = state.kind === 'restoring' ? () => undefined : props.onClose;
 

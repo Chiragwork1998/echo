@@ -17,6 +17,7 @@ import {
   Surface,
   usePlateText,
 } from '@/features/tab-pages/parts';
+import { Reveal } from '@/features/tab-pages/Reveal';
 import { detail, prose, supporting } from '@/features/tab-pages/textStyles';
 import { useRequirePlus } from '@/services/plus';
 import { sendWaitingReports } from '@/services/reportCard';
@@ -74,7 +75,7 @@ function noticeText(notice: CardsNotice, hasCards: boolean): string | null {
 /** While the entries are read: the shape of a card, and a line saying what is happening. */
 function Reading() {
   return (
-    <Loading label={words.reading}>
+    <Loading label={words.reading} immediate>
       <Surface strength="strong" radius={tokens.radius.card}>
         <View style={styles.reading}>
           <SkeletonLine width="62%" height={20} />
@@ -161,15 +162,23 @@ export function PatternCardsSection({ entries }: { entries: readonly EntrySummar
           <Notice message={text} onAction={retry ? cards.read : undefined} />
         ))}
 
+      {/* Each of these takes the place of the one before it, so each arrives (rising a little, 320 ms)
+          instead of cutting in. */}
       {cards.asking && (
-        <ConsentPanel
-          count={entriesToSend(entries)}
-          onAgree={cards.agree}
-          onDecline={cards.decline}
-        />
+        <Reveal duration={tokens.motion.standard}>
+          <ConsentPanel
+            count={entriesToSend(entries)}
+            onAgree={cards.agree}
+            onDecline={cards.decline}
+          />
+        </Reveal>
       )}
 
-      {cards.reading && <Reading />}
+      {cards.reading && (
+        <Reveal duration={tokens.motion.standard}>
+          <Reading />
+        </Reveal>
+      )}
 
       {saved && (
         <View style={styles.cards}>

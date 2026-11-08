@@ -138,6 +138,7 @@ let journal: Journal | null = null;
 /** Web holds everything in memory for one page load. Nothing is written anywhere. */
 export async function getJournal(): Promise<Journal> {
   journal ??= createMemoryJournal(qaSeed(), qa.enabled ? qaClock : deviceClock);
+  if (qa.lag) await new Promise((resolve) => setTimeout(resolve, qa.lag));
   return journal;
 }
 

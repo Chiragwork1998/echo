@@ -5,7 +5,9 @@ import { Dimensions, Linking, StyleSheet } from 'react-native';
 import { showToast } from '@/components/Toast';
 import { links } from '@/config/links';
 import { copy } from '@/content/copy';
+import { cue } from '@/design/haptics';
 import { tokens } from '@/design/tokens';
+import { reanimatedMock } from '@/testing/reanimatedMock';
 import { supportCopy } from '@/features/patterns/supportResources';
 import { commitReminder } from '@/features/onboarding/rhythm/commitReminder';
 import { deleteAllLocal } from '@/services/deleteAllLocal';
@@ -52,6 +54,7 @@ jest.mock('@/services/permissions', () => ({
 }));
 jest.mock('@/features/onboarding/rhythm/commitReminder', () => ({ commitReminder: jest.fn() }));
 jest.mock('@/components/Toast', () => ({ showToast: jest.fn() }));
+jest.mock('@/design/haptics');
 jest.mock('expo-localization', () => ({
   getLocales: () => [{ languageTag: 'en-US' }],
   getCalendars: () => [{ uses24hourClock: false }],
@@ -86,6 +89,16 @@ describe('You: theme', () => {
     expect(screen.getByRole('radio', { name: youCopy.day })).toBeChecked();
     await fireEvent.press(screen.getByRole('radio', { name: new RegExp(youCopy.automatic) }));
     expect(usePreferences.getState().theme).toBe('automatic');
+  });
+
+  it('is felt as a tick on a new choice, and not on the one already chosen', async () => {
+    jest.mocked(cue).mockClear();
+    await render(<YouScreen />);
+    await fireEvent.press(screen.getByRole('radio', { name: youCopy.night }));
+    expect(cue).not.toHaveBeenCalled();
+    await fireEvent.press(screen.getByRole('radio', { name: youCopy.day }));
+    expect(cue).toHaveBeenCalledTimes(1);
+    expect(cue).toHaveBeenCalledWith('tick');
   });
 });
 
@@ -202,6 +215,18 @@ describe('You: privacy', () => {
     expect(screen.getByText(new RegExp(youCopy.voiceWordsDetail.slice(0, 40)))).toBeTruthy();
     expect(screen.getByText(new RegExp(youCopy.tidyWordsDetail.slice(0, 40)))).toBeTruthy();
     expect(screen.getByRole('button', { name: youCopy.aboutThis })).toBeExpanded();
+  });
+
+  it('turns its chevron over 320 ms as the words arrive, and turns it back on a second tap', async () => {
+    const timing = jest.spyOn(reanimatedMock, 'withTiming');
+    await render(<YouScreen />);
+    timing.mockClear();
+    await fireEvent.press(screen.getByRole('button', { name: youCopy.aboutThis }));
+    expect(timing).toHaveBeenCalledWith(1, expect.objectContaining({ duration: 320 }));
+    timing.mockClear();
+    await fireEvent.press(screen.getByRole('button', { name: youCopy.aboutThis }));
+    expect(timing).toHaveBeenCalledWith(0, expect.objectContaining({ duration: 320 }));
+    timing.mockRestore();
   });
 });
 
@@ -400,6 +425,17 @@ describe('You: delete all data', () => {
     await chooseInDialog(youCopy.deleteContinue);
     await chooseInDialog(youCopy.deleteConfirm);
     expect(deleteAllLocal).toHaveBeenCalledTimes(1);
+  });
+
+  it('is felt once, as a settling, at the final confirmation and nowhere before it', async () => {
+    jest.mocked(deleteAllLocal).mockResolvedValue({ ok: true });
+    jest.mocked(cue).mockClear();
+    await start();
+    await chooseInDialog(youCopy.deleteContinue);
+    expect(cue).not.toHaveBeenCalled();
+    await chooseInDialog(youCopy.deleteConfirm);
+    expect(cue).toHaveBeenCalledTimes(1);
+    expect(cue).toHaveBeenCalledWith('settle');
   });
 
   it('deletes nothing when either step is cancelled', async () => {
