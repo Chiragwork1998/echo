@@ -22,6 +22,8 @@ import {
 import { withBillingForTests, withoutBillingForTests } from '@/testing/plus';
 
 import RootLayout from '../../app/_layout';
+import { PLATE_WAIT_MS, resetPlatesForTests } from '@/design/platePaint';
+
 import { bootApp, RELOCK_AFTER_MS, resetGateForTests, unlock, useGate } from './gate';
 import { gateCopy } from './gateCopy';
 import { resetOnboarding, useOnboarding } from './onboarding';
@@ -31,12 +33,46 @@ import { ownWindowOpen } from './ownWindows';
 
 const NAVIGATOR = 'the-navigator';
 
+// The stack draws the route its pathname names, as the real one does: at launch that is Landing's
+// route, before the root layout has had the chance to send anyone anywhere. `mockPlates` adds a
+// screen with a plate to be drawn, which is what holds the splash.
+let mockPlates = false;
+let mockSettlePlate: (() => void) | undefined;
+let mockStackOptions: ((input: { route: { name: string } }) => { animation: string }) | undefined;
+const mockLandingRenders = jest.fn();
+
 jest.mock('expo-router', () => {
   const { Text } = jest.requireActual('react-native');
+  const usePathname = jest.fn(() => '/');
+  function PlateScreen() {
+    const { usePlateTicket } = jest.requireActual('@/design/platePaint');
+    mockSettlePlate = usePlateTicket();
+    return null;
+  }
   return {
-    Stack: () => <Text testID="the-navigator">navigator</Text>,
+    Stack: (props: { screenOptions: typeof mockStackOptions }) => {
+      mockStackOptions = props.screenOptions;
+      const Route = jest.requireActual('../../app/index').default;
+      return (
+        <>
+          <Text testID="the-navigator">navigator</Text>
+          {usePathname() === '/' ? <Route /> : null}
+          {mockPlates ? <PlateScreen /> : null}
+        </>
+      );
+    },
     router: { replace: jest.fn() },
-    usePathname: jest.fn(() => '/'),
+    usePathname,
+  };
+});
+
+jest.mock('@/features/onboarding/screens/LandingScreen', () => {
+  const { Text } = jest.requireActual('react-native');
+  return {
+    LandingScreen: () => {
+      mockLandingRenders();
+      return <Text testID="landing">landing</Text>;
+    },
   };
 });
 
@@ -111,6 +147,10 @@ beforeAll(() => {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockPlates = false;
+  mockSettlePlate = undefined;
+  mockStackOptions = undefined;
+  resetPlatesForTests();
   resetGateForTests();
   resetOnboarding();
   clearDialogs();
@@ -186,6 +226,91 @@ describe('once ready', () => {
   it('starts ECHO Plus once, at launch', async () => {
     await render(<RootLayout />);
     expect(startPlus).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('onboarding’s Landing never shows to someone who has finished', () => {
+  const landing = () => screen.queryByTestId('landing');
+
+  it('is not drawn before the state is known, while the gate resolves, or once it has', async () => {
+    useOnboarding.setState({ step: 8, completedAt: 1 });
+    await render(<RootLayout />);
+    expect(landing()).toBeNull();
+    await setGate({ status: { kind: 'ready', resume: '/home' } });
+    // The stack is up and still on the route a launch opens on: Landing's. Nothing is drawn there.
+    expect(screen.getByTestId(NAVIGATOR)).toBeTruthy();
+    expect(replace).toHaveBeenCalledWith('/home');
+    expect(mockLandingRenders).not.toHaveBeenCalled();
+  });
+
+  it('is sent on without a dissolve, which would show the screen it leaves, and dissolves again after', async () => {
+    useOnboarding.setState({ step: 8, completedAt: 1 });
+    await render(<RootLayout />);
+    await setGate({ status: { kind: 'ready', resume: '/home' } });
+    expect(mockStackOptions?.({ route: { name: 'home' } }).animation).toBe('none');
+    pathname.mockReturnValue('/home');
+    await setGate({ lock: { kind: 'unlocked' } });
+    expect(mockStackOptions?.({ route: { name: 'home' } }).animation).toBe('fade');
+  });
+
+  it('is not drawn for someone who resumes part way through onboarding either', async () => {
+    useOnboarding.setState({ step: 3 });
+    await render(<RootLayout />);
+    await setGate({ status: { kind: 'ready', resume: '/onboarding/voice' } });
+    expect(replace).toHaveBeenCalledWith('/onboarding/voice');
+    expect(mockLandingRenders).not.toHaveBeenCalled();
+  });
+
+  it('is drawn for someone who has not begun', async () => {
+    await render(<RootLayout />);
+    await setGate({ status: { kind: 'ready', resume: '/' } });
+    expect(landing()).toBeTruthy();
+  });
+
+  it('is still drawn when someone mid-onboarding comes back to it later', async () => {
+    useOnboarding.setState({ step: 3 });
+    await render(<RootLayout />);
+    await setGate({ status: { kind: 'ready', resume: '/onboarding/voice' } });
+    pathname.mockReturnValue('/onboarding/voice');
+    await setGate({ lock: { kind: 'unlocked' } });
+    pathname.mockReturnValue('/');
+    await setGate({ lock: { kind: 'unlocked' } });
+    expect(landing()).toBeTruthy();
+  });
+});
+
+describe('the splash waits for the first photograph', () => {
+  const home = { status: { kind: 'ready', resume: '/home' } as const };
+
+  beforeEach(() => {
+    mockPlates = true;
+    useOnboarding.setState({ step: 8, completedAt: 1 });
+    pathname.mockReturnValue('/home');
+  });
+
+  it('stays up while a plate that has mounted is still being drawn, and lifts when it is', async () => {
+    await render(<RootLayout />);
+    await setGate(home);
+    expect(screen.getByTestId(NAVIGATOR)).toBeTruthy();
+    expect(hideSplash).not.toHaveBeenCalled();
+    await act(async () => mockSettlePlate?.());
+    expect(hideSplash).toHaveBeenCalledTimes(1);
+  });
+
+  it('lifts anyway if the plate never comes up', async () => {
+    await render(<RootLayout />);
+    await setGate(home);
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(PLATE_WAIT_MS);
+    });
+    expect(hideSplash).toHaveBeenCalledTimes(1);
+  });
+
+  it('lifts at once when there is no plate to wait for', async () => {
+    mockPlates = false;
+    await render(<RootLayout />);
+    await setGate(home);
+    expect(hideSplash).toHaveBeenCalled();
   });
 });
 

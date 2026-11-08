@@ -14,6 +14,7 @@ import { ToastHost } from '@/components/Toast';
 import { fontMap } from '@/design/fonts';
 import { plateColour } from '@/design/plateColour';
 import { setPlateFlowStep } from '@/design/plateMotion';
+import { PLATE_WAIT_MS, usePlatesPending } from '@/design/platePaint';
 import { ThemeProvider, useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 import { useReduceMotion } from '@/design/useReduceMotion';
@@ -33,6 +34,7 @@ import {
   type LockStatus,
 } from '@/state/gate';
 import { gateCopy } from '@/state/gateCopy';
+import { endLaunch, resetLaunch, useLaunch } from '@/state/launch';
 import { completeOnboarding, setOnboardingStep, useOnboarding } from '@/state/onboarding';
 import { ownWindowOpen } from '@/state/ownWindows';
 import { decideRoute, stepForPath } from '@/state/routing';
@@ -77,7 +79,12 @@ function Navigator({ resume, onSettled }: { resume: string; onSettled: () => voi
   const pathname = usePathname();
   const completed = useOnboarding((state) => state.completedAt !== undefined);
   const offerPlus = usePlusStore(shouldOfferPlus);
-  const initial = useRef(true);
+  // True until this launch has decided where it is going. Nothing animates to that place: the splash
+  // is still over the screen, and the place it is sent from is not one to show (see useLanding).
+  const launching = useLaunch((state) => !state.over && !gateBypassed);
+
+  // A navigator that goes away (the gate resolving again) leaves the next one a fresh launch.
+  useEffect(() => resetLaunch, []);
 
   // Plates scale as the journey moves (see plateMotion), so they need to know where it is.
   useEffect(() => setPlateFlowStep(stepForPath(pathname)), [pathname]);
@@ -91,7 +98,7 @@ function Navigator({ resume, onSettled }: { resume: string; onSettled: () => voi
       completed,
       step: useOnboarding.getState().step,
       resume,
-      initial: initial.current,
+      initial: !useLaunch.getState().over,
       offerPlus,
     });
     if (decision.action === 'replace') {
@@ -99,7 +106,7 @@ function Navigator({ resume, onSettled }: { resume: string; onSettled: () => voi
       return;
     }
     if (decision.action === 'complete') void completeOnboarding();
-    initial.current = false;
+    endLaunch();
     onSettled();
     const step = stepForPath(pathname);
     if (step !== null) setOnboardingStep(step);
@@ -111,7 +118,7 @@ function Navigator({ resume, onSettled }: { resume: string; onSettled: () => voi
       <Stack
         screenOptions={({ route }) => ({
           headerShown: false,
-          animation: 'fade',
+          animation: launching ? 'none' : 'fade',
           animationDuration: reduced ? tokens.motion.fast : tokens.motion.screen,
           // Behind each screen sits its own plate's dominant colour: never white, never blank.
           contentStyle: {
@@ -312,6 +319,9 @@ export default function RootLayout() {
   const [settled, setSettled] = useState(gateBypassed);
   const resolved = status.kind === 'ready' ? settled : status.kind !== 'booting';
   const onSettled = useCallback(() => setSettled(true), []);
+  const platesPending = usePlatesPending();
+  const [plateWaitOver, setPlateWaitOver] = useState(false);
+  const splashHidden = useRef(false);
 
   useEffect(() => {
     void bootApp();
@@ -324,10 +334,22 @@ export default function RootLayout() {
     return () => clearTimeout(timer);
   }, [onSettled, settled, status.kind]);
 
-  // The splash stays until the first real screen is in place, so nothing flashes on the way there.
+  // A plate that is still being decoded does not hold it for long: a launch is never held by an image.
   useEffect(() => {
-    if (fontsReady && resolved) SplashScreen.hideAsync();
-  }, [fontsReady, resolved]);
+    if (!resolved) return;
+    const timer = setTimeout(() => setPlateWaitOver(true), PLATE_WAIT_MS);
+    return () => clearTimeout(timer);
+  }, [resolved]);
+
+  // The splash stays until the first real screen is in place and its photograph is drawn, so nothing
+  // flashes on the way there: not a screen that is being left, and not a flat colour waiting for the
+  // plate.
+  useEffect(() => {
+    if (splashHidden.current || !fontsReady || !resolved) return;
+    if (platesPending && !plateWaitOver) return;
+    splashHidden.current = true;
+    SplashScreen.hideAsync();
+  }, [fontsReady, platesPending, plateWaitOver, resolved]);
 
   if (!fontsReady) return null;
 
