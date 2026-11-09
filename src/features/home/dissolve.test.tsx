@@ -12,6 +12,7 @@ import {
   RETURN_MS,
   useHomeDissolve,
   useSessionEntry,
+  VEIL_CAP_MS,
 } from './dissolve';
 
 jest.mock('expo-router', () => ({
@@ -36,6 +37,8 @@ function Probe() {
       <Pressable testID="opened" onPress={control.sessionOpened} />
       <Pressable testID="closed" onPress={control.sessionClosed} />
       <Pressable testID="return" onPress={control.returnHome} />
+      <Pressable testID="unveil" onPress={control.unveil} />
+      <Text testID="progress">{String(control.progress.get())}</Text>
       {/* Home partly gone, as it is a moment after the session gives it back. */}
       <Pressable testID="partly-gone" onPress={() => control.progress.set(0.64)} />
       <Pressable testID="nearly-gone" onPress={() => control.progress.set(0.99)} />
@@ -236,5 +239,86 @@ describe('without a provider', () => {
       pathname: '/home/session',
       params: { mode: 'voice' },
     });
+  });
+});
+
+// Home's first look after onboarding (the welcome) begins with its interface gone, over the photograph
+// that comes up after Completion's, and its interface rises by the usual return once Home is ready.
+describe('a Home that begins veiled', () => {
+  /** Every return Home's interface is given: how long it waits, and how long it takes. */
+  const returns = () => {
+    const reanimated = jest.requireMock('react-native-reanimated');
+    const toZero: { duration: number; after: number }[] = [];
+    const RETURNING = Symbol('a return');
+    jest
+      .spyOn(reanimated, 'withTiming')
+      .mockImplementation(((to: number, options: { duration: number }) =>
+        to === 0 ? { [RETURNING]: options.duration } : to) as never);
+    jest.spyOn(reanimated, 'withDelay').mockImplementation(((ms: number, value: unknown) => {
+      const duration = (value as Record<symbol, number> | null)?.[RETURNING];
+      if (duration !== undefined) toZero.push({ duration, after: ms });
+      return 0;
+    }) as never);
+    return toZero;
+  };
+  const veiled = () =>
+    render(
+      <HomeDissolveProvider veiled>
+        <Probe />
+      </HomeDissolveProvider>,
+    );
+  const progress = () => Number(screen.getByTestId('progress').props.children);
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it('begins with only the photograph: its interface gone, its tab bar waiting, its status bar left alone', async () => {
+    await veiled();
+    expect(phase()).toBe('veiled');
+    expect(progress()).toBe(1);
+    // Begin cannot dissolve what is not there.
+    await fireEvent.press(screen.getByTestId('begin'));
+    await tick(DISSOLVE_MS);
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
+  it('rises by the usual return once Home says it is ready, and only once', async () => {
+    const toZero = returns();
+    await veiled();
+    await fireEvent.press(screen.getByTestId('unveil'));
+    expect(phase()).toBe('idle');
+    expect(toZero).toEqual([{ duration: RETURN_MS, after: ARRIVAL_AFTER_IDLE_MS - RETURN_MS }]);
+    await fireEvent.press(screen.getByTestId('unveil'));
+    await tick(VEIL_CAP_MS * 2);
+    expect(toZero).toHaveLength(1);
+  });
+
+  it('is never left veiled: the cap gives Home its interface whatever it waits for', async () => {
+    const toZero = returns();
+    await veiled();
+    await tick(VEIL_CAP_MS - 1);
+    expect(phase()).toBe('veiled');
+    await tick(1);
+    expect(phase()).toBe('idle');
+    expect(toZero).toEqual([{ duration: RETURN_MS, after: ARRIVAL_AFTER_IDLE_MS - RETURN_MS }]);
+    expect(VEIL_CAP_MS).toBe(1500);
+  });
+
+  it('is Home as it always was otherwise: whole from the start, and nothing to unveil', async () => {
+    const toZero = returns();
+    await open();
+    expect(phase()).toBe('idle');
+    expect(progress()).toBe(0);
+    await fireEvent.press(screen.getByTestId('unveil'));
+    await tick(VEIL_CAP_MS * 2);
+    expect(toZero).toEqual([]);
+    expect(phase()).toBe('idle');
+  });
+
+  it('lets Begin dissolve Home as usual once it has risen', async () => {
+    await veiled();
+    await fireEvent.press(screen.getByTestId('unveil'));
+    await tick(ARRIVAL_AFTER_IDLE_MS);
+    await fireEvent.press(screen.getByTestId('begin'));
+    expect(phase()).toBe('leaving');
   });
 });

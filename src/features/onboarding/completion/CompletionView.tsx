@@ -1,8 +1,12 @@
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { BackHandler } from 'react-native';
+import { Easing, ReduceMotion, runOnJS, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { cue, cuedWithin } from '@/design/haptics';
+import { tokens } from '@/design/tokens';
+import { useReduceMotion } from '@/design/useReduceMotion';
+import { useUiBegun, watchAnimation, type Watch } from '@/features/book/animationEnd';
 import { useLatestEntry, useReflection } from '@/features/journal';
 
 import { cardView } from './cardState';
@@ -62,18 +66,69 @@ export function CompletionView({ mode, onEnter }: Props) {
     cue('commit');
   }, []);
 
+  // Onboarding lets its interface go first. Enter your space fades the words, the card and the button
+  // away over the photograph, which stays, and onboarding is completed only once that fade has ended on
+  // the UI thread, never by a clock. The root layout then moves to Home, and what is seen between this
+  // screen going and Home drawing is the plate backing, which is this same photograph: nothing on the
+  // screen changes until Home's photograph comes up over it. The walk (v11) saw that moment as this
+  // photograph with nothing on it, cut in after the whole screen. The daily screen leaves another way.
+  const lettingGo = mode === 'onboarding';
+  const gone = useSharedValue(0);
+  const reduced = useReduceMotion();
+  const uiBegun = useUiBegun();
+  const fade = useRef<Watch | null>(null);
+  const here = useRef(true);
+  useEffect(() => {
+    here.current = true;
+    return () => {
+      here.current = false;
+      fade.current?.cancel();
+    };
+  }, []);
+  /** Takes the interface to `to` (1 is gone), and resolves when the fade has really ended. */
+  const fadeTo = useCallback(
+    (to: number) =>
+      new Promise<void>((resolve) => {
+        const duration = reduced ? tokens.motion.fast : tokens.motion.standard;
+        fade.current?.cancel();
+        const watch = watchAnimation(duration, resolve);
+        fade.current = watch;
+        const { ended } = watch;
+        const faded = () => {
+          'worklet';
+          runOnJS(ended)();
+        };
+        gone.set(
+          withTiming(
+            to,
+            { duration, easing: Easing.inOut(Easing.quad), reduceMotion: ReduceMotion.Never },
+            faded,
+          ),
+        );
+        uiBegun(watch.began);
+      }),
+    [gone, reduced, uiBegun],
+  );
+
   const enter = useCallback(async () => {
     if (busy.current) return;
     busy.current = true;
     setEntering(true);
     setFailed(false);
+    if (lettingGo) {
+      await fadeTo(1);
+      // Left while it faded: nothing is completed from a screen that has gone.
+      if (!here.current) return;
+    }
     if (!(await onEnter())) {
       // Only a failure frees the button. After success the screen is about to go.
       busy.current = false;
       setEntering(false);
       setFailed(true);
+      // The interface comes back to say so, with the button free again.
+      if (lettingGo && here.current) void fadeTo(0);
     }
-  }, [onEnter]);
+  }, [fadeTo, lettingGo, onEnter]);
 
   // The entry is already saved, so the system back button must not undo anything. Onboarding stays
   // put, and the daily screen takes the person home as its button does.
@@ -107,6 +162,7 @@ export function CompletionView({ mode, onEnter }: Props) {
         reflection.retry();
         if (latest.status === 'error') void latest.refresh();
       }}
+      leaving={lettingGo ? gone : undefined}
     />
   );
 }

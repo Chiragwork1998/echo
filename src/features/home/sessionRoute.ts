@@ -27,6 +27,9 @@ export const SESSION_ROUTE = {
  * A screen presented over another stays drawn beneath whatever is presented over it in turn, so one
  * that is left beneath another must draw nothing while it is there (Breathe does: BreatheScreen).
  *
+ * Echoes, Patterns and You are presented over Home as well, so that Today, from them, is a pop onto a
+ * Home that stayed up. Each covers the whole screen with a plate of its own.
+ *
  * iOS keeps the screens beneath a pushed one, so it is left as it was. Read each time it is asked for,
  * not once, so that a test can say which platform it is.
  */

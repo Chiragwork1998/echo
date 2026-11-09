@@ -333,6 +333,23 @@ describe('EchoBackground when a screen changes: never a flat colour before the p
     expect(veil()).toBeNull();
   });
 
+  // Home's first look after onboarding follows Completion's photograph, and must not cut from it.
+  it('comes up over the held plate even when its own was to hand, when told to', async () => {
+    watchFades();
+    await leave('intent');
+    const view = await render(<EchoBackground screen="home" comesUp />);
+    await advance(PLATE_LATE_MS - 30);
+    await draw();
+    expect(fade).toHaveBeenCalledTimes(1);
+    await redraw(view, <EchoBackground screen="home" comesUp />);
+    // Both are drawn while it comes up, and it is not yet the plate on show.
+    expect(veil()?.props.source).toBe(backgroundSources.night.intent);
+    expect(lastShownPlate()).toEqual({ theme: 'night', screen: 'intent' });
+    await advance(tokens.motion.standard);
+    expect(veil()).toBeNull();
+    expect(lastShownPlate()).toEqual({ theme: 'night', screen: 'home' });
+  });
+
   it('holds nothing up for a screen that wears the same plate', async () => {
     await leave('home');
     await render(<EchoBackground screen="home" />);

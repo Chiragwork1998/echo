@@ -20,11 +20,13 @@ export const ECHOES_PATH = '/home/echoes';
 export const YOU_PATH = '/home/you';
 
 // Routes owned by other agents or not yet generated into expo-router's types. The session is not
-// here: its entrances dissolve Home first, so they live in ../dissolve (useSessionEntry).
+// here: its entrances dissolve Home first, so they live in ../dissolve (useSessionEntry). Each is
+// reached from Home, at the foot of its stack, and pushed over it once (see goToTab): Home's stack never
+// grows past a tab and an entry.
 export const go = (href: string | { pathname: string; params: Record<string, string> }) =>
-  router.navigate(href as never);
+  router.push(href as never);
 export const openEntry = (entryId: string) =>
-  router.navigate({ pathname: ECHOES_PATH, params: { entryId } } as never);
+  router.push({ pathname: ECHOES_PATH, params: { entryId } } as never);
 
 /** The device's wall-clock time, refreshed each half minute. Never leaves the phone. */
 export function useClock() {

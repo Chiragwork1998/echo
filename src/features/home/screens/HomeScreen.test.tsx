@@ -20,6 +20,9 @@ import { usePreferences } from '@/state/preferences';
 import { animationClock } from '@/testing/reanimatedMock';
 import { render } from '@/testing/render';
 
+import { noteShownPlate, resetPlatesForTests } from '@/design/platePaint';
+
+import { ARRIVAL_AFTER_IDLE_MS, HomeDissolveProvider, VEIL_CAP_MS } from '../dissolve';
 import { homeLabels } from '../today/homeLabels';
 import { useStoneMemory } from '../today/stoneMemory';
 import { HomeScreen } from './HomeScreen';
@@ -234,7 +237,7 @@ describe('Home, Night', () => {
   it('links the avatar to You', async () => {
     await render(<HomeScreen />);
     await fireEvent.press(button(copy.home.tabs[3]));
-    expect(router.navigate).toHaveBeenCalledWith('/home/you');
+    expect(router.push).toHaveBeenCalledWith('/home/you');
   });
 
   it('offers the latest entry in the card slot when nothing is in progress', async () => {
@@ -243,7 +246,7 @@ describe('Home, Night', () => {
     await waitFor(() => expect(screen.getByText(RECENT.title)).toBeTruthy());
     expect(screen.getByText(`${homeLabels.yesterday} · ${homeLabels.minutes(6)}`)).toBeTruthy();
     await fireEvent.press(button(new RegExp(RECENT.title)));
-    expect(router.navigate).toHaveBeenCalledWith({
+    expect(router.push).toHaveBeenCalledWith({
       pathname: '/home/echoes',
       params: { entryId: 'recent' },
     });
@@ -300,6 +303,7 @@ describe('Home, Night', () => {
     const card = button(new RegExp(homeLabels.unreadable));
     expect(card).toBeDisabled();
     await fireEvent.press(card);
+    expect(router.push).not.toHaveBeenCalled();
     expect(router.navigate).not.toHaveBeenCalled();
   });
 
@@ -405,7 +409,7 @@ describe('Home, Day', () => {
       screen.getByText(`${homeLabels.yesterday} · ${homeLabels.minutes(6)}`.toUpperCase()),
     ).toBeTruthy();
     await fireEvent.press(button(new RegExp(RECENT.title)));
-    expect(router.navigate).toHaveBeenCalledWith({
+    expect(router.push).toHaveBeenCalledWith({
       pathname: '/home/echoes',
       params: { entryId: 'recent' },
     });
@@ -414,7 +418,7 @@ describe('Home, Day', () => {
   it('sends See all to Echoes', async () => {
     await render(<HomeScreen />);
     await fireEvent.press(button(goldenCopy.seeAll));
-    expect(router.navigate).toHaveBeenCalledWith('/home/echoes');
+    expect(router.push).toHaveBeenCalledWith('/home/echoes');
   });
 
   it('reads “Your first echo will appear here.” before there is an entry', async () => {
@@ -559,5 +563,127 @@ describe('Home’s card on Home’s first look', () => {
       if (now && now.glass > 0) expect(now.words).toBeCloseTo(now.glass, 5);
     }
     expect(card()).toEqual({ glass: 1, words: 1 });
+  });
+});
+
+// The welcome (the walk, v11): Home's interface cut in on its first frame, after a frame of Completion's
+// photograph with nothing on it. Completion now lets its interface go first, Home's photograph comes up
+// over Completion's, and Home's interface rises once Home is ready to be seen.
+describe('Home’s first look after onboarding, which begins veiled', () => {
+  const BEGIN = `${goldenCopy.nightBegin}. ${goldenCopy.nightBeginArc}`;
+  let current: HomeSummary;
+  const ui = (veiled: boolean) => (
+    <HomeDissolveProvider veiled={veiled}>
+      <HomeScreen />
+    </HomeDissolveProvider>
+  );
+  const advance = (ms: number) =>
+    act(async () => {
+      await jest.advanceTimersByTimeAsync(ms);
+    });
+  const draw = (view: Awaited<ReturnType<typeof render>>, veiled = true) =>
+    view.rerender(<ThemeProvider crossfade={false}>{ui(veiled)}</ThemeProvider>);
+  type Node = { props: { style?: unknown }; parent: Node | null };
+  /** How much of Home's interface is drawn: everything above its Begin, multiplied. */
+  const interfaceDrawn = () => {
+    let node = screen.getByRole('button', {
+      name: BEGIN,
+      includeHiddenElements: true,
+    }) as unknown as Node | null;
+    let drawn = 1;
+    while (node) {
+      const own = (
+        StyleSheet.flatten(node.props.style as never) as { opacity?: number } | undefined
+      )?.opacity;
+      drawn *= own ?? 1;
+      node = node.parent;
+    }
+    return drawn;
+  };
+  /** Home's first frame: it is laid out, and the UI thread runs a frame after that. */
+  const firstFrame = async () => {
+    await act(async () => {
+      fireEvent(screen.getByTestId('home-screen', { includeHiddenElements: true }), 'layout', {
+        nativeEvent: { layout: { x: 0, y: 0, width: 393, height: 852 } },
+      });
+    });
+    await advance(16);
+  };
+  const photographUp = () => act(async () => noteShownPlate('home-plate', 'night', 'home'));
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    resetPlatesForTests();
+    // Completion's photograph is the one on show as Home mounts.
+    noteShownPlate('completion-plate', 'night', 'completion');
+    current = summary({ status: 'loading' });
+    mockedSummary.mockImplementation(() => current);
+  });
+  afterEach(async () => {
+    // Before the clock is given back: what unmounts clears timers of its own.
+    await screen.unmount();
+    resetPlatesForTests();
+    jest.useRealTimers();
+  });
+
+  it('begins with its interface gone, out of reach of a touch and of TalkBack', async () => {
+    await render(ui(true));
+    expect(interfaceDrawn()).toBe(0);
+    expect(screen.queryByRole('button', { name: BEGIN })).toBeNull();
+  });
+
+  it('rises once it has drawn its first frame, its first read has answered and its photograph is up', async () => {
+    const view = await render(ui(true));
+    await firstFrame();
+    current = summary({ status: 'ready' });
+    await draw(view);
+    await advance(100);
+    await draw(view);
+    // Not over Completion's photograph: it waits for its own.
+    expect(screen.queryByRole('button', { name: BEGIN })).toBeNull();
+    await photographUp();
+    await advance(16);
+    await draw(view);
+    // Rising, long before the cap: it is in reach as soon as it begins to.
+    expect(screen.getByRole('button', { name: BEGIN })).toBeTruthy();
+    await advance(ARRIVAL_AFTER_IDLE_MS);
+    await draw(view);
+    expect(interfaceDrawn()).toBe(1);
+    expect(screen.getByRole('button', { name: BEGIN })).toBeTruthy();
+  });
+
+  it('waits for its first read, so that its card is whole when it is seen', async () => {
+    const view = await render(ui(true));
+    await firstFrame();
+    await photographUp();
+    await advance(VEIL_CAP_MS - 400);
+    await draw(view);
+    expect(screen.queryByRole('button', { name: BEGIN })).toBeNull();
+    current = summary({ status: 'ready' });
+    await draw(view);
+    await advance(16);
+    await draw(view);
+    // Before the cap: the answer is what it waited for.
+    expect(screen.getByRole('button', { name: BEGIN })).toBeTruthy();
+  });
+
+  it('is never left veiled: whatever it waits for, its interface rises by the cap', async () => {
+    const view = await render(ui(true));
+    // Its photograph never reports itself, and its read never answers.
+    await advance(VEIL_CAP_MS - 1);
+    await draw(view);
+    expect(screen.queryByRole('button', { name: BEGIN })).toBeNull();
+    await advance(1);
+    await advance(ARRIVAL_AFTER_IDLE_MS);
+    await draw(view);
+    expect(interfaceDrawn()).toBe(1);
+    expect(screen.getByRole('button', { name: BEGIN })).toBeTruthy();
+  });
+
+  it('is Home as it always was when it does not begin veiled: whole, and in reach, from its first frame', async () => {
+    current = summary({ status: 'ready' });
+    await render(ui(false));
+    expect(interfaceDrawn()).toBe(1);
+    expect(screen.getByRole('button', { name: BEGIN })).toBeTruthy();
   });
 });

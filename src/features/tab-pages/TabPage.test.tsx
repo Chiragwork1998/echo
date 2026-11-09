@@ -2,10 +2,12 @@
 // Patterns' consent and You, scrolled, ran their words under the status bar's clock. The onboarding
 // screens never do, because their scrolling begins below the status bar (src/components/ScreenShell.tsx),
 // and this page now does the same.
-import { screen } from '@testing-library/react-native';
+import { act, screen } from '@testing-library/react-native';
 import { StyleSheet, Text } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { backgroundSources } from '@/design/generated/backgrounds';
+import { usePreferences } from '@/state/preferences';
 import { render } from '@/testing/render';
 
 import { TabPage } from './TabPage';
@@ -18,6 +20,11 @@ jest.mock(
   'react-native-safe-area-context',
   () => jest.requireActual('react-native-safe-area-context/jest/mock').default,
 );
+// The picture itself is not what is under test: that it is there, and where, is.
+jest.mock('expo-image', () => {
+  const { View: Box } = jest.requireActual('react-native');
+  return { Image: (props: { source: unknown }) => <Box testID="plate" {...props} /> };
+});
 
 /** A phone with a 48 pt status bar. */
 const METRICS = {
@@ -53,5 +60,41 @@ describe('the tab page', () => {
     const { content, column } = await page();
     expect(content.paddingTop ?? 0).toBe(0);
     expect(column().paddingTop ?? 0).toBe(0);
+  });
+});
+
+// On Android, Echoes, Patterns and You are presented over Home, which stays up beneath them. Each is this
+// page, so this page must cover the whole screen with a photograph of its own, in either theme.
+describe('the tab page over Home', () => {
+  type Json = { props: Record<string, unknown>; children?: (Json | string)[] | null };
+  /** Whether every view from the page's root down to its plate fills the screen. */
+  function plateFillsTheScreen(source: unknown): boolean {
+    const fills = (style: unknown) => {
+      const flat = (StyleSheet.flatten(style as never) ?? {}) as Record<string, unknown>;
+      const absolute =
+        flat.position === 'absolute' &&
+        flat.top === 0 &&
+        flat.left === 0 &&
+        flat.right === 0 &&
+        flat.bottom === 0;
+      return absolute || flat.flex === 1;
+    };
+    let found = false;
+    const walk = (node: unknown, ok: boolean): void => {
+      if (!node || typeof node !== 'object') return;
+      if (Array.isArray(node)) return node.forEach((child) => walk(child, ok));
+      const { props, children } = node as Json;
+      const here = ok && (props.style === undefined || fills(props.style));
+      if (props.testID === 'plate' && props.source === source && here) found = true;
+      walk(children, here);
+    };
+    walk(screen.toJSON(), true);
+    return found;
+  }
+
+  it.each(['night', 'day'] as const)('covers the screen with Home’s plate by %s', async (theme) => {
+    await act(async () => usePreferences.setState({ theme }));
+    await page();
+    expect(plateFillsTheScreen(backgroundSources[theme].home)).toBe(true);
   });
 });

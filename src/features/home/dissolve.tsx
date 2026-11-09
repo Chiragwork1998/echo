@@ -42,9 +42,15 @@ const STATUS_BAR_AT = 0.5;
 /** If the session never appears, Home gives itself back rather than staying empty. */
 const GIVE_UP_MS = 2000;
 const CLOSE_GRACE_MS = 60;
+/** A Home that begins veiled is given its interface by this long after it mounts, whatever it waits for. */
+export const VEIL_CAP_MS = 1500;
 
-/** idle: Home as usual. leaving: dissolving, taps ignored. gone: only the photograph remains. */
-export type DissolvePhase = 'idle' | 'leaving' | 'gone';
+/**
+ * idle: Home as usual. leaving: dissolving, taps ignored. gone: only the photograph remains. veiled:
+ * Home's first look after onboarding, before its interface has risen: only the photograph, with the
+ * status bar left as it was.
+ */
+export type DissolvePhase = 'idle' | 'leaving' | 'gone' | 'veiled';
 
 type Href = string | { pathname: string; params: Record<string, string> };
 
@@ -63,6 +69,8 @@ type Dissolve = {
    * session, so that Home is whole beneath it, and arrives with its photograph when the card goes.
    */
   returnHome: () => void;
+  /** A Home that began veiled is ready to be seen: its interface rises, by the usual return, once. */
+  unveil: () => void;
 };
 
 const go = (href: Href) => router.push(href as never);
@@ -76,6 +84,7 @@ const direct: Dissolve = {
   sessionOpened: () => undefined,
   sessionClosed: () => undefined,
   returnHome: () => undefined,
+  unveil: () => undefined,
 };
 
 const DissolveContext = createContext<Dissolve>(direct);
@@ -83,11 +92,20 @@ const DissolveContext = createContext<Dissolve>(direct);
 /**
  * Owns the dissolve between Home and the daily session. It lives above the stack, so Home's screen
  * and its tab bar fade from one value, and the session can hand Home back when it closes.
+ *
+ * `veiled` begins Home with its interface gone and the photograph alone, for Home's first look after
+ * onboarding (app/home/_layout.tsx): Completion's interface has gone from over its photograph, Home's
+ * photograph comes up over that, and Home's interface then rises by the usual return, when Home says
+ * it is ready (`unveil`), and at the latest VEIL_CAP_MS after it mounts. Read once, as Home mounts.
  */
-export function HomeDissolveProvider({ children }: PropsWithChildren) {
-  const progress = useSharedValue(0);
-  const [phase, setPhaseState] = useState<DissolvePhase>('idle');
-  const phaseRef = useRef<DissolvePhase>('idle');
+export function HomeDissolveProvider({
+  children,
+  veiled = false,
+}: PropsWithChildren<{ veiled?: boolean }>) {
+  const [startsVeiled] = useState(veiled);
+  const progress = useSharedValue(startsVeiled ? 1 : 0);
+  const [phase, setPhaseState] = useState<DissolvePhase>(startsVeiled ? 'veiled' : 'idle');
+  const phaseRef = useRef<DissolvePhase>(startsVeiled ? 'veiled' : 'idle');
   const reduceMotion = useReduceMotion();
   const reducedRef = useRef(reduceMotion);
   useEffect(() => {
@@ -183,9 +201,20 @@ export function HomeDissolveProvider({ children }: PropsWithChildren) {
     bringBack();
   }, [bringBack, progress]);
 
+  const unveil = useCallback(() => {
+    if (phaseRef.current !== 'veiled') return;
+    bringBack();
+  }, [bringBack]);
+  // Home is never left veiled.
+  useEffect(() => {
+    if (!startsVeiled) return;
+    const cap = setTimeout(unveil, VEIL_CAP_MS);
+    return () => clearTimeout(cap);
+  }, [startsVeiled, unveil]);
+
   const value = useMemo(
-    () => ({ progress, phase, dissolve, sessionOpened, sessionClosed, returnHome }),
-    [progress, phase, dissolve, sessionOpened, sessionClosed, returnHome],
+    () => ({ progress, phase, dissolve, sessionOpened, sessionClosed, returnHome, unveil }),
+    [progress, phase, dissolve, sessionOpened, sessionClosed, returnHome, unveil],
   );
   return <DissolveContext.Provider value={value}>{children}</DissolveContext.Provider>;
 }

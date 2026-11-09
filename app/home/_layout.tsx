@@ -28,7 +28,10 @@ export default function HomeLayout() {
   const reduced = useReduceMotion();
   // The lock panel is opaque and sits above everything: nothing should play behind it.
   const locked = useGate((state) => state.lock.kind === 'locked');
-  // Home's first look after onboarding wakes the river slowly. Decided as Home first appears.
+  // Home's first look after onboarding wakes the river slowly. Decided as Home first appears. It is
+  // also the hand-over from Completion, which has let its interface go over its own photograph: Home's
+  // photograph comes up over that one, and Home's interface then rises (HomeScreen says when), so that
+  // nothing is cut and no frame is a photograph that does not belong to what follows.
   const [welcome] = useState(readWelcomeCandidate);
   const stack = (
     <Stack
@@ -65,10 +68,17 @@ export default function HomeLayout() {
       {/* Completion follows the session, and Enter your space goes back through it to Home. Presented
           over Home like the session, so that Home's interface is there when its card goes. */}
       <Stack.Screen name="complete" options={{ contentStyle: CLEAR_SCREEN, ...overHome() }} />
+      {/* The other tabs, each pushed over Today once and replaced by the next (goToTab). Presented over
+          Home, so that Home stays up beneath them and Today is a pop onto a Home that was never taken
+          down. Each draws a plate of its own over the whole screen (TabPage), so Home is not seen. The
+          entry page stays a plain screen. */}
+      <Stack.Screen name="echoes" options={overHome()} />
+      <Stack.Screen name="patterns" options={overHome()} />
+      <Stack.Screen name="you" options={overHome()} />
     </Stack>
   );
   return (
-    <HomeDissolveProvider>
+    <HomeDissolveProvider veiled={welcome}>
       {/* Completion, in the stack, brings the bar in as its own fade ends (useRevealTabBar). */}
       <HomeTabBarProvider>
         <View style={styles.root}>
@@ -76,6 +86,7 @@ export default function HomeLayout() {
             backdrop={
               <EchoBackground
                 screen="home"
+                comesUp={welcome}
                 overlay={<NightHomeLoop suspended={locked} welcome={welcome} />}
               />
             }

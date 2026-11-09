@@ -8,6 +8,7 @@ import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 import { breatheCopy } from '@/features/breathe/breatheCopy';
 import { dateLabel } from '@/features/echoes/entryFacts';
+import { useSessionEntry } from '@/features/home/dissolve';
 import { keepTogether } from '@/features/tab-pages/keepTogether';
 import { Rule, Surface, TextAction } from '@/features/tab-pages/parts';
 import { Reveal } from '@/features/tab-pages/Reveal';
@@ -79,6 +80,7 @@ export function PatternCardView({
 }: Props) {
   const { name, colors } = useTheme();
   const { width, gutter } = useLayout();
+  const { breathe: breatheFromHome } = useSessionEntry();
   const credit = words.ideaFrom(card.lens.source);
   // Turned over once, a card stays read; turning it again only shows its back for a moment's look.
   const [revealed, setRevealed] = useState(!fresh);
@@ -155,7 +157,12 @@ export function PatternCardView({
             <Pressable
               accessibilityRole="link"
               accessibilityLabel={breatheCopy.cardLink}
-              onPress={() => router.navigate('/home/breathe' as never)}
+              // Breathe only ever lies over a dissolved Home: back to Home, which dissolves into it as it
+              // does for its own Breathe first. Pushed over Patterns, Patterns would show through it.
+              onPress={() => {
+                router.dismissTo('/home' as never);
+                breatheFromHome();
+              }}
               hitSlop={10}
               style={({ pressed }) => [styles.breathe, pressed && styles.pressed]}
               testID="pattern-card-breathe"

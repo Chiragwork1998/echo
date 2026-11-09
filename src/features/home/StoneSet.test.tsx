@@ -458,6 +458,37 @@ describe('the welcome', () => {
     expect(count(1)).not.toBeNull();
   });
 
+  // The welcome begins veiled (app/home/_layout.tsx): Home's photograph comes up over Completion's, and
+  // its interface rises once Home is ready. The cairn waits for that, and is built as long after the
+  // interface begins to rise as it was after Home appeared, when Home is whole again.
+  it('on a first look that begins veiled, builds the first cairn 900 ms after Home’s interface begins to rise', async () => {
+    mockedSummary.mockReturnValue(summaryOf(FIRST));
+    function Unveil() {
+      const { unveil } = useHomeDissolve();
+      return <Pressable testID="unveil" onPress={unveil} />;
+    }
+    await render(
+      <HomeDissolveProvider veiled>
+        <HomeScreen />
+        <Probe />
+        <Unveil />
+      </HomeDissolveProvider>,
+    );
+    expect(phase()).toBe('veiled');
+    // Long past 900 ms after Home appeared: still nothing set under an interface that is not there.
+    await tick(1200);
+    expect(building()).toBeNull();
+    expect(today()).not.toMatch(/completed/);
+    await fireEvent.press(screen.getByTestId('unveil'));
+    expect(phase()).toBe('idle');
+    await tick(WELCOME_ARRIVAL_AT_MS - 1);
+    expect(building()).toBeNull();
+    await tick(1);
+    expect(building()).not.toBeNull();
+    await tick(SETTLE_AT_MS);
+    expect(settles()).toBe(1);
+  });
+
   it('is marked as welcomed the moment Home first appears, whether it plays or not', async () => {
     await show(FIRST);
     expect(usePreferences.getState().homeWelcomed).toBe(true);
