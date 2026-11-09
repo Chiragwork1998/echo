@@ -16,6 +16,8 @@ const routes = {
   'POST /api/transcribe': (await import('./api/transcribe.ts')).POST,
   'POST /api/patterns': (await import('./api/patterns.js')).POST,
   'POST /api/refine': (await import('./api/refine.js')).POST,
+  'POST /api/format': (await import('./api/format.js')).POST,
+  'POST /api/reflect': (await import('./api/reflect.js')).POST,
   'POST /api/live-session': (await import('./api/live-session.js')).POST,
   'POST /api/install': (await import('./api/install.js')).POST,
   'POST /api/report': (await import('./api/report.js')).POST,

@@ -2,10 +2,12 @@ import assert from 'node:assert/strict';
 import { afterEach, beforeEach, mock, test } from 'node:test';
 
 import { GET as allowance } from '../api/allowance.js';
+import { POST as format } from '../api/format.js';
 import { POST as install, useAttestor, INSTALLS_PER_HOUR } from '../api/install.js';
 import { POST as liveSession } from '../api/live-session.js';
 import { POST as patterns } from '../api/patterns.js';
 import { POST as refine } from '../api/refine.js';
+import { POST as reflect } from '../api/reflect.js';
 import { POST as transcribe } from '../api/transcribe.js';
 import { noAttestor } from './attest.js';
 import { addressKey } from './guard.js';
@@ -151,6 +153,9 @@ test('every route takes an install token, and refuses a tampered or expired one 
     () => patterns(asInstall(tampered, '/api/patterns', { entries })),
     () => transcribe(upload(wavBytes({ samples: 2400 }), 'a.wav', { install: tampered })),
     () => allowance(asInstall(tampered, '/api/allowance')),
+    () => format(asInstall(tampered, '/api/format', { text: 'a few synthetic words' })),
+    () => reflect(asInstall(tampered, '/api/reflect', { text: 'a few synthetic words' })),
+    () => reflect(asInstall(expired, '/api/reflect', { text: 'a few synthetic words' })),
     () => liveSession(asInstall(expired)),
     () => transcribe(upload(wavBytes({ samples: 2400 }), 'a.wav', { install: expired })),
   ];
@@ -182,6 +187,8 @@ test('legacy: the shared token alone works while allowed, and is refused when de
     await liveSession(asLegacy()),
     await refine(asLegacy('/api/refine', { text: 'hi' })),
     await patterns(asLegacy('/api/patterns', { entries })),
+    await format(asLegacy('/api/format', { text: 'a few synthetic words' })),
+    await reflect(asLegacy('/api/reflect', { text: 'a few synthetic words' })),
     await transcribe(upload(wavBytes({ samples: 2400 }), 'a.wav', { shared: VOICE_TOKEN })),
   ]) {
     assert.equal(response.status, 401);

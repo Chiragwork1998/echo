@@ -134,6 +134,54 @@ test('Plus caps live words, tidy and readings by the month', async () => {
   }
 });
 
+test('reflections: free is 60 a month and Plus 900, and the next month starts again', async () => {
+  let plan: 'free' | 'plus' = 'free';
+  const { context, at } = setup({ plan: () => plan });
+  at(Date.UTC(2026, 10, 30, 23, 0, 0));
+  for (let used = 0; used < ALLOWANCES.free.reflect; used += 1) {
+    assert.ok((await meter(context, caller, 'reflect', 1, {})).ok);
+  }
+  const free = await meter(context, caller, 'reflect', 1, {});
+  assert.deepEqual(!free.ok && free.refusal.body, {
+    error: 'allowance_used',
+    feature: 'reflect',
+    plan: 'free',
+    resetsAt: '2026-12-01T00:00:00.000Z',
+  });
+  plan = 'plus';
+  for (let used = ALLOWANCES.free.reflect; used < ALLOWANCES.plus.reflect; used += 1) {
+    assert.ok((await meter(context, caller, 'reflect', 1, {})).ok);
+  }
+  const plus = await meter(context, caller, 'reflect', 1, {});
+  assert.equal(!plus.ok && plus.refusal.status === 402 && plus.refusal.body.plan, 'plus');
+  at(Date.UTC(2026, 11, 1, 0, 0, 0));
+  assert.ok((await meter(context, caller, 'reflect', 1, {})).ok);
+});
+
+test('a reflection given back is not counted, and the calls it made are', async () => {
+  const { context, store } = setup({ plan: () => 'free' });
+  const held = await meter(context, caller, 'reflect', 1, { calls: 2 });
+  assert.ok(held.ok);
+  await held.held.settleCalls(2);
+  await held.held.refund(['use']);
+  const day = new Date(context.now()).toISOString().slice(0, 10);
+  const month = monthOf(context.now());
+  assert.deepEqual(await store.read([`i:${installKey(ID)}:reflect:${month}`, `g:calls:${day}`]), [0, 2]);
+});
+
+test('setting out has no allowance of its own: only the day’s model calls refuse it', async () => {
+  const { context, store } = setup({ plan: () => 'free', ceilings: { calls: 4 } });
+  assert.equal(ALLOWANCES.free.format, null);
+  assert.equal(ALLOWANCES.plus.format, null);
+  for (let request = 0; request < 2; request += 1) {
+    assert.ok((await meter(context, caller, 'format', 1, { calls: 2 })).ok);
+  }
+  const busy = await meter(context, caller, 'format', 1, { calls: 2 });
+  assert.equal(!busy.ok && busy.refusal.status, 503);
+  // Nothing of the install's own was counted: the day's calls are the only counter.
+  assert.equal(store.size(), 1);
+});
+
 test('the day ceilings refuse everyone with busy, until the next UTC day', async () => {
   const start = Date.UTC(2026, 10, 8, 22, 0, 0);
   const { context, at } = setup({ plan: () => 'plus', start, ceilings: { audioMs: 10 * MINUTE, calls: 5 } });

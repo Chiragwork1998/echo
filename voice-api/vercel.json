@@ -13,6 +13,14 @@
       "maxDuration": 60,
       "memory": 512
     },
+    "api/format.ts": {
+      "maxDuration": 120,
+      "memory": 512
+    },
+    "api/reflect.ts": {
+      "maxDuration": 60,
+      "memory": 512
+    },
     "api/live-session.ts": {
       "maxDuration": 30,
       "memory": 256
