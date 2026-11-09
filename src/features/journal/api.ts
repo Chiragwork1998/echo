@@ -97,6 +97,14 @@ export const updateDraft = (id: string, change: (entry: Entry) => EntryContent) 
 export const commitEntry = (id: string, content: EntryContent) =>
   mutate((journal) => journal.commitEntry(id, content));
 export const discardDraft = (id: string) => mutate((journal) => journal.discardDraft(id));
+/**
+ * Clears what a draft that was never written may have left (a recording begun before the first save),
+ * and tells no one: no row existed, so no list or Home changes. Telling them anyway costs a refresh of
+ * every list on screen, which on the walked emulator held the JS thread a quarter of a second, in the
+ * middle of the page's fade.
+ */
+export const forgetUnwrittenDraft = (id: string) =>
+  withJournal((journal) => journal.discardDraft(id));
 export const deleteEntry = (id: string) => mutate((journal) => journal.deleteEntry(id));
 
 export const getEntry = (id: string) => withJournal((journal) => journal.getEntry(id));

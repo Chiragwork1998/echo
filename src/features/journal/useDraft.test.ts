@@ -205,6 +205,28 @@ describe('autosave', () => {
     expect(useJournalRevision.getState().revision).toBeGreaterThan(before);
   });
 
+  it('tells no one when a session that wrote nothing closes', async () => {
+    const view = await mount();
+    const before = useJournalRevision.getState().revision;
+    await view.unmount();
+    await flushMicrotasks();
+    expect(useJournalRevision.getState().revision).toBe(before);
+  });
+
+  it('tells lists once when a written draft is discarded, and not again as the session closes', async () => {
+    const view = await mount();
+    await act(() => current(view).update({ body: 'written' }));
+    await advance(AUTOSAVE_INTERVAL_MS);
+    const before = useJournalRevision.getState().revision;
+    await act(async () => {
+      expect((await current(view).discard()).ok).toBe(true);
+    });
+    expect(useJournalRevision.getState().revision).toBe(before + 1);
+    await view.unmount();
+    await flushMicrotasks();
+    expect(useJournalRevision.getState().revision).toBe(before + 1);
+  });
+
   it('saves within the interval after the first change', async () => {
     const view = await mount();
     await act(() => current(view).update({ body: 'hello' }));
@@ -645,12 +667,17 @@ describe('discard', () => {
     expect(await rowCount()).toBe(0);
   });
 
-  it('does nothing harmful for a draft never saved', async () => {
+  it('does nothing harmful for a draft never saved, and refreshes nothing', async () => {
     const view = await mount();
+    const forgets = jest.spyOn(journal, 'discardDraft');
+    const before = useJournalRevision.getState().revision;
     await act(async () => {
       expect((await current(view).discard()).ok).toBe(true);
     });
     expect(await rowCount()).toBe(0);
+    // Still asked of the journal: a recording can begin before the first save.
+    expect(forgets).toHaveBeenCalledWith(current(view).id);
+    expect(useJournalRevision.getState().revision).toBe(before);
   });
 });
 

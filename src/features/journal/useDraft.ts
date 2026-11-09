@@ -6,6 +6,7 @@ import { singleFlight, type Flight } from '@/storage/singleFlight';
 import {
   commitEntry,
   discardDraft,
+  forgetUnwrittenDraft,
   getEntry,
   latestDraft,
   newDraftId,
@@ -216,7 +217,12 @@ export function useDraft(options: UseDraftOptions = {}): DraftController {
     });
     return () => {
       subscription.remove();
-      void flush().then(notifyJournalChanged);
+      const s = session.current;
+      // Home and the lists learn of a draft this session wrote. One that wrote nothing has nothing to tell
+      // them, and a commit or a discard has told them already.
+      void flush().then(() => {
+        if (s.stored && !s.closed) notifyJournalChanged();
+      });
     };
   }, [flush]);
 
@@ -280,7 +286,8 @@ export function useDraft(options: UseDraftOptions = {}): DraftController {
     s.closed = true; // Stops a pending save from recreating the row.
     await s.draining.current;
     if (!s.id) return success(undefined);
-    const removed = await discardDraft(s.id);
+    // A draft never written is only forgotten: there is no row for anything on screen to drop.
+    const removed = s.stored ? await discardDraft(s.id) : await forgetUnwrittenDraft(s.id);
     if (!removed.ok) {
       s.closed = false;
       setError(removed.error);
