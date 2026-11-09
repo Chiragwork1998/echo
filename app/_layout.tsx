@@ -15,7 +15,9 @@ import { CLEAR_NAVIGATOR, CLEAR_SCREEN } from '@/design/clearScreens';
 import { fontMap } from '@/design/fonts';
 import { setPlateFlowStep } from '@/design/plateMotion';
 import { PlateBacking } from '@/design/PlateBacking';
-import { PLATE_WAIT_MS, usePlatesPending } from '@/design/platePaint';
+import { PLATE_WAIT_MS, useBackingPlate, usePlatesPending } from '@/design/platePaint';
+import { warmPlateThumbs } from '@/design/plateThumbs';
+import { configureSplashExit } from '@/design/splashExit';
 import { ThemeProvider, useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 import { useReduceMotion } from '@/design/useReduceMotion';
@@ -37,12 +39,13 @@ import {
 import { gateCopy } from '@/state/gateCopy';
 import { endLaunch, resetLaunch, useLaunch } from '@/state/launch';
 import { completeOnboarding, setOnboardingStep, useOnboarding } from '@/state/onboarding';
-import { ownWindowOpen } from '@/state/ownWindows';
+import { onSystemPickerClosed, ownWindowOpen, systemPickerOpen } from '@/state/ownWindows';
 import { decideRoute, stepForPath } from '@/state/routing';
 import { goldenFixtures } from '@/testing/goldenFixtures';
 import { qa } from '@/testing/qa';
 
 SplashScreen.preventAutoHideAsync();
+configureSplashExit();
 
 if (qa.fixture) useOnboarding.setState(goldenFixtures[qa.fixture] ?? {});
 
@@ -226,15 +229,27 @@ function useAppCovered(): boolean {
     const subscriptions = [
       AppState.addEventListener('change', (next) => {
         handleAppState(next);
-        setCovered(next !== 'active');
+        // The system's file picker is another Activity: it takes the app out of the active state, and
+        // the app switcher would show it and nothing of ECHO's. There is nothing for the cover to hide.
+        setCovered(next !== 'active' && !systemPickerOpen());
       }),
       // Android only. Fires as recents opens, ahead of the pause that 'change' reports. It fires
       // too as each of ECHO's own sheets and dialogs takes the window's focus, and those are no
-      // reason to hide the page they sit over.
+      // reason to hide the page they sit over. Nor is one before the app has said it is active, at
+      // launch, or while the picker is open: there is no page in front of anyone to hide.
       AppState.addEventListener('blur', () => {
-        if (!ownWindowOpen()) setCovered(true);
+        if (ownWindowOpen() || systemPickerOpen() || AppState.currentState === 'background') return;
+        setCovered(true);
       }),
-      AppState.addEventListener('focus', () => setCovered(AppState.currentState !== 'active')),
+      // Only ever lifts. A window gaining focus is no reason to hide anything, and on a cold launch it
+      // can come before AppState has answered, when 'not active' means 'not yet'.
+      AppState.addEventListener('focus', () =>
+        setCovered((hidden) => hidden && AppState.currentState !== 'active'),
+      ),
+      // The picker is done, and the result it handed over is the app's way back to the front. That
+      // reaches JavaScript ahead of the resume, and a thread that is busy with the file it was given
+      // reads the resume late: the walk (v10) saw the cover stand for 3.6 s. Lift it now.
+      onSystemPickerClosed(() => setCovered(false)),
     ];
     return () => subscriptions.forEach((subscription) => subscription.remove());
   }, []);
@@ -283,6 +298,13 @@ function Content({ status, onSettled }: { status: GateStatus; onSettled: () => v
   const covered = useAppCovered();
   const hidden = covered || lock.kind === 'locked';
   useSecureWindowWhileLocked();
+  // Home's thumbnails are decoded while nothing else is asking for the thread, so that they are whole
+  // in the first frame Home draws them (src/design/plateThumbs.ts).
+  const { target } = useTheme();
+  const ready = status.kind === 'ready';
+  useEffect(() => {
+    if (ready) void warmPlateThumbs(target);
+  }, [ready, target]);
 
   return (
     <View style={styles.root}>
@@ -320,6 +342,9 @@ export default function RootLayout() {
   const resolved = status.kind === 'ready' ? settled : status.kind !== 'booting';
   const onSettled = useCallback(() => setSettled(true), []);
   const platesPending = usePlatesPending();
+  // Null until a photograph has been wholly drawn, which is not the same as none being pending: before
+  // any plate has mounted, nothing is pending either.
+  const photographOnShow = useBackingPlate() !== null;
   const [plateWaitOver, setPlateWaitOver] = useState(false);
   const splashHidden = useRef(false);
 
@@ -330,7 +355,11 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (status.kind !== 'ready' || settled) return;
-    const timer = setTimeout(onSettled, SPLASH_LIMIT_MS);
+    const timer = setTimeout(() => {
+      onSettled();
+      // A launch that has not landed in this long is not held for a photograph either.
+      setPlateWaitOver(true);
+    }, SPLASH_LIMIT_MS);
     return () => clearTimeout(timer);
   }, [onSettled, settled, status.kind]);
 
@@ -342,14 +371,19 @@ export default function RootLayout() {
   }, [resolved]);
 
   // The splash stays until the first real screen is in place and its photograph is drawn, so nothing
-  // flashes on the way there: not a screen that is being left, and not a flat colour waiting for the
-  // plate.
+  // flashes on the way there: not a screen that is being left, not a flat colour waiting for the plate,
+  // and not the bare window before the screen has mounted (the first frame the splash uncovers is
+  // whatever is drawn when it goes). Only a launch that reached a screen waits for a photograph: the
+  // gate's own panels (a lost key, a storage fault) have none to draw.
   useEffect(() => {
     if (splashHidden.current || !fontsReady || !resolved) return;
-    if (platesPending && !plateWaitOver) return;
+    if (!plateWaitOver) {
+      if (platesPending) return;
+      if (status.kind === 'ready' && !photographOnShow) return;
+    }
     splashHidden.current = true;
     SplashScreen.hideAsync();
-  }, [fontsReady, platesPending, plateWaitOver, resolved]);
+  }, [fontsReady, photographOnShow, platesPending, plateWaitOver, resolved, status.kind]);
 
   if (!fontsReady) return null;
 

@@ -24,6 +24,7 @@ import { Icon } from '@/components/Icon';
 import { SoftScrim } from '@/components/SoftScrim';
 import { SwitchTrack } from '@/components/SwitchTrack';
 import { TideLine } from '@/components/TideLine';
+import { GlassFill } from '@/design/GlassFill';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 
@@ -113,13 +114,7 @@ export function Surface({
       {!reduced && (
         <GlassBlur radius={strength === 'strong' ? tokens.blur.glassStrong : tokens.blur.glass} />
       )}
-      <View
-        pointerEvents="none"
-        style={[
-          StyleSheet.absoluteFill,
-          { backgroundColor: strong ? colors.surfaceGlassStrong : colors.surfaceGlass },
-        ]}
-      />
+      <GlassFill strong={strong} />
       {tint && !reduced ? (
         <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: tint }]} />
       ) : null}

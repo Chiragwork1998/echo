@@ -1,6 +1,7 @@
 import { getDocumentAsync } from 'expo-document-picker';
 import { Platform } from 'react-native';
 
+import { systemPickerOpen } from '@/state/ownWindows';
 import { control } from '@/storage/testing/fakeExpoFileSystem';
 
 import { pickBackupFile } from './pickBackupFile';
@@ -126,5 +127,32 @@ describe('either way', () => {
   it('reports a picker that fails', async () => {
     getDocument.mockRejectedValue(new Error('a picking is already in progress'));
     expect(await pickBackupFile()).toEqual({ kind: 'failed' });
+  });
+});
+
+// The picker is another Activity: while it is on top the app reads as away, and the privacy cover has
+// nothing of ECHO's to hide (state/ownWindows). It is open from the moment it is asked for.
+describe('the picker as a screen of the system’s', () => {
+  it('is counted as open while it is up, and as closed once it has answered', async () => {
+    let answer: (result: unknown) => void = () => undefined;
+    getDocument.mockReturnValue(new Promise((resolve) => (answer = resolve)) as never);
+    const pending = pickBackupFile();
+    expect(systemPickerOpen()).toBe(true);
+    answer({ canceled: true, assets: null });
+    await pending;
+    expect(systemPickerOpen()).toBe(false);
+  });
+
+  it('is closed again when the picker fails', async () => {
+    getDocument.mockRejectedValue(new Error('a picking is already in progress'));
+    await pickBackupFile();
+    expect(systemPickerOpen()).toBe(false);
+  });
+
+  it('is already closed when the copy of the file begins, so the app is whole before any work on it', async () => {
+    const copy = 'file:///tmp/com.thesaturnlabs.echo-Inbox/echo-export.zip';
+    getDocument.mockResolvedValue(picked(copy));
+    await pickBackupFile();
+    expect(systemPickerOpen()).toBe(false);
   });
 });

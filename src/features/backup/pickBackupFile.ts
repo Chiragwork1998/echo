@@ -3,6 +3,7 @@
 // (src/services/nativeModules.ts), so You and its tests carry no native code until someone restores.
 import { Platform } from 'react-native';
 
+import { openSystemPicker } from '@/state/ownWindows';
 import { childUri } from '@/storage/ports';
 import { getRuntime } from '@/storage/runtime';
 
@@ -56,13 +57,22 @@ async function ownCopy(uri: string): Promise<string> {
  * openBackup, which takes it from there. The person's own file is only ever read.
  */
 export async function pickBackupFile(): Promise<PickResult> {
+  // The picker is another Activity, which takes the app out of the active state while it is on top.
+  // The privacy cover is not raised for it, and the moment it has answered it is lifted if it was.
+  // Closed before the file is copied, so that the work on the file never has the cover to wait for.
+  const closePicker = openSystemPicker();
   try {
-    const result = await loadPicker().getDocumentAsync({
-      type: typesHere(),
-      // ECHO makes its own copy, off the main thread. See ownCopy.
-      copyToCacheDirectory: false,
-      multiple: false,
-    });
+    let result: Awaited<ReturnType<ReturnType<typeof loadPicker>['getDocumentAsync']>>;
+    try {
+      result = await loadPicker().getDocumentAsync({
+        type: typesHere(),
+        // ECHO makes its own copy, off the main thread. See ownCopy.
+        copyToCacheDirectory: false,
+        multiple: false,
+      });
+    } finally {
+      closePicker();
+    }
     if (result.canceled) return { kind: 'canceled' };
     const asset = result.assets[0];
     if (!asset) return { kind: 'canceled' };

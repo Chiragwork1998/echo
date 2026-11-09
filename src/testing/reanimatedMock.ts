@@ -428,6 +428,7 @@ export const reanimatedMock = {
   },
   createAnimatedComponent: identity,
   useSharedValue,
+  makeMutable: <T>(initial: T) => makeSharedValue(initial),
   useDerivedValue: (compute: () => unknown) => {
     const run = uiThread(compute);
     const derived = { value: run(), get: run };

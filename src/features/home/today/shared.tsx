@@ -7,6 +7,7 @@ import Svg, { Path } from 'react-native-svg';
 import { EchoText } from '@/components/EchoText';
 import { GlassCard } from '@/components/GlassCard';
 import { backgroundSources } from '@/design/generated/backgrounds';
+import { usePlateThumb } from '@/design/plateThumbs';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 import type { HomeSummary } from '@/features/journal';
@@ -38,9 +39,13 @@ export function useClock() {
 /**
  * A crop of the Home plate, so a thumbnail always looks like where the person is.
  *
- * It is the plate at a size of its own, so it is decoded on its own and can be a frame or two behind
- * the card it sits on (the walk, F5: empty, then popped in). It therefore dissolves in over the glass
- * rather than appearing, which is invisible when it is ready at once and a soft arrival when it is not.
+ * It is drawn from the plate decoded ahead of time at a size of its own (src/design/plateThumbs.ts), so
+ * that it is whole in the first frame it is asked for: at the welcome, and each time the screen comes
+ * back after a tab change. It was the plate's own file, decoded when the screen mounted, which takes a
+ * frame or more, and was empty for that frame and then popped in (the walk, v10). Only a screen that
+ * mounts before the picture is ready, the first launch after the app is opened, meets the plate's own
+ * file, and then it dissolves in over the glass rather than appearing; the decoded picture takes over
+ * from it without a second dissolve.
  */
 export function PlateThumb({
   size,
@@ -55,6 +60,7 @@ export function PlateThumb({
   radius: number;
 }) {
   const { name } = useTheme();
+  const decoded = usePlateThumb(name);
   const imageWidth = size / focus.width;
   const imageHeight = imageWidth * (2796 / 1290);
   return (
@@ -64,9 +70,9 @@ export function PlateThumb({
       importantForAccessibility="no-hide-descendants"
     >
       <Image
-        source={backgroundSources[name].home}
+        source={decoded ?? backgroundSources[name].home}
         contentFit="fill"
-        transition={{ duration: tokens.motion.fast, effect: 'cross-dissolve' }}
+        transition={decoded ? 0 : { duration: tokens.motion.fast, effect: 'cross-dissolve' }}
         style={{
           position: 'absolute',
           width: imageWidth,
