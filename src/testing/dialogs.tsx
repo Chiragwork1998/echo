@@ -3,6 +3,7 @@ import type { ReactElement } from 'react';
 import { StyleSheet } from 'react-native';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 
+import { ThemeProvider } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 import { clearDialogs, DialogHost } from '@/features/tab-pages/Dialog';
 
@@ -35,6 +36,14 @@ export function renderDialogHost() {
   clearDialogs();
   return render(<Host />);
 }
+
+/** Draws the host of `renderDialogHost` again, as the screen is drawn for each frame of an animation. */
+export const drawDialogHost = () =>
+  screen.rerender(
+    <ThemeProvider crossfade={false}>
+      <Host />
+    </ThemeProvider>,
+  );
 
 /**
  * The open dialog's window, or null. A dialog that has been answered stays on screen for the length
@@ -88,6 +97,16 @@ export function modalHost(): Record<string, unknown> {
   if (!host) throw new Error('No window is open.');
   return host.props;
 }
+
+/**
+ * The sheet's window reporting its size, as a Modal's does once the system has made the window: it is
+ * laid out at nothing first, and a sheet does not begin to arrive until it has a size. `testID` is the
+ * sheet's own name ('dialog' for a dialog).
+ */
+export const layOutSheet = (testID = 'dialog') =>
+  fireEvent(screen.getByTestId(`${testID}-stage`, { includeHiddenElements: true }), 'layout', {
+    nativeEvent: { layout: { x: 0, y: 0, width: 393, height: 852 } },
+  });
 
 /** The system Back button, with the dialog open. */
 export const backOutOfDialog = () => fireEvent(screen.getByTestId('dialog'), 'requestClose');

@@ -16,6 +16,7 @@ import {
 import { render } from '@/testing/render';
 
 import { echoesCopy } from './echoesCopy';
+import { resetRemovedEchoes, useRemovedEchoes } from './removed';
 import { EntryReaderScreen } from './EntryReaderScreen';
 
 const mockPlayer = { play: jest.fn(), pause: jest.fn(), remove: jest.fn(), release: jest.fn() };
@@ -145,6 +146,27 @@ describe('EntryReaderScreen', () => {
     await chooseInDialog(echoesCopy.deleteConfirm);
     await waitFor(() => expect(router.back).toHaveBeenCalled());
     expect(router.back).toHaveBeenCalledTimes(1);
+  });
+
+  it('tells the archive the echo is gone as it leaves, so the list never shows it again', async () => {
+    seed(base);
+    resetRemovedEchoes();
+    await renderWithDialogs(<EntryReaderScreen id="one" />);
+    await fireEvent.press(await screen.findByRole('button', { name: echoesCopy.delete }));
+    expect(useRemovedEchoes.getState().ids.has('one')).toBe(false);
+    await chooseInDialog(echoesCopy.deleteConfirm);
+    await waitFor(() => expect(router.back).toHaveBeenCalled());
+    // Said before the person is taken back to the list, not after it has been read again.
+    expect(useRemovedEchoes.getState().ids.has('one')).toBe(true);
+  });
+
+  it('says nothing of an echo that was kept', async () => {
+    seed(base);
+    resetRemovedEchoes();
+    await renderWithDialogs(<EntryReaderScreen id="one" />);
+    await fireEvent.press(await screen.findByRole('button', { name: echoesCopy.delete }));
+    await chooseInDialog(echoesCopy.deleteCancel);
+    expect(useRemovedEchoes.getState().ids.size).toBe(0);
   });
 
   it.each([

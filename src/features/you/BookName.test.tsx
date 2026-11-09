@@ -64,6 +64,23 @@ describe('the name on your book', () => {
     );
   });
 
+  it('leaves as it was when "Write it" was pressed: the named sheet is not laid out under its own exit', async () => {
+    // The walk (v10): the sheet grew a "Remove my name" row as it faded and jumped up about 120 px.
+    await renderWithDialogs(<BookName />);
+    await settle();
+    await fireEvent.press(row());
+    await fireEvent.changeText(screen.getByTestId('book-name-sheet-field'), NAME);
+    await fireEvent.press(screen.getByRole('button', { name: bookCopy.name.write }));
+    await settle();
+    // The name is written, and the sheet, still on its way out, does not know it.
+    expect(useBookOwner.getState().name).toBe(NAME);
+    expect(
+      screen.getByTestId('book-name-sheet-stage', { includeHiddenElements: true }),
+    ).toBeTruthy();
+    expect(screen.queryByText(youCopy.bookNameRemove, { includeHiddenElements: true })).toBeNull();
+    expect(screen.queryByRole('button', { name: youCopy.bookNameRemove, hidden: true })).toBeNull();
+  });
+
   it('will not write nothing, or the same name again', async () => {
     mockRecord = { v: 1, name: NAME, asked: true, namedOpens: 3 };
     await renderWithDialogs(<BookName />);

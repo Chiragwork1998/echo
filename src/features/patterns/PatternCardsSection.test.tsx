@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { router } from 'expo-router';
-import { Dimensions, Linking, StyleSheet } from 'react-native';
+import { Dimensions, Linking, ScrollView, StyleSheet, View } from 'react-native';
 
 import { createMemoryJournal, setJournal, type Entry } from '@/features/journal';
 import { deviceClock } from '@/features/journal/localDay';
@@ -192,6 +192,48 @@ describe('pattern cards', () => {
     expect(seen).toBe(1);
   });
 
+  it('has the consent on the glass, whole with its words, in the very frame the page it replaces leaves', async () => {
+    // The walk (v9, again in v10): on "Read my patterns" the glass of the page went, the sky was bare
+    // (a frame, and on a busy phone a tenth of a second), the consent's glass came empty, and then its
+    // words. The consent replaces the page's own glass in one commit, so it is drawn at rest in that
+    // commit, not arriving from nothing.
+    animationClock.stepped = true;
+    await render(<PatternsScreen />);
+    await screen.findByRole('button', { name: patternsCopy.cards.read });
+    // The page has finished arriving.
+    await act(async () => new Promise((done) => setTimeout(done, 900)));
+    await press(patternsCopy.cards.read);
+    // Nothing has been advanced: this is the frame the tap was drawn in.
+    const title = screen.getByText(patternsCopy.consent.title, { includeHiddenElements: true });
+    // How whole the consent is, as it is drawn: the least opacity of it and everything above it.
+    let seen = 1;
+    for (let node = title.parent; node; node = node.parent) {
+      const opacity = (StyleSheet.flatten(node.props.style) as { opacity?: number } | undefined)
+        ?.opacity;
+      seen = Math.min(seen, opacity ?? 1);
+    }
+    expect(seen).toBe(1);
+    // And nothing of what it replaced is left beside it, so no frame has two of them or none.
+    expect(screen.queryByText(patternsCopy.cards.intro)).toBeNull();
+  });
+
+  it('keeps no frame empty when the consent is turned down: the page is back at once, whole', async () => {
+    animationClock.stepped = true;
+    await render(<PatternsScreen />);
+    await screen.findByRole('button', { name: patternsCopy.cards.read });
+    await act(async () => new Promise((done) => setTimeout(done, 900)));
+    await press(patternsCopy.cards.read);
+    await press(patternsCopy.consent.notNow);
+    const intro = screen.getByText(patternsCopy.cards.intro, { includeHiddenElements: true });
+    let seen = 1;
+    for (let node = intro.parent; node; node = node.parent) {
+      const opacity = (StyleSheet.flatten(node.props.style) as { opacity?: number } | undefined)
+        ?.opacity;
+      seen = Math.min(seen, opacity ?? 1);
+    }
+    expect(seen).toBe(1);
+  });
+
   it('keeps the earlier cards and says so calmly when the reader cannot be reached', async () => {
     jest.mocked(loadReading).mockResolvedValue({ ok: true, value: earlier });
     usePreferences.setState({ patternsConsent: CONSENT_VERSION });
@@ -272,6 +314,80 @@ describe('pattern cards', () => {
       await screen.findByText(`${patternsCopy.cards.none} ${patternsCopy.cards.keptEarlier}`),
     ).toBeTruthy();
     expect(screen.getByText('Quiet scoring')).toBeTruthy();
+  });
+});
+
+// The walk (v10): the reading's notice arrived half scrolled off the top of the screen. The page keeps
+// its scroll position while the tall skeleton above the notice goes and a short notice takes its
+// place, so the notice lands above the top. It is scrolled into view, once, when it arrives.
+describe('a notice that arrives from a reading', () => {
+  type Native = { props: { testID?: string } };
+  /** Where the screen puts a view: [top, height] in the window, by the view's test id. */
+  let windowAt: Record<string, [number, number]>;
+  /** Where the notice is in the page's own content. */
+  let contentY: number;
+  const measureInWindow = jest.spyOn(View.prototype, 'measureInWindow');
+  const measureLayout = jest.spyOn(View.prototype, 'measureLayout');
+  const scrollTo = jest.spyOn(ScrollView.prototype, 'scrollTo');
+  // ScrollView's own copies of the same native methods, which the page asks too.
+  const scrollerInWindow = jest.spyOn(ScrollView.prototype, 'measureInWindow');
+
+  beforeEach(() => {
+    windowAt = { 'tab-page-scroll': [40, 700], 'bring-into-view': [200, 90] };
+    contentY = 410;
+    const inWindow = function (this: Native, done: (...n: number[]) => void) {
+      const [top, height] = windowAt[this.props.testID ?? ''] ?? [0, 0];
+      done(0, top, 330, height);
+    };
+    measureInWindow.mockImplementation(inWindow as never);
+    scrollerInWindow.mockImplementation(inWindow as never);
+    measureLayout.mockImplementation(((_relative: unknown, done: (...n: number[]) => void) =>
+      done(0, contentY, 330, 90)) as never);
+    scrollTo.mockClear();
+  });
+  afterEach(() => {
+    measureInWindow.mockReset();
+    measureLayout.mockReset();
+    scrollerInWindow.mockReset();
+  });
+
+  async function arrive() {
+    jest.mocked(loadReading).mockResolvedValue({ ok: true, value: earlier });
+    usePreferences.setState({ patternsConsent: CONSENT_VERSION });
+    read.mockResolvedValue({ status: 'none', entriesRead: 5 });
+    await render(<PatternsScreen />);
+    await press(patternsCopy.cards.readAgain);
+    await screen.findByText(`${patternsCopy.cards.none} ${patternsCopy.cards.keptEarlier}`);
+    await fireEvent(screen.getByTestId('bring-into-view'), 'layout', {
+      nativeEvent: { layout: { x: 0, y: 410, width: 330, height: 90 } },
+    });
+  }
+
+  it('is scrolled into view when it lands half above the top of the screen', async () => {
+    windowAt['bring-into-view'] = [-45, 90];
+    await arrive();
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+    // Its place in the page, and a little air above it.
+    expect(scrollTo).toHaveBeenCalledWith({ y: 410 - 16, animated: true });
+  });
+
+  it('is scrolled into view when it lands below the bottom of the screen', async () => {
+    windowAt['bring-into-view'] = [760, 90];
+    await arrive();
+    expect(scrollTo).toHaveBeenCalledWith({ y: 410 - 16, animated: true });
+  });
+
+  it('is left alone when it is already on the screen: nothing moves for no reason', async () => {
+    windowAt['bring-into-view'] = [200, 90];
+    await arrive();
+    expect(scrollTo).not.toHaveBeenCalled();
+  });
+
+  it('never scrolls above the top of the page', async () => {
+    windowAt['bring-into-view'] = [-45, 90];
+    contentY = 6;
+    await arrive();
+    expect(scrollTo).toHaveBeenCalledWith({ y: 0, animated: true });
   });
 });
 

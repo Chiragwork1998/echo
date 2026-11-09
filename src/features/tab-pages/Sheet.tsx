@@ -4,6 +4,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type PropsWithChildren,
@@ -18,6 +19,7 @@ import {
   StyleSheet,
   View,
   type KeyboardEvent,
+  type LayoutChangeEvent,
 } from 'react-native';
 import Animated, {
   Easing,
@@ -68,6 +70,14 @@ const SINK = 12;
  * and swallowing touches.
  */
 const UNMOUNT_CAP_MS = 1200;
+/**
+ * The window is made by the system after the commit and laid out at no size until it has its own, so
+ * the sheet does not begin to arrive until its window has said what size it is: an arrival timed from
+ * the commit is half spent, or over, when the window is first drawn (the walk, v10: a dialog first
+ * seen opaque and 68 dp above its place, another faint, the Support sheet whole with its scrim). This
+ * is only how long it waits for that word before arriving anyway, so no sheet is left invisible.
+ */
+const LAYOUT_WAIT_MS = 400;
 // Reduce Motion: the sheet and the scrim fade, and nothing travels.
 const REDUCED_IN_MS = tokens.motion.fast;
 const REDUCED_OUT_MS = 140;
@@ -164,6 +174,22 @@ export function Sheet({
   const present = animated ? mounted : visible;
   const leaving = present && !visible;
 
+  // The window has been laid out at a size of its own (see LAYOUT_WAIT_MS). Each window starts without.
+  const [placed, setPlaced] = useState(false);
+  if (!present && placed) setPlaced(false);
+  const onStageLayout = useCallback(({ nativeEvent: { layout } }: LayoutChangeEvent) => {
+    if (layout.width > 0 && layout.height > 0) setPlaced(true);
+  }, []);
+
+  // What the sheet says is what it said when it left: the words and the actions that were on it are
+  // not changed, added to or taken from, while it fades. A name written as the sheet closes brings an
+  // action with it, and a sheet that grows as it goes jumps (the walk, v10: about 120 px).
+  const said = useRef({ children, footer });
+  useLayoutEffect(() => {
+    if (visible) said.current = { children, footer };
+  });
+  const { children: body, footer: actions } = leaving ? said.current : { children, footer };
+
   const [shownKey, setShownKey] = useState(contentKey);
   const [handoff, setHandoff] = useState(false);
   if (contentKey !== shownKey) {
@@ -199,6 +225,8 @@ export function Sheet({
         y.set(0);
         return;
       }
+      // Its start state is what the window is first drawn with, and it arrives once it has a size.
+      if (!placed) return;
       const options = { reduceMotion: ReduceMotion.Never };
       dim.set(
         withTiming(1, {
@@ -251,7 +279,14 @@ export function Sheet({
         withTiming(SINK, { ...options, duration: SHEET_OUT_MS, easing: Easing.out(Easing.cubic) }),
       );
     }
-  }, [animated, dim, exited, fade, reduced, visible, y]);
+  }, [animated, dim, exited, fade, placed, reduced, visible, y]);
+
+  // A window that never says what size it is arrives anyway, a little late.
+  useEffect(() => {
+    if (!visible || !animated || !present || placed) return;
+    const late = setTimeout(() => setPlaced(true), LAYOUT_WAIT_MS);
+    return () => clearTimeout(late);
+  }, [animated, placed, present, visible]);
 
   // The window's last word, if the fade never reports. It lives in its own effect so that anything
   // that changes during the exit (the lock engaging, Reduce Motion) re-arms it rather than leaving
@@ -291,8 +326,15 @@ export function Sheet({
     >
       <LeavingContext.Provider value={leaving}>
         <View testID={leaving ? undefined : testID} style={styles.window}>
-          <Stage testID={testID} leaving={leaving} bottom={bottom} resting={resting}>
+          <Stage
+            testID={testID}
+            leaving={leaving}
+            bottom={bottom}
+            resting={resting}
+            onLayout={onStageLayout}
+          >
             <Animated.View
+              testID={testID && `${testID}-scrim`}
               pointerEvents="none"
               style={[StyleSheet.absoluteFill, styles.dim, scrim]}
             />
@@ -304,6 +346,7 @@ export function Sheet({
               importantForAccessibility="no"
             />
             <Animated.View
+              testID={testID && `${testID}-paper`}
               accessibilityViewIsModal
               onAccessibilityEscape={onClose}
               style={[
@@ -319,9 +362,9 @@ export function Sheet({
                   showsVerticalScrollIndicator={false}
                   keyboardShouldPersistTaps="handled"
                 >
-                  {children}
+                  {body}
                 </ScrollView>
-                {footer ? <View style={styles.footer}>{footer}</View> : null}
+                {actions ? <View style={styles.footer}>{actions}</View> : null}
               </Presented>
             </Animated.View>
           </Stage>
@@ -335,12 +378,19 @@ export function Sheet({
  * How much of the screen the keyboard has, from the bottom edge, in points, as it comes and goes.
  * Only while the sheet's window is there to be moved: the window is a window of its own, and the
  * keyboard is reported by the screen it is above.
+ *
+ * `frozen` while the sheet leaves: the keyboard is still reported, and remembered, but the room does
+ * not follow it, so nothing is laid out again under a sheet that is fading (the walk, v10: it jumped).
+ * The room catches up if the sheet comes back. `up` says whether the keyboard is raised right now.
  */
-function useKeyboardRoom(): SharedValue<number> {
+function useKeyboardRoom(frozen: boolean): { room: SharedValue<number>; up: () => boolean } {
   const room = useSharedValue(0);
-  useEffect(() => {
-    const ios = Platform.OS === 'ios';
-    const go = (height: number, duration?: number) =>
+  const latest = useRef(0);
+  const held = useRef(frozen);
+  const go = useCallback(
+    (height: number, duration?: number) => {
+      latest.current = height;
+      if (held.current) return;
       room.set(
         withTiming(height, {
           duration: duration || KEYBOARD_MS,
@@ -348,6 +398,11 @@ function useKeyboardRoom(): SharedValue<number> {
           reduceMotion: ReduceMotion.Never,
         }),
       );
+    },
+    [room],
+  );
+  useEffect(() => {
+    const ios = Platform.OS === 'ios';
     const shown = (event: KeyboardEvent) => {
       const { height, screenY } = event.endCoordinates;
       // iOS changes the keyboard's frame to take it away, too: below the screen is gone.
@@ -364,23 +419,43 @@ function useKeyboardRoom(): SharedValue<number> {
           Keyboard.addListener('keyboardDidHide', hidden),
         ];
     return () => subscriptions.forEach((subscription) => subscription.remove());
-  }, [room]);
-  return room;
+  }, [go]);
+  useEffect(() => {
+    const was = held.current;
+    held.current = frozen;
+    if (was && !frozen) go(latest.current);
+  }, [frozen, go]);
+  const up = useCallback(() => latest.current > 0, []);
+  return { room, up };
 }
 
 /**
  * The sheet's ground: the whole window, the sheet at its foot. The sheet is its own window, where
  * the page's keyboard handling cannot reach, so the ground gives way to the keyboard itself, and the
- * sheet, and its buttons, ride up above it. A sheet taller than what is left scrolls inside.
+ * sheet, and its buttons, ride up above it. A sheet taller than what is left scrolls inside. When the
+ * sheet leaves, the keyboard it raised is put away first (it would otherwise stay up over the page
+ * for as long as the system takes to notice that its window has gone), and the ground stays put.
  */
 function Stage({
   testID,
   leaving,
   bottom,
   resting,
+  onLayout,
   children,
-}: PropsWithChildren<{ testID?: string; leaving: boolean; bottom: number; resting: number }>) {
-  const room = useKeyboardRoom();
+}: PropsWithChildren<{
+  testID?: string;
+  leaving: boolean;
+  bottom: number;
+  resting: number;
+  onLayout: (event: LayoutChangeEvent) => void;
+}>) {
+  const { room, up } = useKeyboardRoom(leaving);
+  // Only a keyboard that this window raised: the page behind may have one of its own, and a sheet
+  // that closes (Keep your draft?) hands the screen back to it.
+  useEffect(() => {
+    if (leaving && up()) Keyboard.dismiss();
+  }, [leaving, up]);
   // Android reports the keyboard without the navigation bar it also covers.
   const under = Platform.OS === 'android' ? bottom : 0;
   // The visual harness has no keyboard, so it reserves the room of one by name. That is a plain
@@ -397,6 +472,7 @@ function Stage({
   return (
     <Animated.View
       testID={testID && `${testID}-stage`}
+      onLayout={onLayout}
       style={[styles.stage, ground]}
       pointerEvents={leaving ? 'none' : 'auto'}
       accessibilityElementsHidden={leaving}

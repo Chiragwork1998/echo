@@ -48,7 +48,7 @@ const LAYOUT_WAIT_MS = 250;
  * thing is drawn: it is shown already part of the way in, and reads as a pop. So it starts when the
  * layout is reported, or, if none ever is, a little later.
  */
-function useLaidOut(wait: boolean) {
+export function useLaidOut(wait: boolean) {
   const [placed, setPlaced] = useState(!wait);
   useEffect(() => {
     if (placed) return;

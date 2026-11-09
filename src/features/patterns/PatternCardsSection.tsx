@@ -19,6 +19,7 @@ import {
 } from '@/features/tab-pages/parts';
 import { Behind, useHandOver } from '@/features/tab-pages/Resolve';
 import { Reveal } from '@/features/tab-pages/Reveal';
+import { ScrollIntoView } from '@/features/tab-pages/ScrollIntoView';
 import { detail, prose, supporting } from '@/features/tab-pages/textStyles';
 import { useRequirePlus } from '@/services/plus';
 import { sendWaitingReports } from '@/services/reportCard';
@@ -175,27 +176,35 @@ export function PatternCardsSection({ entries }: { entries: readonly EntrySummar
     <View style={styles.section}>
       <Heading>{words.title}</Heading>
 
+      {/* An answer to the reading is put where it can be read: the page keeps its place when the
+          skeleton above goes, and a short notice could be left half above the top of the screen. */}
       {notice?.kind === 'support' && (
-        <SupportPanel context="patterns" onClose={cards.dismissNotice} />
+        <ScrollIntoView key="support">
+          <SupportPanel context="patterns" onClose={cards.dismissNotice} />
+        </ScrollIntoView>
       )}
-      {text &&
-        (code === 'allowance_used' ? (
-          <Notice message={text} actionLabel={words.getPlus} onAction={getPlus} />
-        ) : (
-          <Notice message={text} onAction={retry ? cards.read : undefined} />
-        ))}
+      {text && (
+        <ScrollIntoView key={text}>
+          {code === 'allowance_used' ? (
+            <Notice message={text} actionLabel={words.getPlus} onAction={getPlus} />
+          ) : (
+            <Notice message={text} onAction={retry ? cards.read : undefined} />
+          )}
+        </ScrollIntoView>
+      )}
 
-      {/* Each of these takes the place of the one before it, so each arrives (rising a little, 320 ms)
-          instead of cutting in. The skeleton that follows the consent is there at once: the consent
-          has gone in that very frame, and what replaces it must already be on the glass. */}
+      {/* Each of these takes the place of the one before it, and is there in the frame the one before
+          goes, never arriving from nothing: the glass of the page is cut when the person asks, so a
+          consent or a skeleton that began at nothing would leave the sky bare for the frames it takes
+          to start (a tenth of a second on a busy phone), then show its glass empty, then its words
+          (the walk, v9 and v10). So the consent, which only ever replaces what was on the page, is
+          drawn at rest, whole, and so is the skeleton that follows it. */}
       {cards.asking && (
-        <Reveal duration={tokens.motion.standard}>
-          <ConsentPanel
-            count={entriesToSend(entries)}
-            onAgree={cards.agree}
-            onDecline={cards.decline}
-          />
-        </Reveal>
+        <ConsentPanel
+          count={entriesToSend(entries)}
+          onAgree={cards.agree}
+          onDecline={cards.decline}
+        />
       )}
 
       {cards.reading && (
