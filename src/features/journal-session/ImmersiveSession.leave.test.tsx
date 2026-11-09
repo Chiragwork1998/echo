@@ -54,6 +54,14 @@ jest.mock('@/features/journal', () => ({
   ...jest.requireActual('@/features/journal'),
   useVoiceRecorder: jest.fn(),
 }));
+const mockReturnHome = jest.fn();
+jest.mock('@/features/home/dissolve', () => {
+  const actual = jest.requireActual('@/features/home/dissolve');
+  return {
+    ...actual,
+    useHomeDissolve: () => ({ ...actual.useHomeDissolve(), returnHome: mockReturnHome }),
+  };
+});
 jest.mock('@/services/permissions', () => ({
   requestMicrophonePermission: jest.fn(),
   openAppSettings: jest.fn(),
@@ -234,6 +242,46 @@ describe('leaving a daily page whose UI thread is behind or gone', () => {
     expect(router.dismissTo).not.toHaveBeenCalled();
     await tick(300);
     expect(router.dismissTo).toHaveBeenCalledWith('/home');
+  });
+});
+
+describe('Home, beneath the page', () => {
+  it('is asked back as the page begins to fade, and not once the screen has gone', async () => {
+    await open({ write: false });
+    expect(mockReturnHome).not.toHaveBeenCalled();
+    await back();
+    // Asked at once: its return runs on the UI thread from here, whatever is late after it.
+    expect(mockReturnHome).toHaveBeenCalledTimes(1);
+    expect(router.dismissTo).not.toHaveBeenCalled();
+    await tick(FADE_MS + 60);
+    expect(router.dismissTo).toHaveBeenCalledWith('/home');
+    expect(mockReturnHome).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([sessionCopy.leave.keep, sessionCopy.leave.discard])(
+    'is asked back when %s begins the fade, and not while the dialog asks',
+    async (label) => {
+      await open();
+      await back();
+      expect(openDialog()).not.toBeNull();
+      expect(mockReturnHome).not.toHaveBeenCalled();
+      await chooseInDialog(label);
+      await tick(FRAME_MS * 2);
+      expect(mockReturnHome).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('is not asked back by Stay, or by a draft that could not be kept', async () => {
+    await open();
+    await back();
+    await chooseInDialog(sessionCopy.leave.stay);
+    await tick(FADE_MS * 2);
+    expect(mockReturnHome).not.toHaveBeenCalled();
+    saveFails = true;
+    await back();
+    await chooseInDialog(sessionCopy.leave.keep);
+    await tick(FADE_MS * 2);
+    expect(mockReturnHome).not.toHaveBeenCalled();
   });
 });
 

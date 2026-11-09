@@ -41,7 +41,7 @@ import { useEasedKeys } from '@/features/book/useEasedKeys';
 import { volumeById, volumeIndex, VOLUMES } from '@/features/book/volumes';
 import { useRhythm } from '@/features/journal';
 import { usePreferences } from '@/state/preferences';
-import { useWhileHere } from '@/features/home/dissolve';
+import { useHomeDissolve, useWhileHere } from '@/features/home/dissolve';
 import { usePlateFrame, usePlatePoint } from '@/design/usePlatePoint';
 import { useReduceMotion } from '@/design/useReduceMotion';
 
@@ -352,7 +352,14 @@ export function ImmersiveSession({
   // its own animation, and the screen is popped when it has gone. The stack's fade was not seen on the walked
   // emulator, where the book and its controls vanished in one frame. The daily page only: First Echo's way out
   // is the onboarding stack's own. A touch on the page, or Back, while it goes is not heard.
+  //
+  // Home is asked back as the fade begins, and rises beneath the page as it goes. It is under this screen on
+  // Android (presented over it), and its return runs on the UI thread from that moment: it does not wait for
+  // the fade to report its end, the screen to be popped and unmounted, and the dissolve's grace after that, in
+  // turn. Waited for, those cost a bare photograph of a third of a second every time, and in walk v11 of 6.4
+  // and 9.7 s, twice, late in a long session.
   const { onDepart } = session;
+  const { returnHome } = useHomeDissolve();
   const departure = useSharedValue(0);
   const departureBegun = useUiBegun();
   const [departing, setDeparting] = useState(false);
@@ -378,9 +385,10 @@ export function ImmersiveSession({
             ),
           );
           departureBegun(watch.began);
+          returnHome();
         }),
     );
-  }, [departure, departureBegun, goingAway, onDepart, reduced, screenReader]);
+  }, [departure, departureBegun, goingAway, onDepart, reduced, returnHome, screenReader]);
   const gone = useAnimatedStyle(() => ({ opacity: 1 - departure.get() }));
 
   // The quiet things leave as the closing begins, and the notes on the page with them.
