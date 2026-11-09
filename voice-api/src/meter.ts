@@ -9,7 +9,7 @@
 import type { Entitlement, EntitlementOf, Plan } from './entitlement.js';
 import type { Counter, QuotaStore } from './store.js';
 
-export type Feature = 'voice' | 'patterns' | 'live-words' | 'tidy' | 'script';
+export type Feature = 'voice' | 'patterns' | 'live-words' | 'tidy' | 'script' | 'reflect' | 'format';
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -17,11 +17,31 @@ const HOUR = 60 * MINUTE;
 /**
  * Free: 60 minutes of voice into words a month, the first pattern reading, and no live words or tidy.
  * Plus: 20 hours a month (fair use), and caps no real practice comes near. `script` is the step that
- * writes Hindi in Roman script for words that never went through /api/transcribe.
+ * writes Hindi in Roman script for words that never went through /api/transcribe. `reflect` is
+ * today's echo, one for each entry kept. `format`, setting out an entry's words, has no allowance of
+ * its own (null): only the day's ceiling on model calls limits it.
  */
 export const ALLOWANCES = {
-  free: { voiceMs: 60 * MINUTE, readingsEver: 1, readingTries: 5, live: 0, tidy: 0, script: 300 },
-  plus: { voiceMs: 20 * HOUR, readings: 30, readingTries: 60, live: 300, tidy: 1_500, script: 3_000 },
+  free: {
+    voiceMs: 60 * MINUTE,
+    readingsEver: 1,
+    readingTries: 5,
+    live: 0,
+    tidy: 0,
+    script: 300,
+    reflect: 60,
+    format: null,
+  },
+  plus: {
+    voiceMs: 20 * HOUR,
+    readings: 30,
+    readingTries: 60,
+    live: 300,
+    tidy: 1_500,
+    script: 3_000,
+    reflect: 900,
+    format: null,
+  },
 } as const;
 
 /**
@@ -129,6 +149,11 @@ export function installCounters(
       return allowance.tidy > 0 ? [monthly('tidy', allowance.tidy)] : null;
     case 'script':
       return [monthly('script', allowance.script)];
+    case 'reflect':
+      return [monthly('reflect', allowance.reflect)];
+    case 'format':
+      // Nothing of the install's own to count: the day's ceiling is all that applies.
+      return [];
   }
 }
 

@@ -100,6 +100,8 @@ From `docs/PRODUCT_V1.md`, in `ALLOWANCES` in `src/meter.ts`. Months and days ar
 | Live words (`/api/live-session`) | None | 300 sessions a month |
 | Tidy | None: the words come back exact | 1,500 a month, then exact |
 | Hindi in Roman script on `/api/refine` | 300 a month, then as heard | 3,000 a month |
+| Today's echo (`/api/reflect`) | 60 a month | 900 a month |
+| Setting out (`/api/format`) | No allowance of its own: the day's ceiling | The same |
 
 Seconds are measured from the file (`src/measure.ts`), never from anything the phone says: WAV by its
 samples, counted to the end of the file whatever its header claims; ADTS frame by frame, the way ffmpeg
@@ -109,10 +111,11 @@ cannot be measured, including `.mp3` and `.webm`, is refused `415 unsupported_au
 
 Everything a request will cost is reserved before anything is sent to OpenAI. One that does not fit is
 refused `402 { error: 'allowance_used', feature, plan, resetsAt }` and spends nothing: `feature` is `voice`,
-`patterns` or `live-words`, and `resetsAt` is the next month's first moment, or null when waiting will not
+`patterns`, `live-words` or `reflect`, and `resetsAt` is the next month's first moment, or null when waiting will not
 help (live words on the free plan, or the free reading once it is used). A request that was let in and could
 not be served (OpenAI refused it, the converter was full) gives back what it took. Silence is not given
-back: OpenAI heard it. A reading that makes no cards gives the reading back but keeps the try.
+back: OpenAI heard it. A reading that makes no cards gives the reading back but keeps the try, and a
+reflection that is not written (support, `422 unusable`, a failure) is given back while its calls still count.
 `GET /api/allowance` returns `{ plan, voice: { usedSeconds, limitSeconds, resetsAt } }`, which the app reads
 before sending a long take in pieces, so a take that will not fit is kept whole rather than half spent.
 
@@ -130,7 +133,7 @@ instance for 30 seconds.
 
 `ECHO_DAILY_AUDIO_SECONDS` (default 36,000: ten hours) and `ECHO_DAILY_MODEL_CALLS` (default 3,000) cap a
 UTC day for the whole server, whoever is asking. Model calls are reserved at the most a request can make
-(two for a transcription, two for a reading) and settled at what it made. A live session cannot be measured
+(two for a transcription, a reading, a setting out or a reflection) and settled at what it made. A live session cannot be measured
 here, so it counts as five minutes of audio against the day (`LIVE_GUARD_MS`). Past a ceiling every request
 is refused `503 { error: 'busy', retryAfter }`, with a `retry-after` header, until the next UTC day. Set them
 from what the OpenAI project's spend cap allows: they are the brake, the spend cap is the wall.
@@ -160,7 +163,8 @@ logged in one line of those labels, and limited to 10 in ten minutes per instanc
 
 One line per request: the route, the status, the size and the time, and for an install its tag (the first
 12 hex characters of a SHA-256 of its id, `src/token.ts`), its plan, and which allowance refused it. Never
-words, audio, quotes, tokens or install ids.
+words, audio, quotes, tokens or install ids. `/api/format` and `/api/reflect` write the same line whatever
+the answer was: whether a text was set out, or whether support was the answer, is never in it.
 
 ### Environment
 
@@ -168,7 +172,7 @@ Required: `OPENAI_API_KEY`, `ECHO_VOICE_TOKEN`, `ECHO_INSTALL_SECRET`. For count
 above. Optional: `REVENUECAT_SECRET_KEY`, `ECHO_PLUS_INSTALLS`, `ECHO_LEGACY_TOKEN`,
 `ECHO_DAILY_AUDIO_SECONDS`, `ECHO_DAILY_MODEL_CALLS`, `ECHO_INSTALL_SECRET_PREVIOUS`,
 `ECHO_REQUIRE_ATTESTATION`, `ECHO_TRANSCRIBE_MODEL`, `ECHO_POLISH_MODEL`, `ECHO_PATTERNS_MODEL`,
-`ECHO_LIVE_DELAY`. Locally, `npm run dev` signs install tokens with a secret made for the run unless
+`ECHO_REFLECT_MODEL`, `ECHO_LIVE_DELAY`. Locally, `npm run dev` signs install tokens with a secret made for the run unless
 `ECHO_INSTALL_SECRET_FILE` names one. What is still needed before public launch is in "Before public
 launch" in `docs/SPEC_CONFLICTS.md`.
 
@@ -189,3 +193,54 @@ borrow from are in `src/lenses.ts`, paraphrased, with the author credited by nam
 
 Uses the OpenAI Responses API with `store: false` and strict JSON output. Optional:
 `ECHO_PATTERNS_MODEL` (default `gpt-6.1-sol`).
+
+## Setting out an entry
+
+`POST /api/format`, JSON `{ text }` of 1 to 100,000 characters, with an install token (or the shared token
+while legacy is allowed). Sets out an entry's words, written or spoken: paragraphs, punctuation and capitals,
+and nothing else (D-017). Returns `{ text, formatted }`. When `formatted` is false, `text` is the request's
+text exactly as it came, not even trimmed: it had fewer than three words, or the model's version changed a
+word twice. When it is true, `text` is the set-out version, and differs from what was sent.
+
+The model is `ECHO_POLISH_MODEL` (default `gpt-6.1-terra`), at temperature 0 with no reasoning, told it may
+change punctuation, capitals and whitespace (a paragraph is a blank line) and nothing else. Its version is
+kept only if it holds the same words in the same order as the text sent, and brings in no mark but ordinary
+punctuation that the text did not already hold: no markdown, bullets or emoji. The words are those of
+`words` in `src/format.ts`: NFC; curly quotes and apostrophes made straight; lower case; every character that
+is not a letter (with its marks), a digit, or an apostrophe or hyphen inside a word becomes a space; then
+split on whitespace. So "can not" and "cannot" differ, as do "gonna" and "going to", "3" and "three", and
+"well known" and "well-known", while "Don’t" and "don't" are the same. A version that fails is asked for
+once more, and a second failure returns the text unchanged. `words` and `sameWords` are exported so that
+the app mirrors them exactly: its journal refuses to store a version whose words differ from the entry's.
+
+Setting out has no allowance of its own: two model calls are reserved against the day's ceiling and settled
+at what was made. Failures: `400 bad_request` (no text, a blank one, or more than 100,000 characters), `401`
+as elsewhere, `503 busy` past the day's ceiling, and `502 upstream` when OpenAI fails, `retryable` unless
+OpenAI refused the request itself. Both tries share 100 of the function's 120 seconds, and a second starts
+only if there is as long left as the first took, so a very long entry may get one try. Holds nothing, and
+uses the Responses API with `store: false`.
+
+## Today's echo
+
+`POST /api/reflect`, JSON `{ text }` of 1 to 20,000 characters (the app sends an entry's first 20,000), with
+an install token. Writes a short reflection of one entry back to the person who wrote it (D-017). Returns
+`{ kind: 'reflection', text }`, one or two sentences of at most 220 characters, or `{ kind: 'support' }`
+when the entry suggests the person may be in danger: no reflection is written, and the app offers support
+instead. Holds nothing.
+
+The screen in `src/safety.ts` runs first, before any allowance is looked at and before anything is sent to
+OpenAI, so care is never refused and costs nothing. Then the model, `ECHO_REFLECT_MODEL` (default the
+patterns model, `gpt-6.1-sol`), answers in strict JSON `{ kind, text }` and is asked to flag danger too. Its
+instructions are `INSTRUCTIONS` in `src/reflect.ts`, which give the Completion golden as the register and
+tell the model never to reuse it. What it writes is checked there before anyone sees it: the length and the
+two sentences; no question mark; none of the words a pattern card may not use (`src/patterns.ts`), even as
+an echo; no "I", "AI" or "as an"; no link, email or phone number; no Devanagari (the app's serif has none),
+markdown or emoji; no advice, whether a sentence that opens with an instruction or a phrase such as "it
+might help"; and no platitude, prediction or therapy-speak unless it echoes the entry's own words. A
+reflection that itself speaks of self-harm becomes support. One that fails is asked for once more, and then
+the answer is `422 unusable`, which is not worth trying again.
+
+A reflection is taken from the month's allowance, reserved with two model calls before OpenAI is asked, and
+counts once it is written. Failures: `400 bad_request`, `401`, `402 allowance_used` with `feature:
+'reflect'`, `422 unusable`, `503 busy`, and `502 upstream` when OpenAI fails, `retryable` unless OpenAI
+refused the request itself. Uses the Responses API with `store: false`.

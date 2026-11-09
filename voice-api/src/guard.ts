@@ -51,6 +51,22 @@ export const logRoute = (
 export const fail = (status: number, code: string, retryable = false, headers?: Record<string, string>) =>
   json(status, { error: code, code, retryable }, headers);
 
+/**
+ * The `text` of a JSON body `{ text }`, exactly as it was sent, or null when the body is not JSON or
+ * the text is missing, blank, or longer than `max` characters (counted as JavaScript counts them).
+ */
+export function textFrom(raw: string, max: number): string | null {
+  let body: unknown;
+  try {
+    body = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof body !== 'object' || body === null) return null;
+  const { text } = body as { text?: unknown };
+  return typeof text === 'string' && text.length <= max && text.trim().length > 0 ? text : null;
+}
+
 export function tokenMatches(given: string | null, expected: string) {
   const a = Buffer.from(given ?? '');
   const b = Buffer.from(expected);

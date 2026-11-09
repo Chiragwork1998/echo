@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, mock, test } from 'node:test';
 
+import { POST as format } from '../api/format.js';
 import { POST as install } from '../api/install.js';
 import { POST as liveSession } from '../api/live-session.js';
 import { POST as refine } from '../api/refine.js';
+import { POST as reflect } from '../api/reflect.js';
 import { POST as transcribe } from '../api/transcribe.js';
 import { useStore } from './store.js';
 import { fixture, freshServer, SECRET, tokenFor, upload, VOICE_TOKEN } from './testing.js';
@@ -136,4 +138,71 @@ test('install and live-session log the install by its hash, and never the token 
   );
   assert.equal(live.status, 200);
   assert.deepEqual(Object.keys(onlyLine(token)).sort(), ['install', 'ms', 'plan', 'route', 'status']);
+});
+
+// --- setting out and today's echo -----------------------------------------------------------------
+
+const WRITTEN = 'monday was long and maya called and i cried a little on the bus home';
+const SET_OUT = 'Monday was long, and Maya called, and I cried a little on the bus home.';
+const REFLECTED = 'A long Monday, and a call from Maya that loosened something on the way home.';
+const WORDS = [WRITTEN, SET_OUT, REFLECTED, 'monday', 'Maya', 'cried', 'bus', 'loosened', 'formatted', 'kind', 'support'];
+
+/** OpenAI as both routes meet it: a reflection for the request with a schema, the set-out words otherwise. */
+const bothModels = (reflection: unknown = { kind: 'reflection', text: REFLECTED }) =>
+  (async (_url: string | URL | Request, init?: RequestInit) => {
+    const sent = JSON.parse(String(init?.body)) as { text?: { format?: unknown } };
+    const answer = sent.text?.format ? JSON.stringify(reflection) : SET_OUT;
+    return Response.json({ output: [{ type: 'message', content: [{ text: answer }] }] });
+  }) as typeof fetch;
+const writtenRequest = (route: string, ip: string, text: string, headers: Record<string, string>) =>
+  new Request(`http://x/api/${route}`, {
+    method: 'POST',
+    headers: { ...headers, 'x-forwarded-for': ip },
+    body: JSON.stringify({ text }),
+  });
+
+test('format and reflect log the route, the status, the size and the time, and nothing about the words', async () => {
+  globalThis.fetch = bothModels();
+  const token = tokenFor(INSTALL);
+  for (const [route, handler, ip] of [
+    ['format', format, '10.0.1.1'],
+    ['reflect', reflect, '10.0.1.2'],
+  ] as const) {
+    logged = [];
+    const response = await handler(writtenRequest(route, ip, WRITTEN, { 'x-echo-install-token': token }));
+    assert.equal(response.status, 200);
+    // The reply carries the words, because the phone needs them. The log does not.
+    assert.ok(JSON.stringify(await response.json()).includes(route === 'format' ? 'Maya' : 'loosened'));
+    const line = onlyLine(token);
+    for (const secret of WORDS) assert.ok(!logged[0]!.includes(secret), `${route}: ${secret}`);
+    assert.deepEqual(Object.keys(line).sort(), ['bytes', 'install', 'ms', 'route', 'status']);
+    assert.equal(line.route, route);
+    assert.equal(line.install, installTag(INSTALL));
+  }
+});
+
+test('reflect logs support exactly as a reflection, and format a text it left alone as one it set out', async () => {
+  const token = tokenFor(INSTALL);
+  const lines: Record<string, Record<string, unknown>> = {};
+  const run = async (name: string, route: 'format' | 'reflect', text: string, model: typeof fetch) => {
+    globalThis.fetch = model;
+    logged = [];
+    const handler = route === 'format' ? format : reflect;
+    const response = await handler(writtenRequest(route, `10.0.2.${Object.keys(lines).length + 1}`, text, { 'x-echo-install-token': token }));
+    assert.equal(response.status, 200, name);
+    const line = onlyLine(token);
+    for (const secret of WORDS) assert.ok(!logged[0]!.includes(secret), `${name}: ${secret}`);
+    lines[name] = line;
+  };
+  await run('reflection', 'reflect', WRITTEN, bothModels());
+  await run('support from the model', 'reflect', WRITTEN, bothModels({ kind: 'support', text: '' }));
+  await run('support from the screen', 'reflect', `${WRITTEN}. I want to end my life.`, bothModels());
+  await run('set out', 'format', WRITTEN, bothModels());
+  await run('too short to set out', 'format', 'so tired', bothModels());
+  await run('left alone', 'format', `${WRITTEN} and then i slept`, bothModels());
+  const shapes = Object.entries(lines).map(([name, line]) => [name, Object.keys(line).sort().join(','), line.status]);
+  for (const [name, keys, status] of shapes) {
+    assert.equal(keys, 'bytes,install,ms,route,status', String(name));
+    assert.equal(status, 200, String(name));
+  }
 });
