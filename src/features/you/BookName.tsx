@@ -1,11 +1,18 @@
 import { useEffect, useState } from 'react';
-import { Platform, StyleSheet, TextInput, View, type TextStyle } from 'react-native';
+import {
+  AccessibilityInfo,
+  Keyboard,
+  Platform,
+  StyleSheet,
+  TextInput,
+  View,
+  type TextStyle,
+} from 'react-native';
 
 import { tokens } from '@/design/tokens';
 import { NAME_MAX, sanitiseName } from '@/features/book/name';
 import { loadBookOwner, removeName, useBookOwner, writeName } from '@/features/book/owner';
 import { useTone } from '@/features/onboarding/rhythm/tone';
-import { showDialog } from '@/features/tab-pages/Dialog';
 import { Notice, Row, Section } from '@/features/tab-pages/parts';
 import { Sheet, SheetAction, SheetButton, SheetText, SheetTitle } from '@/features/tab-pages/Sheet';
 import { bookCopy } from '@/features/book/bookCopy';
@@ -71,6 +78,10 @@ function BookNameSheet({
 }) {
   const tone = useTone();
   const [value, setValue] = useState(name ?? '');
+  // Taking a name off asks once, as anything that cannot be seen again does. It asks on this sheet, its
+  // words handed over in place of the name's: a second sheet over it left this one dimmed behind, its
+  // heading and an edge showing above the question (the walk, v11).
+  const [asking, setAsking] = useState(false);
   const written = sanitiseName(value);
   const write = () => {
     if (!written) return;
@@ -79,60 +90,76 @@ function BookNameSheet({
       if (!kept) onFailed();
     });
   };
-  // Taking a name off asks once, as anything that cannot be seen again does.
-  const remove = () =>
-    showDialog(youCopy.bookNameRemoveTitle, youCopy.bookNameRemoveBody, [
-      { text: youCopy.bookNameCancel, style: 'cancel' },
-      {
-        text: youCopy.bookNameRemove,
-        style: 'destructive',
-        onPress: () => {
-          onClose();
-          void removeName().then((kept) => {
-            if (!kept) onFailed();
-          });
-        },
-      },
-    ]);
+  const ask = () => {
+    // The field goes with the name's words, and the keys with it.
+    Keyboard.dismiss();
+    setAsking(true);
+    AccessibilityInfo.announceForAccessibility(youCopy.bookNameRemoveTitle);
+  };
+  const remove = () => {
+    onClose();
+    void removeName().then((kept) => {
+      if (!kept) onFailed();
+    });
+  };
+  // Back, a tap outside, and Cancel all mean the same while it asks: the name's words come back.
+  const keep = () => setAsking(false);
   return (
     <Sheet
       visible={visible}
-      onClose={onClose}
+      onClose={asking ? keep : onClose}
+      contentKey={asking ? 'remove' : 'name'}
       testID="book-name-sheet"
       footer={
-        <View style={styles.footer}>
-          <SheetButton
-            label={bookCopy.name.write}
-            onPress={write}
-            disabled={!written || written === name}
-          />
-          {name ? <SheetAction label={youCopy.bookNameRemove} onPress={remove} /> : null}
-        </View>
+        asking ? (
+          <View style={styles.footer}>
+            <SheetAction label={youCopy.bookNameRemove} onPress={remove} />
+            <SheetAction label={youCopy.bookNameCancel} onPress={keep} />
+          </View>
+        ) : (
+          <View style={styles.footer}>
+            <SheetButton
+              label={bookCopy.name.write}
+              onPress={write}
+              disabled={!written || written === name}
+            />
+            {name ? <SheetAction label={youCopy.bookNameRemove} onPress={ask} /> : null}
+          </View>
+        )
       }
     >
-      <SheetTitle>{youCopy.bookName}</SheetTitle>
-      <SheetText>{bookCopy.name.line}</SheetText>
-      <TextInput
-        testID="book-name-sheet-field"
-        value={value}
-        onChangeText={setValue}
-        onSubmitEditing={write}
-        placeholder={bookCopy.name.placeholder}
-        placeholderTextColor={tone.inkSoft}
-        accessibilityLabel={bookCopy.name.placeholder}
-        // Kept from the phone's suggestion and autofill stores (docs/DATA_CONTRACT.md).
-        autoComplete="off"
-        importantForAutofill="no"
-        textContentType="none"
-        autoCorrect={false}
-        spellCheck={false}
-        autoCapitalize="words"
-        maxLength={NAME_MAX}
-        returnKeyType="done"
-        underlineColorAndroid="transparent"
-        maxFontSizeMultiplier={1.4}
-        style={[styles.field, NO_RING, { color: tone.ink, borderBottomColor: tone.inkSoft }]}
-      />
+      {asking ? (
+        <>
+          <SheetTitle>{youCopy.bookNameRemoveTitle}</SheetTitle>
+          <SheetText>{youCopy.bookNameRemoveBody}</SheetText>
+        </>
+      ) : (
+        <>
+          <SheetTitle>{youCopy.bookName}</SheetTitle>
+          <SheetText>{bookCopy.name.line}</SheetText>
+          <TextInput
+            testID="book-name-sheet-field"
+            value={value}
+            onChangeText={setValue}
+            onSubmitEditing={write}
+            placeholder={bookCopy.name.placeholder}
+            placeholderTextColor={tone.inkSoft}
+            accessibilityLabel={bookCopy.name.placeholder}
+            // Kept from the phone's suggestion and autofill stores (docs/DATA_CONTRACT.md).
+            autoComplete="off"
+            importantForAutofill="no"
+            textContentType="none"
+            autoCorrect={false}
+            spellCheck={false}
+            autoCapitalize="words"
+            maxLength={NAME_MAX}
+            returnKeyType="done"
+            underlineColorAndroid="transparent"
+            maxFontSizeMultiplier={1.4}
+            style={[styles.field, NO_RING, { color: tone.ink, borderBottomColor: tone.inkSoft }]}
+          />
+        </>
+      )}
     </Sheet>
   );
 }

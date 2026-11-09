@@ -20,6 +20,7 @@ import { UNAVAILABLE_CODES } from '@/services/transcription';
 import { useOnboarding } from '@/state/onboarding';
 import { liveAllowed, usePreferences, useVoiceStatus } from '@/state/preferences';
 
+import { afterTheKeys } from './afterTheKeys';
 import type { SessionMode } from './SegmentedMode';
 import type { ConsentKind } from './VoiceConsentSheet';
 import { sessionCopy } from './sessionCopy';
@@ -543,10 +544,19 @@ export function useSessionController({ variant, initialMode, draftId, become }: 
     if (removed.ok) depart();
     else setProblem(sessionCopy.errors.save);
   };
+  /**
+   * "Keep your draft?" is asked once the keys have gone. Asked with them up, its sheet was hidden behind
+   * them, and they then vanished under it in one frame, unseen by the page, which went on making room for
+   * them; so did the next session's book, which rose to the keys' place with none on the screen (the
+   * walk, v11). This holds the way to call the question off while it waits: Back again does nothing
+   * meanwhile, and a session that goes asks nothing.
+   */
+  const leaveAsked = useRef<(() => void) | null>(null);
+  useEffect(() => () => leaveAsked.current?.(), []);
   const back = () => {
     // Once the entry is being kept and the book is shutting, there is nothing to leave: it is saved. And a
     // page that is already going is not asked about again.
-    if (reflecting.current || departing.current) return;
+    if (reflecting.current || departing.current || leaveAsked.current) return;
     if (!hasWork) {
       letGoOfTheKeys();
       void draft.discard();
@@ -554,11 +564,14 @@ export function useSessionController({ variant, initialMode, draftId, become }: 
       return;
     }
     const { title, message, keep, discard, stay } = sessionCopy.leave;
-    showDialog(title, message, [
-      { text: keep, onPress: () => void keepDraft() },
-      { text: discard, style: 'destructive', onPress: () => void discardDraft() },
-      { text: stay, style: 'cancel' },
-    ]);
+    leaveAsked.current = afterTheKeys(() => {
+      leaveAsked.current = null;
+      showDialog(title, message, [
+        { text: keep, onPress: () => void keepDraft() },
+        { text: discard, style: 'destructive', onPress: () => void discardDraft() },
+        { text: stay, style: 'cancel' },
+      ]);
+    });
   };
   const latestBack = useRef(back);
   useEffect(() => {
