@@ -23,6 +23,7 @@ import { tokens } from '@/design/tokens';
 import { useReduceMotion } from '@/design/useReduceMotion';
 import { DialogHost, showDialog } from '@/features/tab-pages/Dialog';
 import { deleteAllLocal } from '@/services/deleteAllLocal';
+import { resumeFormatting } from '@/services/formatQueue';
 import { loadScreenCapture } from '@/services/nativeModules';
 import { startPlus } from '@/services/plus/engine';
 import { shouldOfferPlus, usePlusStore } from '@/services/plus/store';
@@ -305,6 +306,11 @@ function Content({ status, onSettled }: { status: GateStatus; onSettled: () => v
   useEffect(() => {
     if (ready) void warmPlateThumbs(target);
   }, [ready, target]);
+  // Entries kept before ECHO last closed that were still waiting to be set out (D-017). The queue
+  // waits for the launch to settle before it tries any of them.
+  useEffect(() => {
+    if (ready) resumeFormatting();
+  }, [ready]);
 
   return (
     <View style={styles.root}>

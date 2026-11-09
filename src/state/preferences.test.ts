@@ -1,6 +1,12 @@
 import { createTestRuntime, type TestRuntime } from '@/storage/testing/nodePorts';
 
-import { hydratePreferences, resetPreferences, usePreferences } from './preferences';
+import {
+  hydratePreferences,
+  READING_CONSENT_VERSION,
+  readingAgreed,
+  resetPreferences,
+  usePreferences,
+} from './preferences';
 
 let rt: TestRuntime;
 beforeEach(async () => {
@@ -43,6 +49,24 @@ describe('preferences', () => {
       theme: 'day',
       patternsConsent: 'patterns-1',
     });
+  });
+
+  it('reads only the current reading agreement as agreed, so the cards’ agreement of before asks again', async () => {
+    // The Pattern cards agreement (patterns-1) covered the cards alone. Today's echo and setting out
+    // what is written came under one agreement with them (D-017), and a new version.
+    expect(READING_CONSENT_VERSION).not.toBe('patterns-1');
+    expect(readingAgreed(READING_CONSENT_VERSION)).toBe(true);
+    expect(readingAgreed('patterns-1')).toBe(false);
+    expect(readingAgreed(null)).toBe(false);
+
+    await hydratePreferences(rt.db, rt.serial);
+    usePreferences.getState().setPatternsConsent('patterns-1');
+    await rt.serial(async () => undefined);
+    resetPreferences();
+    await hydratePreferences(rt.db, rt.serial);
+    // Kept as it was: nothing is decided for the person, who is asked when it is next needed.
+    expect(usePreferences.getState().patternsConsent).toBe('patterns-1');
+    expect(readingAgreed(usePreferences.getState().patternsConsent)).toBe(false);
   });
 
   it('forgets the agreement when everything is reset', async () => {

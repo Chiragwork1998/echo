@@ -144,6 +144,66 @@ describe.each([
     const { results } = unwrap(await journal.searchEntries('needle', { isCancelled: () => true }));
     expect(results).toEqual([]);
   });
+
+  describe('setting a kept entry out (D-017)', () => {
+    const SPOKEN =
+      'um so i walked to the river and i sat there for a while i didnt want to go back';
+    const SET_OUT =
+      'Um, so I walked to the river, and I sat there for a while.\n\nI didnt want to go back.';
+
+    it('replaces the body with the same words set out, and keeps everything else', async () => {
+      const kept = unwrap(
+        await journal.commitEntry(
+          'a',
+          text(SPOKEN, { mode: 'voice', title: 'River', promptId: 'p' }),
+        ),
+      );
+      const set = unwrap(await journal.reformatEntry('a', SET_OUT));
+      expect(set).toMatchObject({
+        body: SET_OUT,
+        title: 'River',
+        mode: 'voice',
+        promptId: 'p',
+        status: 'committed',
+        committedAt: kept.committedAt,
+        localDay: kept.localDay,
+      });
+      expect(unwrap(await journal.getEntry('a'))?.body).toBe(SET_OUT);
+      // Lists read it set out too: the title from the first line, the preview from all of it.
+      const [summary] = unwrap(await journal.listEntries());
+      expect(summary?.preview).toBe(
+        'Um, so I walked to the river, and I sat there for a while. I didnt want to go back.',
+      );
+    });
+
+    it('refuses any change to a word, and writes nothing', async () => {
+      unwrap(await journal.commitEntry('a', text(SPOKEN)));
+      for (const changed of [
+        'So I walked to the river, and I sat there for a while. I didnt want to go back.',
+        'Um, so I walked to the river, and I sat there for a while. I did not want to go back.',
+        'Um, so I walked to the river and sat there for a while. I didnt want to go back.',
+      ]) {
+        expect(await journal.reformatEntry('a', changed)).toEqual({
+          ok: false,
+          error: { code: 'not_same_words', retryable: false },
+        });
+      }
+      expect(unwrap(await journal.getEntry('a'))?.body).toBe(SPOKEN);
+    });
+
+    it('sets out only a kept entry: never a draft, a deleted entry, or none', async () => {
+      unwrap(await journal.saveDraft('draft', text(SPOKEN)));
+      unwrap(await journal.commitEntry('gone', text(SPOKEN)));
+      unwrap(await journal.deleteEntry('gone'));
+      for (const id of ['draft', 'gone', 'missing']) {
+        expect(await journal.reformatEntry(id, SET_OUT)).toMatchObject({
+          ok: false,
+          error: { code: 'not_found' },
+        });
+      }
+      expect(unwrap(await journal.getEntry('draft'))?.body).toBe(SPOKEN);
+    });
+  });
 });
 
 describe('search by date', () => {
@@ -322,6 +382,23 @@ describe('sql journal', () => {
       ]) {
         expect(stored.includes(secret)).toBe(false);
       }
+    });
+
+    it('seals an entry that has been set out exactly as any write', async () => {
+      const plain = 'i never told anyone about the letter i kept it in the drawer';
+      const setOut = 'I never told anyone about the letter. I kept it in the drawer.';
+      unwrap(await journal.commitEntry('entry', text(plain)));
+      const before = await sealedBytes('entry');
+      unwrap(await journal.reformatEntry('entry', setOut));
+      const after = await sealedBytes('entry');
+      expect(after.equals(before)).toBe(false);
+      expect(after[0]).toBe(1);
+      const stored = everyStoredByte(rt.root);
+      expect(stored.includes(setOut)).toBe(false);
+      expect(stored.includes('I kept it in the drawer')).toBe(false);
+      // It opens again, from disk, as the version set out.
+      const reopened = createSqlJournal(rt);
+      expect(unwrap(await reopened.getEntry('entry'))?.body).toBe(setOut);
     });
 
     it('keeps sealed columns as binary, never as text', async () => {

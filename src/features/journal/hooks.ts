@@ -3,6 +3,7 @@ import { AppState } from 'react-native';
 
 import {
   getEntry,
+  getReflection,
   getRhythm,
   latestDraft,
   latestEntry,
@@ -67,6 +68,21 @@ export function useEntry(id: string | null): AsyncData<Entry | null> {
 
 /** The newest committed entry. What Completion shows, including after a restart. */
 export const useLatestEntry = () => useJournalData(latestEntry);
+
+/**
+ * An entry's echo, if one was kept: read from this phone, never asked for (D-017). null when there
+ * is none, including after an answer of support, which is not a reflection and is never kept.
+ */
+export function useEntryReflection(id: string | null): AsyncData<string | null> {
+  const load = useCallback(async (): Promise<JournalResult<string | null>> => {
+    if (!id) return { ok: true, value: null };
+    const stored = await getReflection(id);
+    if (!stored.ok) return stored;
+    const kept = stored.value;
+    return { ok: true, value: kept?.status === 'complete' && kept.text ? kept.text : null };
+  }, [id]);
+  return useJournalData(load);
+}
 
 /** Refreshes when the app returns to the foreground, so that it rolls over at midnight. */
 export function useRhythm(): AsyncData<Rhythm> {

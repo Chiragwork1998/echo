@@ -56,13 +56,17 @@ describe('privacy rules', () => {
   // Server and identity): it asks ECHO's server for this install's token with the install id, which
   // holds no content, and nothing else. reportCard.ts was added the same day (docs/PRODUCT_V1.md,
   // See: "Report this card"): it sends a reason, a lens id, a model name and the app's version to
-  // ECHO's server, never a card's words or a person's.
+  // ECHO's server, never a card's words or a person's. readingApi.ts was added on 2026-11-09 (the
+  // contract D-017): it sends one kept entry's words to ECHO's server for today's echo, or to be set
+  // out, and only ever as reflection.ts and formatQueue.ts allow it, under the reading agreement, or
+  // for a spoken entry the voice agreement.
   const SOCKET = ['src/services/liveTranscription.ts'];
   const NETWORK = [
     'src/services/transcription.ts',
     'src/services/patterns.ts',
     'src/services/install.ts',
     'src/services/reportCard.ts',
+    'src/services/readingApi.ts',
     ...SOCKET,
   ];
   it.each(production.filter((path) => !NETWORK.includes(path)))(

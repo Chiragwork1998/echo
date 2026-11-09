@@ -8,9 +8,13 @@ import { tokens } from '@/design/tokens';
 import { useReduceMotion } from '@/design/useReduceMotion';
 import { useUiBegun, watchAnimation, type Watch } from '@/features/book/animationEnd';
 import { useLatestEntry, useReflection } from '@/features/journal';
+import { SupportSheet } from '@/features/you/SupportSheet';
+import { queueFormat } from '@/services/formatQueue';
+import { READING_CONSENT_VERSION, usePreferences } from '@/state/preferences';
 
 import { cardView } from './cardState';
 import { CompletionLayout } from './CompletionLayout';
+import { ReadingConsentSheet } from './ReadingConsentSheet';
 import { savedLine } from './text';
 
 // A reflection that is still coming is named only once it has taken this long. Resolving at once,
@@ -52,6 +56,20 @@ export function CompletionView({ mode, onEnter }: Props) {
   const [entering, setEntering] = useState(false);
   const [failed, setFailed] = useState(false);
   const busy = useRef(false);
+  // The reading agreement, asked only when the person opens it from the saved card, and the support
+  // sheet, opened from the card in place of a reflection. Neither stands between them and Enter your
+  // space: today's echo arrives when it arrives.
+  const [asking, setAsking] = useState(false);
+  const [supporting, setSupporting] = useState(false);
+  const { retry } = reflection;
+  const agree = useCallback(() => {
+    usePreferences.getState().setPatternsConsent(READING_CONSENT_VERSION);
+    setAsking(false);
+    // Today's echo is asked for at once. What was written is set out now that the agreement covers
+    // it, in the background; a spoken entry was handed over as it was kept, under the voice agreement.
+    retry();
+    if (entry && entry.mode === 'text') queueFormat(entry);
+  }, [entry, retry]);
 
   // Once, on arrival. A commit: this is the moment the practice is held, not a button press. Not
   // when the closing has just settled, so that the two never buzz one after the other. A cold start
@@ -150,19 +168,27 @@ export function CompletionView({ mode, onEnter }: Props) {
   });
 
   return (
-    <CompletionLayout
-      mode={mode}
-      view={view}
-      saved={savedLine(entry?.durationSeconds)}
-      savedVisible={latest.status !== 'loading'}
-      entering={entering}
-      failed={failed}
-      onEnter={() => void enter()}
-      onRetry={() => {
-        reflection.retry();
-        if (latest.status === 'error') void latest.refresh();
-      }}
-      leaving={lettingGo ? gone : undefined}
-    />
+    <>
+      <CompletionLayout
+        mode={mode}
+        view={view}
+        saved={savedLine(entry?.durationSeconds)}
+        savedVisible={latest.status !== 'loading'}
+        entering={entering}
+        failed={failed}
+        onEnter={() => void enter()}
+        onRetry={() => {
+          reflection.retry();
+          if (latest.status === 'error') void latest.refresh();
+        }}
+        onAsk={() => setAsking(true)}
+        onSupport={() => setSupporting(true)}
+        // An entry with no words, such as a recording that never became words, has none to read back.
+        entryId={entry?.preview ? entry.id : null}
+        leaving={lettingGo ? gone : undefined}
+      />
+      <ReadingConsentSheet visible={asking} onAgree={agree} onClose={() => setAsking(false)} />
+      <SupportSheet visible={supporting} onClose={() => setSupporting(false)} />
+    </>
   );
 }

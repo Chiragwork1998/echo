@@ -137,6 +137,26 @@ Counts only.
 The seven minute daily echo. Voice first, exact words, hidden or live words, the book, the living sky,
 encrypted on the phone. This is the core and it is verified. Change it only where this brief says.
 
+**After an entry is kept (D-017).**
+
+- **The words set out.** In the background, an entry's words are set out in paragraphs, punctuation
+  and capitals, with every word kept (`POST /api/format`). The server and the app each check the
+  words, and the journal refuses to store a version whose words differ. A spoken entry is set out
+  under the voice agreement, whose words say so (voice policy 3); a written one only under the reading
+  agreement. Nothing waits on it: not the closing of the book, not Completion. A failure is tried
+  again later, three tries at most.
+- **Today's echo.** Completion's card shows a line or two reflecting the entry back
+  (`POST /api/reflect`), under the reading agreement. Without the agreement, the saved card offers one
+  quiet action, "Hear it back", which opens the agreement on a sheet. When the entry suggests the
+  person may be in danger, the card shows no reflection: a gentle line, and "Talk to someone", which
+  opens the support sheet. Enter your space never waits for it. The Reader shows a kept echo above
+  an entry's words.
+- **Read it back.** The one change to the Completion golden's card: a quiet "Read it back" in its
+  foot opens the entry just kept, set out, inside the card under its echo, and closes again.
+- **One reading agreement** (`reading-2`) covers pattern cards, today's echo and setting out what is
+  written. It is asked in Patterns before a reading and from Completion's saved card, never while
+  someone journals, and withdrawn in Patterns' "Your choices".
+
 ### 3. Become (new, mornings)
 
 Joe Dispenza's daily structure, in ECHO's own words: decide in the morning who you will be, rehearse it

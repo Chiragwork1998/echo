@@ -4,14 +4,17 @@ import type { EntrySummary } from '@/features/journal';
 import { readPatternCards, type ReadFailure } from '@/services/patterns';
 import { usePlus, useRequirePlus } from '@/services/plus';
 import { markReadingUsed, usePlusStore } from '@/services/plus/store';
-import { usePreferences } from '@/state/preferences';
+import { READING_CONSENT_VERSION, usePreferences, useReadingAgreed } from '@/state/preferences';
 
 import { gatherEntries } from './gatherEntries';
 import { qaFreshAt } from './qaReading';
 import { clearReading, loadReading, saveReading, type SavedReading } from './readingStore';
 
-/** The wording of the consent. Change the words, change this, and everyone is asked again. */
-export const CONSENT_VERSION = 'patterns-1';
+/**
+ * The wording of the consent, which is the one reading agreement (today's echo and setting out what
+ * is written as well as the cards). Change the words, change it, and everyone is asked again.
+ */
+export const CONSENT_VERSION = READING_CONSENT_VERSION;
 
 export type CardsNotice =
   | { kind: 'none' }
@@ -51,7 +54,7 @@ export type PatternCards = {
  * Whatever goes wrong, the cards already on the phone stay.
  */
 export function usePatternCards(entries: readonly EntrySummary[]): PatternCards {
-  const agreed = usePreferences((state) => state.patternsConsent === CONSENT_VERSION);
+  const agreed = useReadingAgreed();
   const [saved, setSaved] = useState<SavedReading | null>(null);
   const [freshAt, setFreshAt] = useState<number | null>(qaFreshAt);
   const [loaded, setLoaded] = useState(false);
@@ -137,6 +140,7 @@ export function usePatternCards(entries: readonly EntrySummary[]): PatternCards 
 
   const decline = useCallback(() => setAsking(false), []);
 
+  // The whole agreement: today's echo and setting out what is written stop with the cards (D-017).
   const withdraw = useCallback(() => {
     usePreferences.getState().setPatternsConsent(null);
     setAsking(false);

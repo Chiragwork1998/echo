@@ -81,7 +81,9 @@ export type JournalErrorCode =
   | 'unreadable'
   /** Recording or playback is not available on this platform. */
   | 'unavailable'
-  | 'audio_failed';
+  | 'audio_failed'
+  /** A setting out whose words are not the stored entry's words. Nothing was written. */
+  | 'not_same_words';
 
 /** Never holds a message, only a code: errors can reach logs and must not carry journal content. */
 export type JournalError = { code: JournalErrorCode; retryable: boolean };
@@ -129,6 +131,13 @@ export interface Journal {
   saveDraft(id: string, content: EntryContent): Promise<JournalResult<{ updatedAt: number }>>;
   /** Resolves ok only once the entry is durable on disk. Safe to call twice. */
   commitEntry(id: string, content: EntryContent): Promise<JournalResult<Entry>>;
+  /**
+   * Replaces a kept entry's body with the same words set out: paragraphs, punctuation and capitals
+   * (D-017). Refused with `not_same_words`, and nothing written, unless `text` has exactly the words
+   * of the body as it is stored now (words.ts). Sealed as any write is. `not_found` for anything that
+   * is not a kept entry.
+   */
+  reformatEntry(id: string, text: string): Promise<JournalResult<Entry>>;
   /** Removes a draft and its audio completely. Drafts leave no tombstone. */
   discardDraft(id: string): Promise<JournalResult<void>>;
   getEntry(id: string): Promise<JournalResult<Entry | null>>;

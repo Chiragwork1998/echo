@@ -1,4 +1,4 @@
-import { cutAtWord, emptyContent, toSummary } from './content';
+import { cutAtWord, emptyContent, paragraphsOf, toSummary } from './content';
 import type { Entry } from './types';
 
 const entry = (patch: Partial<Entry>): Entry => ({
@@ -28,6 +28,18 @@ describe('cutAtWord', () => {
 
   it('cuts a word too long to break where it must', () => {
     expect(cutAtWord('Supercalifragilisticexpialidocious', 10)).toBe('Supercalif…');
+  });
+});
+
+describe('paragraphsOf', () => {
+  it('splits at blank lines, keeps a single break inside its paragraph, and drops empty ones', () => {
+    expect(paragraphsOf('First thought.\n\nSecond one,\nstill going.\n \n\n\nLast.')).toEqual([
+      'First thought.',
+      'Second one,\nstill going.',
+      'Last.',
+    ]);
+    expect(paragraphsOf('one\r\n\r\ntwo')).toEqual(['one', 'two']);
+    expect(paragraphsOf('   ')).toEqual([]);
   });
 });
 

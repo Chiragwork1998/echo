@@ -25,6 +25,19 @@ describe('cardView', () => {
     expect(view({ status: 'error' })).toEqual({ state: 'error' });
   });
 
+  it('shows support, and no reflection, when the entry asks for care', () => {
+    expect(view({ status: 'support' })).toEqual({ state: 'support' });
+  });
+
+  it('offers the reading agreement on the saved card when there is none, and only then', () => {
+    expect(view({ status: 'unagreed' })).toEqual({ state: 'offline', ask: true });
+    expect(view({ status: 'offline' })).toEqual({ state: 'offline' });
+    // Never over an entry that is still being read, or is not there.
+    expect(view({ status: 'unagreed' }, false, { status: 'loading', found: false })).toEqual({
+      state: 'offline',
+    });
+  });
+
   it('keeps the saved card while a reflection is still on its way, until the wait is worth naming', () => {
     expect(view({ status: 'pending' }, false)).toEqual({ state: 'offline' });
     expect(view({ status: 'pending' }, true)).toEqual({ state: 'loading' });
