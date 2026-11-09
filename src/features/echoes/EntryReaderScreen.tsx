@@ -224,6 +224,7 @@ export function EntryReaderScreen({ id }: { id: string | null }) {
         ready={view.kind !== 'loading'}
         skeleton={<PageSkeleton />}
         each
+        atOnce
         style={styles.stack}
       >
         {content}

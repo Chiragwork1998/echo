@@ -12,7 +12,6 @@ import type { EntrySummary } from '@/features/journal';
 
 import { echoesCopy } from './echoesCopy';
 import { EchoesList } from './EchoesList';
-import { hideEcho, resetRemovedEchoes } from './removed';
 
 jest.mock('@/design/useReduceMotion', () => ({ useReduceMotion: jest.fn(() => false) }));
 const reduced = useReduceMotion as jest.Mock;
@@ -42,7 +41,6 @@ const row = (id: string): EntrySummary => ({
 beforeEach(() => {
   delay.mockClear();
   timing.mockClear();
-  resetRemovedEchoes();
   reduced.mockReturnValue(false);
 });
 afterEach(() => {
@@ -94,9 +92,13 @@ describe('EchoesList while a search runs', () => {
 describe('EchoesList when an echo is deleted', () => {
   const FRAME = 16;
   const three = [row('a'), row('b'), row('c')];
+  const none: ReadonlySet<string> = new Set();
   // `render` wraps its element once; every redraw wraps its own, to keep the tree the same shape.
-  const list = (rows: EntrySummary[]) => wrap(<EchoesList rows={rows} onOpen={() => undefined} />);
-  const first = (rows: EntrySummary[]) => <EchoesList rows={rows} onOpen={() => undefined} />;
+  const list = (rows: EntrySummary[], deleted = none, inView = true) =>
+    wrap(<EchoesList rows={rows} onOpen={() => undefined} deleted={deleted} inView={inView} />);
+  const first = (rows: EntrySummary[], inView = true) => (
+    <EchoesList rows={rows} onOpen={() => undefined} inView={inView} />
+  );
   const advance = (ms: number) =>
     act(async () => {
       await jest.advanceTimersByTimeAsync(ms);
@@ -109,6 +111,8 @@ describe('EchoesList when an echo is deleted', () => {
     fireEvent(leaving(id)!, 'layout', {
       nativeEvent: { layout: { x: 0, y: 0, width: 330, height } },
     });
+  const deletedB = new Set(['b']);
+  const withoutB = [three[0]!, three[2]!];
 
   beforeEach(() => {
     jest.useFakeTimers();
@@ -122,8 +126,7 @@ describe('EchoesList when an echo is deleted', () => {
 
   it('holds the row in its place, hidden from everyone and untouchable, while it leaves', async () => {
     const view = await render(first(three));
-    await act(async () => hideEcho('b'));
-    await view.rerender(list([three[0]!, three[2]!]));
+    await view.rerender(list(withoutB, deletedB));
     // Still drawn, for the length of its exit: the rows below have not jumped up.
     expect(leaving('b')).toBeTruthy();
     expect(screen.queryByTestId('echo-row-b')).toBeNull();
@@ -134,13 +137,12 @@ describe('EchoesList when an echo is deleted', () => {
 
   it('fades and narrows to nothing, in step, and is gone when it has', async () => {
     const view = await render(first(three));
-    await act(async () => hideEcho('b'));
-    await view.rerender(list([three[0]!, three[2]!]));
+    await view.rerender(list(withoutB, deletedB));
     await measured('b', 68);
     const seen: Look[] = [];
     for (let at = 0; at < 300; at += FRAME) {
       await advance(FRAME);
-      await view.rerender(list([three[0]!, three[2]!]));
+      await view.rerender(list(withoutB, deletedB));
       if (leaving('b')) seen.push(lookOf('b'));
     }
     // Whole at 68 and fading as it narrows: neither goes back, and both reach nothing together.
@@ -156,15 +158,65 @@ describe('EchoesList when an echo is deleted', () => {
     expect(screen.getByTestId('echo-row-c')).toBeTruthy();
   });
 
+  it('waits whole in its place while the page is not in view, and leaves once it is', async () => {
+    // The walk (v11): the echo is deleted in the reader, above the list, and the row had faded and
+    // narrowed away under the reader before the list was seen again. It waits for the page.
+    const view = await render(first(three, false));
+    await view.rerender(list(withoutB, deletedB, false));
+    await measured('b', 68);
+    for (let at = 0; at < 1000; at += 100) {
+      await advance(100);
+      await view.rerender(list(withoutB, deletedB, false));
+      expect(lookOf('b').opacity ?? 1).toBe(1);
+      expect(lookOf('b').maxHeight ?? 68).toBeGreaterThanOrEqual(68);
+    }
+    // The page is in view again: now it goes, and is seen going.
+    await view.rerender(list(withoutB, deletedB, true));
+    await advance(5 * FRAME);
+    await view.rerender(list(withoutB, deletedB, true));
+    expect(lookOf('b').opacity).toBeLessThan(1);
+    expect(lookOf('b').opacity).toBeGreaterThan(0);
+    expect(lookOf('b').maxHeight).toBeLessThan(68);
+    await advance(400);
+    await view.rerender(list(withoutB, deletedB, true));
+    expect(leaving('b')).toBeNull();
+  });
+
+  it('never comes back once it has begun to leave, whatever the list is given while it goes', async () => {
+    // The list is read again while the row leaves: an answer from before the deletion still names
+    // it, one from after does not. The row is leaving either way, once, and then gone for good.
+    const view = await render(first(three));
+    await view.rerender(list(withoutB, deletedB));
+    await measured('b', 68);
+    await advance(3 * FRAME);
+    await view.rerender(list(withoutB, none));
+    expect(screen.queryByTestId('echo-row-b')).toBeNull();
+    expect(leaving('b')).toBeTruthy();
+    await advance(400);
+    await view.rerender(list(withoutB, none));
+    expect(leaving('b')).toBeNull();
+    expect(screen.queryByTestId('echo-row-b', { includeHiddenElements: true })).toBeNull();
+  });
+
+  it('finishes leaving if the page goes out of view part of the way through', async () => {
+    const view = await render(first(three));
+    await view.rerender(list(withoutB, deletedB));
+    await measured('b', 68);
+    await advance(3 * FRAME);
+    await view.rerender(list(withoutB, deletedB, false));
+    await advance(400);
+    await view.rerender(list(withoutB, deletedB, false));
+    expect(leaving('b')).toBeNull();
+  });
+
   it('still leaves if its size is never reported: it fades, and is taken away', async () => {
     const view = await render(first(three));
-    await act(async () => hideEcho('b'));
-    await view.rerender(list([three[0]!, three[2]!]));
+    await view.rerender(list(withoutB, deletedB));
     // Nothing says how big it is: it waits a little, and then goes anyway.
     await advance(300);
-    await view.rerender(list([three[0]!, three[2]!]));
+    await view.rerender(list(withoutB, deletedB));
     await advance(400);
-    await view.rerender(list([three[0]!, three[2]!]));
+    await view.rerender(list(withoutB, deletedB));
     expect(leaving('b')).toBeNull();
   });
 
@@ -178,11 +230,11 @@ describe('EchoesList when an echo is deleted', () => {
 
   it('keeps the hairlines right: the first row that remains has none above it', async () => {
     const view = await render(first(three));
-    await act(async () => hideEcho('a'));
-    await view.rerender(list([three[1]!, three[2]!]));
+    const deletedA = new Set(['a']);
+    await view.rerender(list([three[1]!, three[2]!], deletedA));
     await measured('a', 68);
     await advance(400);
-    await view.rerender(list([three[1]!, three[2]!]));
+    await view.rerender(list([three[1]!, three[2]!], deletedA));
     expect(leaving('a')).toBeNull();
     expect(screen.getByTestId('echo-row-b')).toBeTruthy();
   });
@@ -190,18 +242,18 @@ describe('EchoesList when an echo is deleted', () => {
   it('rolls up a whole month when its only echo is deleted, glass and all, and does not fade the glass', async () => {
     const october = { ...row('old'), localDay: '2026-10-05' };
     const rows = [row('a'), october];
+    const deletedOld = new Set(['old']);
     const view = await render(first(rows));
-    await act(async () => hideEcho('old'));
-    await view.rerender(list([rows[0]!]));
+    await view.rerender(list([rows[0]!], deletedOld));
     expect(
       screen.queryByTestId('echo-month-2026-10-leaving', { includeHiddenElements: true }),
     ).toBeTruthy();
     // Glass loses its blur under a fading ancestor: the month narrows, it never fades.
     expect(mostFadedGlass()).toBe(1);
     await advance(300);
-    await view.rerender(list([rows[0]!]));
+    await view.rerender(list([rows[0]!], deletedOld));
     await advance(400);
-    await view.rerender(list([rows[0]!]));
+    await view.rerender(list([rows[0]!], deletedOld));
     expect(
       screen.queryByTestId('echo-month-2026-10-leaving', { includeHiddenElements: true }),
     ).toBeNull();
@@ -211,15 +263,14 @@ describe('EchoesList when an echo is deleted', () => {
   it('under Reduce Motion fades only: nothing narrows, and the gap closes when it has faded', async () => {
     reduced.mockReturnValue(true);
     const view = await render(first(three));
-    await act(async () => hideEcho('b'));
-    await view.rerender(list([three[0]!, three[2]!]));
+    await view.rerender(list(withoutB, deletedB));
     await measured('b', 68);
     await advance(96);
-    await view.rerender(list([three[0]!, three[2]!]));
+    await view.rerender(list(withoutB, deletedB));
     expect(lookOf('b').opacity).toBeLessThan(1);
     expect(lookOf('b').maxHeight ?? 68).toBeGreaterThanOrEqual(68);
     await advance(400);
-    await view.rerender(list([three[0]!, three[2]!]));
+    await view.rerender(list(withoutB, deletedB));
     expect(leaving('b')).toBeNull();
   });
 });

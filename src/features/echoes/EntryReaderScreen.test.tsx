@@ -153,11 +153,11 @@ describe('EntryReaderScreen', () => {
     resetRemovedEchoes();
     await renderWithDialogs(<EntryReaderScreen id="one" />);
     await fireEvent.press(await screen.findByRole('button', { name: echoesCopy.delete }));
-    expect(useRemovedEchoes.getState().ids.has('one')).toBe(false);
+    expect(useRemovedEchoes.getState().deleted.has('one')).toBe(false);
     await chooseInDialog(echoesCopy.deleteConfirm);
     await waitFor(() => expect(router.back).toHaveBeenCalled());
     // Said before the person is taken back to the list, not after it has been read again.
-    expect(useRemovedEchoes.getState().ids.has('one')).toBe(true);
+    expect(useRemovedEchoes.getState().deleted.has('one')).toBe(true);
   });
 
   it('says nothing of an echo that was kept', async () => {
@@ -166,7 +166,7 @@ describe('EntryReaderScreen', () => {
     await renderWithDialogs(<EntryReaderScreen id="one" />);
     await fireEvent.press(await screen.findByRole('button', { name: echoesCopy.delete }));
     await chooseInDialog(echoesCopy.deleteCancel);
-    expect(useRemovedEchoes.getState().ids.size).toBe(0);
+    expect(useRemovedEchoes.getState().deleted.size).toBe(0);
   });
 
   it.each([

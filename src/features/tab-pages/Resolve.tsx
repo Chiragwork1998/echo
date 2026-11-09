@@ -266,6 +266,14 @@ type ResolveProps = PropsWithChildren<{
    * showed they still arrive as one, so nothing flashes in.
    */
   rows?: boolean;
+  /**
+   * A page's own first wait: the skeleton is drawn whole from the first frame, with the page's
+   * heading, instead of after 240 ms. The heading is drawn as the page appears, and alone on the sky
+   * for that quarter of a second it reads as a page that has lost its glass (the walk, v11: tabs
+   * tapped quickly showed Echoes and then Patterns as headings on bare sky for half a second). Later
+   * waits keep the pause.
+   */
+  atOnce?: boolean;
   style?: StyleProp<ViewStyle>;
 }>;
 
@@ -281,28 +289,38 @@ export function Resolve({
   skeleton,
   each = false,
   rows = false,
+  atOnce = false,
   style,
   children,
 }: ResolveProps) {
   const reduced = useReduceMotion();
-  const barsShown = useDelayedTrue(!ready, BARS_DELAY_MS);
+  // Whether what it waits on has ever been answered: until then, this is the page's first wait.
+  const [answered, setAnswered] = useState(ready);
+  if (ready && !answered) setAnswered(true);
+  const late = useDelayedTrue(!ready, BARS_DELAY_MS);
+  const barsShown = late || (atOnce && !ready && !answered);
   const [phase, setPhase] = useState<Phase>(ready ? 'settled' : 'waiting');
-  // What the wait looked like, remembered for the arrival: were the bars ever drawn?
+  // What the wait looked like, remembered for the arrival: were the bars ever drawn, so that they
+  // must be handed over from, and did it last, so that what comes may come in its own order? A
+  // first wait drawn at once and answered quickly hands over to what arrives as one.
   const [seen, setSeen] = useState(false);
+  const [waited, setWaited] = useState(false);
   const [leaving, setLeaving] = useState(false);
   // Fixed when the content arrives, so its tree never changes shape while it settles.
   const [ordered, setOrdered] = useState(false);
 
   if (barsShown && !seen) setSeen(true);
+  if (late && !waited) setWaited(true);
   if (!ready && phase !== 'waiting') {
     setPhase('waiting');
     setSeen(false);
+    setWaited(false);
     setLeaving(false);
     setOrdered(false);
   } else if (ready && phase === 'waiting') {
     setPhase('arriving');
     setLeaving(seen);
-    setOrdered(rows && seen && !reduced);
+    setOrdered(rows && waited && !reduced);
   }
 
   useEffect(() => {
@@ -345,8 +363,8 @@ export function Resolve({
               key={keyOf(item, index)}
               style={keep}
               animate={arriving}
-              delay={seen ? Math.min(index, CAP - 1) * STEP_MS : 0}
-              duration={seen ? ARRIVE_MS : BLOCK_MS}
+              delay={waited ? Math.min(index, CAP - 1) * STEP_MS : 0}
+              duration={waited ? ARRIVE_MS : BLOCK_MS}
             >
               {item}
             </Rise>

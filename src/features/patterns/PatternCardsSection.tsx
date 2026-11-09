@@ -17,6 +17,7 @@ import {
   Surface,
   usePlateText,
 } from '@/features/tab-pages/parts';
+import { PanelSwap, type Face } from '@/features/tab-pages/PanelSwap';
 import { Behind, useHandOver } from '@/features/tab-pages/Resolve';
 import { Reveal } from '@/features/tab-pages/Reveal';
 import { ScrollIntoView } from '@/features/tab-pages/ScrollIntoView';
@@ -24,7 +25,7 @@ import { detail, prose, supporting } from '@/features/tab-pages/textStyles';
 import { useRequirePlus } from '@/services/plus';
 import { sendWaitingReports } from '@/services/reportCard';
 
-import { ConsentPanel } from './ConsentPanel';
+import { ConsentChoices, ConsentWords } from './ConsentPanel';
 import { entriesToSend } from './gatherEntries';
 import { PatternCardView } from './PatternCardView';
 import { patternsCopy } from './patternsCopy';
@@ -78,23 +79,41 @@ function noticeText(notice: CardsNotice, hasCards: boolean): string | null {
 }
 
 /** While the entries are read: the shape of a card, and a line saying what is happening. */
-function Reading() {
+function ReadingWords() {
   return (
     <Loading label={words.reading} immediate>
-      <Surface strength="strong" radius={tokens.radius.card}>
-        <View style={styles.reading}>
-          <SkeletonLine width="62%" height={20} />
-          <View style={styles.readingLines}>
-            {(['94%', '88%', '52%'] as const).map((width) => (
-              <SkeletonLine key={width} width={width} height={11} />
-            ))}
-          </View>
-          <EchoText variant="bodyM" color="textSecondary" style={detail}>
-            {keepTogether(words.reading)}
-          </EchoText>
+      <View style={styles.reading}>
+        <SkeletonLine width="62%" height={20} />
+        <View style={styles.readingLines}>
+          {(['94%', '88%', '52%'] as const).map((width) => (
+            <SkeletonLine key={width} width={width} height={11} />
+          ))}
         </View>
-      </Surface>
+        <EchoText variant="bodyM" color="textSecondary" style={detail}>
+          {keepTogether(words.reading)}
+        </EchoText>
+      </View>
     </Loading>
+  );
+}
+
+/** The same, on its own glass: what stays under the cards while they arrive. */
+function Reading() {
+  return (
+    <Surface strength="strong" radius={tokens.radius.card}>
+      <ReadingWords />
+    </Surface>
+  );
+}
+
+/** What a reading is, before the first one. */
+function IntroWords() {
+  return (
+    <View style={styles.intro}>
+      <EchoText variant="bodyM" style={prose} maxFontSizeMultiplier={1.6}>
+        {keepTogether(words.intro)}
+      </EchoText>
+    </View>
   );
 }
 
@@ -143,20 +162,9 @@ export function PatternCardsSection({ entries }: { entries: readonly EntrySummar
   // arrive, so the sky is never bare between the two.
   const handing = useHandOver(cards.reading, saved?.readAt, HAND_OVER_MS);
 
-  // Whether the skeleton is what the consent gave way to. The consent is cut at the person's word, so
-  // a skeleton that began from nothing would leave the sky bare for the frames it takes to start.
-  const [seen, setSeen] = useState({
-    asking: cards.asking,
-    reading: cards.reading,
-    afterConsent: false,
-  });
-  if (seen.asking !== cards.asking || seen.reading !== cards.reading) {
-    setSeen({
-      asking: cards.asking,
-      reading: cards.reading,
-      afterConsent: cards.reading && (seen.afterConsent || (seen.asking && !cards.asking)),
-    });
-  }
+  // Whether the section has been laid out: what appears in it after that arrives, and what was
+  // there when it was first drawn came with the page.
+  const [drawn, setDrawn] = useState(false);
 
   if (!cards.loaded) return null;
 
@@ -172,8 +180,39 @@ export function PatternCardsSection({ entries }: { entries: readonly EntrySummar
   };
   const idle = !cards.asking && !cards.reading;
 
+  // The panel above the cards: before the first reading, what a reading is; then the agreement it
+  // waits on; then the reading itself. Each gives way to the next on the same glass (see PanelSwap):
+  // cut and drawn again, a panel left the sky bare for a frame, then its glass empty, then its words
+  // (the walk, v9 and v10); drawn whole in the very frame, it was a swap with no fade at all (v11).
+  let face: Face | null = null;
+  if (cards.asking) {
+    face = {
+      key: 'consent',
+      strong: true,
+      glass: <ConsentWords count={entriesToSend(entries)} />,
+      below: <ConsentChoices onAgree={cards.agree} onDecline={cards.decline} />,
+    };
+  } else if (cards.reading) {
+    face = { key: 'reading', strong: true, glass: <ReadingWords /> };
+  } else if (!saved) {
+    face = {
+      key: 'intro',
+      glass: <IntroWords />,
+      below: (
+        <View style={styles.again}>
+          <PrimaryCTA label={words.read} onPress={cards.read} />
+          {cards.needsPlus && <PlusNote />}
+        </View>
+      ),
+    };
+  }
+
   return (
-    <View style={styles.section}>
+    <View
+      testID="pattern-cards"
+      style={styles.section}
+      onLayout={drawn ? undefined : () => setDrawn(true)}
+    >
       <Heading>{words.title}</Heading>
 
       {/* An answer to the reading is put where it can be read: the page keeps its place when the
@@ -193,23 +232,11 @@ export function PatternCardsSection({ entries }: { entries: readonly EntrySummar
         </ScrollIntoView>
       )}
 
-      {/* Each of these takes the place of the one before it, and is there in the frame the one before
-          goes, never arriving from nothing: the glass of the page is cut when the person asks, so a
-          consent or a skeleton that began at nothing would leave the sky bare for the frames it takes
-          to start (a tenth of a second on a busy phone), then show its glass empty, then its words
-          (the walk, v9 and v10). So the consent, which only ever replaces what was on the page, is
-          drawn at rest, whole, and so is the skeleton that follows it. */}
-      {cards.asking && (
-        <ConsentPanel
-          count={entriesToSend(entries)}
-          onAgree={cards.agree}
-          onDecline={cards.decline}
-        />
-      )}
-
-      {cards.reading && (
-        <Reveal duration={tokens.motion.standard} skip={seen.afterConsent}>
-          <Reading />
+      {/* A reading asked for over the cards kept from the last one has no panel to take the place
+          of, and arrives as a panel does. Anything else the panel shows first is the page's own. */}
+      {face && (
+        <Reveal duration={tokens.motion.standard} skip={face.key !== 'reading'}>
+          <PanelSwap face={face} testID="cards-panel" />
         </Reveal>
       )}
 
@@ -252,39 +279,26 @@ export function PatternCardsSection({ entries }: { entries: readonly EntrySummar
         </View>
       )}
 
-      {idle && !saved && (
-        <>
-          <Surface radius={tokens.radius.card}>
-            <View style={styles.intro}>
-              <EchoText variant="bodyM" style={prose} maxFontSizeMultiplier={1.6}>
-                {keepTogether(words.intro)}
-              </EchoText>
-            </View>
-          </Surface>
-          <View style={styles.again}>
-            <PrimaryCTA label={words.read} onPress={cards.read} />
-            {cards.needsPlus && <PlusNote />}
-          </View>
-        </>
-      )}
-
+      {/* Agreeing brings these with the reading: they arrive, rather than appear in one frame. */}
       {(cards.agreed || saved) && !cards.asking && (
-        <Section title={patternsCopy.choices.title}>
-          {cards.agreed && (
-            <Row
-              label={patternsCopy.choices.withdraw}
-              detail={patternsCopy.choices.withdrawDetail}
-              onPress={cards.withdraw}
-            />
-          )}
-          {saved && (
-            <Row
-              label={patternsCopy.choices.deleteCards}
-              detail={patternsCopy.choices.deleteDetail}
-              onPress={cards.deleteCards}
-            />
-          )}
-        </Section>
+        <Reveal duration={tokens.motion.standard} skip={!drawn}>
+          <Section title={patternsCopy.choices.title}>
+            {cards.agreed && (
+              <Row
+                label={patternsCopy.choices.withdraw}
+                detail={patternsCopy.choices.withdrawDetail}
+                onPress={cards.withdraw}
+              />
+            )}
+            {saved && (
+              <Row
+                label={patternsCopy.choices.deleteCards}
+                detail={patternsCopy.choices.deleteDetail}
+                onPress={cards.deleteCards}
+              />
+            )}
+          </Section>
+        </Reveal>
       )}
 
       <ReportSheet

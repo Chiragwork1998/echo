@@ -1,5 +1,3 @@
-import { useEffect } from 'react';
-
 import {
   useEntries,
   useEntrySearch,
@@ -8,7 +6,7 @@ import {
   type EntrySummary,
 } from '@/features/journal';
 
-import { confirmGone, useRemovedEchoes } from './removed';
+import { useLeftOut } from './removed';
 
 const NONE_REMOVED: ReadonlySet<string> = new Set();
 
@@ -38,17 +36,19 @@ export type EchoesView =
 
 /**
  * What the Echoes page shows. Pure, so every state can be tested without a screen. `removed` are echoes
- * that have been deleted, which are not listed even while what was read still has them.
+ * that have been deleted, which are not listed even while what was read still has them, and
+ * `removedFromSearch` those that the search's answer is not to show (see useLeftOut).
  */
 export function deriveEchoesView(
   entries: Pick<AsyncData<EntrySummary[]>, 'status' | 'data'>,
   search: Pick<EntrySearch, 'status' | 'results' | 'unreadable'>,
   removed: ReadonlySet<string> = NONE_REMOVED,
+  removedFromSearch: ReadonlySet<string> = removed,
 ): EchoesView {
   if (search.status === 'searching') return { kind: 'searching' };
   if (search.status === 'error') return { kind: 'error', searching: true };
   if (search.status === 'ready') {
-    const results = live(search.results, removed);
+    const results = live(search.results, removedFromSearch);
     return results.length === 0
       ? { kind: 'no_matches', unreadable: search.unreadable }
       : { kind: 'list', rows: results, unreadable: search.unreadable, stale: false };
@@ -63,14 +63,8 @@ export function deriveEchoesView(
 export function useEchoes(query: string) {
   const entries = useEntries();
   const search = useEntrySearch(query);
-  const removed = useRemovedEchoes((state) => state.ids);
-  // Once the archive has been read without a deleted echo it is forgotten, so that the same echo
-  // brought back by a restored backup is listed.
-  const { data } = entries;
-  useEffect(() => {
-    if (data) confirmGone(new Set(data.map(({ id }) => id)));
-  }, [data]);
-  const view = deriveEchoesView(entries, search, removed);
+  const leftOut = useLeftOut(entries.data, query);
+  const view = deriveEchoesView(entries, search, leftOut.listed, leftOut.searched);
   // Retry whichever read failed. A failed search is retried by editing the query.
-  return { view, retry: entries.refresh };
+  return { view, retry: entries.refresh, deleted: leftOut.either };
 }

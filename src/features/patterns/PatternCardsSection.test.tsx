@@ -2,12 +2,14 @@ import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import { Dimensions, Linking, ScrollView, StyleSheet, View } from 'react-native';
 
+import { ThemeProvider } from '@/design/theme';
 import { createMemoryJournal, setJournal, type Entry } from '@/features/journal';
 import { deviceClock } from '@/features/journal/localDay';
 import { readPatternCards, type PatternCard } from '@/services/patterns';
 import { usePlusStore } from '@/services/plus/store';
 import { usePreferences } from '@/state/preferences';
 import { withBillingForTests, withoutBillingForTests } from '@/testing/plus';
+import { glassAncestors, mostFadedGlass } from '@/testing/glass';
 import { animationClock } from '@/testing/reanimatedMock';
 import { render } from '@/testing/render';
 
@@ -162,76 +164,170 @@ describe('pattern cards', () => {
     await waitFor(() => expect(skeleton()).toBeNull(), { timeout: 3000 });
   });
 
-  it('has the reading skeleton on the glass in the very frame the consent leaves: no bare sky between', async () => {
-    // The walk (v9): the consent went, the sky was bare for a frame, and the skeleton came. The
-    // consent is cut when the person agrees, so what takes its place is there in that frame, at rest,
-    // not arriving from nothing.
-    animationClock.stepped = true;
-    read.mockReturnValue(new Promise(() => undefined));
-    await render(<PatternsScreen />);
-    await press(patternsCopy.cards.read);
-    expect(await screen.findByText(patternsCopy.consent.title)).toBeTruthy();
-    // The page and the consent have finished arriving.
-    await act(async () => new Promise((done) => setTimeout(done, 900)));
-    await press(patternsCopy.consent.agree);
-    // Nothing has been advanced: this is the frame the tap was drawn in.
-    expect(screen.queryByText(patternsCopy.consent.title)).toBeNull();
-    // How whole the skeleton is, as it is drawn: the least opacity of it and everything above it.
-    let seen = 1;
-    for (
-      let node = screen.getByText(patternsCopy.cards.reading, {
-        includeHiddenElements: true,
-      }).parent;
-      node;
-      node = node.parent
-    ) {
-      const opacity = (StyleSheet.flatten(node.props.style) as { opacity?: number } | undefined)
-        ?.opacity;
-      seen = Math.min(seen, opacity ?? 1);
-    }
-    expect(seen).toBe(1);
-  });
+  // The walk (v9, v10): on "Read my patterns" the page's glass went, the sky was bare for a frame,
+  // the consent's glass came empty, and then its words. (v11): drawn whole in the very frame, it was
+  // a swap with no fade at all, and so was the reading skeleton after it. Each face of the panel
+  // now cross-fades into the next on the one glass, which is never faded and never empty.
+  describe('the panel above the cards', () => {
+    /** How see-through some words are as drawn: the least opacity of them and all above them. */
+    const seen = (text: string) => {
+      let least = 1;
+      const words = screen.queryByText(text, { includeHiddenElements: true });
+      if (!words) return 0;
+      for (let node = words.parent; node; node = node.parent) {
+        const opacity = (StyleSheet.flatten(node.props.style) as { opacity?: number } | undefined)
+          ?.opacity;
+        least = Math.min(least, opacity ?? 1);
+      }
+      return least;
+    };
+    const wait = (ms: number) => act(async () => new Promise((done) => setTimeout(done, ms)));
+    /** Draws the page again, so that what the UI thread has moved is read. */
+    const redraw = async (view: Awaited<ReturnType<typeof render>>) =>
+      view.rerender(
+        <ThemeProvider crossfade={false}>
+          <PatternsScreen />
+        </ThemeProvider>,
+      );
+    const settledPage = async () => {
+      animationClock.stepped = true;
+      const view = await render(<PatternsScreen />);
+      await screen.findByRole('button', { name: patternsCopy.cards.read });
+      // The page has finished arriving.
+      await wait(900);
+      return view;
+    };
+    const tap = async (name: string) => fireEvent.press(screen.getByRole('button', { name }));
+    const glassCount = () => glassAncestors().length;
 
-  it('has the consent on the glass, whole with its words, in the very frame the page it replaces leaves', async () => {
-    // The walk (v9, again in v10): on "Read my patterns" the glass of the page went, the sky was bare
-    // (a frame, and on a busy phone a tenth of a second), the consent's glass came empty, and then its
-    // words. The consent replaces the page's own glass in one commit, so it is drawn at rest in that
-    // commit, not arriving from nothing.
-    animationClock.stepped = true;
-    await render(<PatternsScreen />);
-    await screen.findByRole('button', { name: patternsCopy.cards.read });
-    // The page has finished arriving.
-    await act(async () => new Promise((done) => setTimeout(done, 900)));
-    await press(patternsCopy.cards.read);
-    // Nothing has been advanced: this is the frame the tap was drawn in.
-    const title = screen.getByText(patternsCopy.consent.title, { includeHiddenElements: true });
-    // How whole the consent is, as it is drawn: the least opacity of it and everything above it.
-    let seen = 1;
-    for (let node = title.parent; node; node = node.parent) {
-      const opacity = (StyleSheet.flatten(node.props.style) as { opacity?: number } | undefined)
-        ?.opacity;
-      seen = Math.min(seen, opacity ?? 1);
-    }
-    expect(seen).toBe(1);
-    // And nothing of what it replaced is left beside it, so no frame has two of them or none.
-    expect(screen.queryByText(patternsCopy.cards.intro)).toBeNull();
-  });
+    it('cross-fades the page’s words into the consent on the one glass: none of it is ever bare', async () => {
+      const view = await settledPage();
+      const pieces = glassCount();
+      await tap(patternsCopy.cards.read);
+      // The frame of the tap: the page's words are still whole, and the consent has not yet shown.
+      expect(seen(patternsCopy.cards.intro)).toBe(1);
+      expect(seen(patternsCopy.consent.title)).toBe(0);
+      expect(mostFadedGlass()).toBe(1);
+      // Already the consent's to hear and use, and the page's words are no one's.
+      expect(screen.getByRole('button', { name: patternsCopy.consent.agree })).toBeTruthy();
+      expect(screen.queryByText(patternsCopy.cards.intro)).toBeNull();
+      // Part of the way: both are there, one going as the other comes, on glass that stays whole.
+      await wait(140);
+      await redraw(view);
+      expect(seen(patternsCopy.cards.intro)).toBeGreaterThan(0);
+      expect(seen(patternsCopy.cards.intro)).toBeLessThan(1);
+      expect(seen(patternsCopy.consent.title)).toBeGreaterThan(0);
+      expect(seen(patternsCopy.consent.title)).toBeLessThan(1);
+      expect(mostFadedGlass()).toBe(1);
+      expect(glassCount()).toBe(pieces);
+      // Over: the consent alone, whole.
+      await wait(500);
+      await redraw(view);
+      expect(seen(patternsCopy.consent.title)).toBe(1);
+      expect(
+        screen.queryByText(patternsCopy.cards.intro, { includeHiddenElements: true }),
+      ).toBeNull();
+      expect(glassCount()).toBe(pieces);
+    });
 
-  it('keeps no frame empty when the consent is turned down: the page is back at once, whole', async () => {
-    animationClock.stepped = true;
-    await render(<PatternsScreen />);
-    await screen.findByRole('button', { name: patternsCopy.cards.read });
-    await act(async () => new Promise((done) => setTimeout(done, 900)));
-    await press(patternsCopy.cards.read);
-    await press(patternsCopy.consent.notNow);
-    const intro = screen.getByText(patternsCopy.cards.intro, { includeHiddenElements: true });
-    let seen = 1;
-    for (let node = intro.parent; node; node = node.parent) {
-      const opacity = (StyleSheet.flatten(node.props.style) as { opacity?: number } | undefined)
-        ?.opacity;
-      seen = Math.min(seen, opacity ?? 1);
-    }
-    expect(seen).toBe(1);
+    it('cross-fades the consent into the reading skeleton on the same glass when the person agrees', async () => {
+      read.mockReturnValue(new Promise(() => undefined));
+      const view = await settledPage();
+      await tap(patternsCopy.cards.read);
+      await wait(600);
+      await redraw(view);
+      await tap(patternsCopy.consent.agree);
+      // The frame of the tap: the consent is still whole, and the skeleton has not yet shown.
+      expect(seen(patternsCopy.consent.title)).toBe(1);
+      expect(seen(patternsCopy.cards.reading)).toBe(0);
+      expect(mostFadedGlass()).toBe(1);
+      await wait(140);
+      await redraw(view);
+      expect(seen(patternsCopy.consent.title)).toBeGreaterThan(0);
+      expect(seen(patternsCopy.consent.title)).toBeLessThan(1);
+      expect(seen(patternsCopy.cards.reading)).toBeGreaterThan(0);
+      expect(seen(patternsCopy.cards.reading)).toBeLessThan(1);
+      expect(mostFadedGlass()).toBe(1);
+      await wait(500);
+      await redraw(view);
+      expect(seen(patternsCopy.cards.reading)).toBe(1);
+      expect(
+        screen.queryByText(patternsCopy.consent.title, { includeHiddenElements: true }),
+      ).toBeNull();
+    });
+
+    it('cross-fades back to the page’s words when the consent is turned down: no frame is empty', async () => {
+      const view = await settledPage();
+      await tap(patternsCopy.cards.read);
+      await wait(600);
+      await redraw(view);
+      await tap(patternsCopy.consent.notNow);
+      expect(seen(patternsCopy.consent.title)).toBe(1);
+      expect(mostFadedGlass()).toBe(1);
+      await wait(140);
+      await redraw(view);
+      expect(seen(patternsCopy.consent.title)).toBeGreaterThan(0);
+      expect(seen(patternsCopy.cards.intro)).toBeGreaterThan(0);
+      await wait(500);
+      await redraw(view);
+      expect(seen(patternsCopy.cards.intro)).toBe(1);
+      expect(
+        screen.queryByText(patternsCopy.consent.title, { includeHiddenElements: true }),
+      ).toBeNull();
+    });
+
+    it('brings Your choices in when agreeing adds it, rather than drawing it in one frame', async () => {
+      read.mockReturnValue(new Promise(() => undefined));
+      const view = await settledPage();
+      // The section has been drawn, so what appears in it from now on arrives.
+      await fireEvent(screen.getByTestId('pattern-cards'), 'layout', {
+        nativeEvent: { layout: { x: 0, y: 0, width: 345, height: 700 } },
+      });
+      await tap(patternsCopy.cards.read);
+      await wait(600);
+      await redraw(view);
+      await tap(patternsCopy.consent.agree);
+      expect(seen(patternsCopy.choices.withdraw)).toBe(0);
+      // Its glass is not drawn until it moves, and then whole: never under a view part faded.
+      const glassUnder = () => glassAncestors().flat();
+      expect(glassUnder().every((opacity) => opacity === 0 || opacity === 1)).toBe(true);
+      await wait(140);
+      await redraw(view);
+      expect(glassUnder().every((opacity) => opacity === 0 || opacity === 1)).toBe(true);
+      await wait(800);
+      await redraw(view);
+      expect(seen(patternsCopy.choices.withdraw)).toBe(1);
+      expect(mostFadedGlass()).toBe(1);
+    });
+
+    it('eases the panel’s height from the one face’s to the other’s, so what is below it never jumps', async () => {
+      const view = await settledPage();
+      const part = (id: string) => screen.getByTestId(id, { includeHiddenElements: true });
+      const laidOut = (id: string, height: number) =>
+        fireEvent(part(id), 'layout', {
+          nativeEvent: { layout: { x: 0, y: 0, width: 345, height } },
+        });
+      type Size = { height?: number; minHeight?: number; maxHeight?: number };
+      const sizeOf = (id: string) => StyleSheet.flatten(part(id).props.style) as Size;
+      // The page's words are 120 tall on the glass.
+      await laidOut('cards-panel-glass-intro', 120);
+      await tap(patternsCopy.cards.read);
+      // In the frame of the tap the panel keeps the height it had.
+      expect(sizeOf('cards-panel-glass').height).toBe(120);
+      // The consent says it is 460 tall, and the panel goes there.
+      await laidOut('cards-panel-glass-consent', 460);
+      await wait(140);
+      await redraw(view);
+      const between = sizeOf('cards-panel-glass');
+      expect(between.maxHeight).toBeGreaterThan(120);
+      expect(between.maxHeight).toBeLessThan(460);
+      expect(between.minHeight).toBe(between.maxHeight);
+      await wait(600);
+      await redraw(view);
+      // Let go: the panel is the consent's own height again, and nothing holds it.
+      expect(sizeOf('cards-panel-glass').height).toBeUndefined();
+      expect(sizeOf('cards-panel-glass').maxHeight).toBeGreaterThan(10000);
+    });
   });
 
   it('keeps the earlier cards and says so calmly when the reader cannot be reached', async () => {
