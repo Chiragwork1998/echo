@@ -254,17 +254,54 @@ describe('the next screen', () => {
     });
   });
 
-  it('goes at 180 ms under Reduce Motion, with a single commit and no leaf', async () => {
-    mockReduced = true;
-    await writeEntry();
-    await reflect();
-    expect(screen.queryByTestId('book-closing-leaf')).toBeNull();
-    await tick(CLOSE_REDUCED_MS - 40);
-    expect(router.navigate).not.toHaveBeenCalled();
-    await tick(80);
-    expect(navigated()).toEqual(['/home/complete']);
-    expect(cue).toHaveBeenCalledTimes(1);
-    expect(cue).toHaveBeenCalledWith('commit');
+  describe('under Reduce Motion', () => {
+    // The book fades where it is, and the next screen is asked for as the fade BEGINS, so that it arrives over
+    // the fading book: asked for when the book had gone (180 ms later), the sky was bare for as long as the
+    // screen took to mount (0.73 s on the walked emulator).
+    beforeEach(() => {
+      mockReduced = true;
+    });
+
+    it('asks for the next screen as the book begins to fade, with a single commit and no leaf', async () => {
+      await writeEntry();
+      await reflect();
+      expect(screen.queryByTestId('book-closing-leaf')).toBeNull();
+      // The first frames of the fade: well before its 180 ms are up.
+      await tick(3 * FRAME_MS);
+      expect(navigated()).toEqual(['/home/complete']);
+      expect(CLOSE_REDUCED_MS).toBeGreaterThan(3 * FRAME_MS * 2);
+      expect(cue).toHaveBeenCalledTimes(1);
+      expect(cue).toHaveBeenCalledWith('commit');
+      await tick(3000);
+      expect(router.navigate).toHaveBeenCalledTimes(1);
+      expect(cue).toHaveBeenCalledTimes(1);
+    });
+
+    it('asks for it as the UI thread begins the fade, however late that is, and not at the fade’s end', async () => {
+      await writeEntry();
+      animationClock.lag = 700;
+      await reflect();
+      // Where it used to ask: 180 ms in, with the book not yet fading.
+      await tick(CLOSE_REDUCED_MS + 300);
+      expect(router.navigate).not.toHaveBeenCalled();
+      await tick(300);
+      expect(navigated()).toEqual(['/home/complete']);
+      await tick(3000);
+      expect(router.navigate).toHaveBeenCalledTimes(1);
+    });
+
+    it('asks for it with the book still on its way out: the fade has not ended when the screen is asked for', async () => {
+      await writeEntry();
+      await reflect();
+      let atAsk: number | undefined;
+      jest.mocked(router.navigate).mockImplementation(() => {
+        atAsk = Date.now();
+      });
+      const began = Date.now();
+      await tick(CLOSE_REDUCED_MS);
+      expect(atAsk).toBeDefined();
+      expect(atAsk! - began).toBeLessThan(CLOSE_REDUCED_MS / 2);
+    });
   });
 
   it('does not close, and does not leave, when the entry could not be kept', async () => {
@@ -293,8 +330,12 @@ describe('First Echo', () => {
     await fireEvent.press(volume());
     await tick(1500);
     await fireEvent.press(volume());
-    // The shelf lets the volume go before the book comes forward.
+    // The shelf lets the volume go once the book has drawn its first frame.
     await tick(1200);
+    await fireEvent(screen.getByTestId('book-stage', { includeHiddenElements: true }), 'layout', {
+      nativeEvent: { layout: { x: 0, y: 0, width: 355, height: 416 } },
+    });
+    await tick(400);
     // A tap says enough to the book coming forward and opening.
     await fireEvent.press(screen.getByTestId('session-scenery'));
     await tick(HURRY_MS + 50);

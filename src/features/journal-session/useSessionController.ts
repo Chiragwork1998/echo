@@ -169,6 +169,27 @@ export function useSessionController({ variant, initialMode, draftId, become }: 
       if (leaving.current === play) leaving.current = null;
     };
   }, []);
+  // What plays when the person leaves without Reflect (Back, then Keep draft or Discard; or Back on a page
+  // with nothing on it), before the screen is popped: the page fading out by its own animation. The stack's
+  // own fade was not seen on the walked emulator, where the book and its controls went in one frame. A page
+  // that does not register one is left at once.
+  const farewell = useRef<(() => Promise<void>) | null>(null);
+  const onDepart = useCallback((play: () => Promise<void>) => {
+    farewell.current = play;
+    return () => {
+      if (farewell.current === play) farewell.current = null;
+    };
+  }, []);
+  // The person has chosen to leave, and the page is on its way out: nothing more is asked of them.
+  const departing = useRef(false);
+  // A page that has gone by some other way while it faded does not pop the screen beneath it as well.
+  const here = useRef(true);
+  useEffect(() => {
+    here.current = true;
+    return () => {
+      here.current = false;
+    };
+  }, []);
 
   // A person told the microphone is off goes to Settings, allows it, and comes back. The note must
   // not still say it is off over a page that does nothing when touched, so coming back to the
@@ -486,27 +507,50 @@ export function useSessionController({ variant, initialMode, draftId, become }: 
     if (transcriptionKind === 'idle') void latestFinish.current();
   }, [transcribing, transcriptionKind]);
 
+  /**
+   * Leaves for the screen this one opened from, once the page has gone: faded out by its own animation, if it
+   * has one. The keys are let go before this, at the moment of the choice (see `letGoOfTheKeys`).
+   */
+  const depart = () => {
+    const play = farewell.current;
+    if (!play) return goBack(variant);
+    departing.current = true;
+    void closed(play).then(() => {
+      if (here.current) goBack(variant);
+    });
+  };
+  /**
+   * The field lets go of the keys. It is done as the choice to leave is made, while the dialog that asked is
+   * still up: a field left focused is given the keys back by the system when that dialog's window goes, over a
+   * page that is already leaving (the walked emulator raised them again 1.4 s after Keep draft). Stay does not
+   * do it, and the person is typing again.
+   */
+  const letGoOfTheKeys = () => Keyboard.dismiss();
   const keepDraft = async () => {
+    letGoOfTheKeys();
     if (voice.state === 'recording') await voice.stop();
     draft.update({ durationSeconds: elapsed });
     const saved = await draft.flush();
-    if (saved.ok) goBack(variant);
+    if (saved.ok) depart();
     else setProblem(sessionCopy.errors.save);
   };
   const discardDraft = async () => {
+    letGoOfTheKeys();
     dropLive();
     if (voice.state === 'recording') await voice.cancel();
     transcription.abandon();
     const removed = await draft.discard();
-    if (removed.ok) goBack(variant);
+    if (removed.ok) depart();
     else setProblem(sessionCopy.errors.save);
   };
   const back = () => {
-    // Once the entry is being kept and the book is shutting, there is nothing to leave: it is saved.
-    if (reflecting.current) return;
+    // Once the entry is being kept and the book is shutting, there is nothing to leave: it is saved. And a
+    // page that is already going is not asked about again.
+    if (reflecting.current || departing.current) return;
     if (!hasWork) {
+      letGoOfTheKeys();
       void draft.discard();
-      goBack(variant);
+      depart();
       return;
     }
     const { title, message, keep, discard, stay } = sessionCopy.leave;
@@ -638,6 +682,7 @@ export function useSessionController({ variant, initialMode, draftId, become }: 
     reflect,
     back,
     onLeave,
+    onDepart,
   };
 }
 

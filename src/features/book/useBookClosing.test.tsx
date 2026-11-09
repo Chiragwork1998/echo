@@ -253,20 +253,47 @@ describe('a tap that says enough', () => {
 });
 
 describe('Reduce Motion', () => {
-  it('fades the book with everything else and asks for the next screen at 180 ms, with one commit', async () => {
-    const { begin, went, state } = await closing(FULL, true);
+  // The book fades where it is, in 180 ms, and the next screen is asked for as that fade BEGINS: asked for as it
+  // ended, the next screen (a quarter of a second to most of a second to mount) came after the book had gone, and
+  // the sky was bare for as long as it took (0.73 s on the walked emulator). Asked for as the fade begins, it
+  // arrives over the fading book. "Begins" is the UI thread's: the book says so, however late that is.
+  it('fades the book with everything else, and asks for the next screen as the fade begins, with one commit', async () => {
+    const { begin, went, state, sinkBegun } = await closing(FULL, true);
     await begin();
     expect(state()).toMatchObject({ reduced: true, sinking: true });
-    await tick(CLOSE_REDUCED_MS - 1);
+    expect(went()).toBe(false);
+    await sinkBegun();
+    expect(went()).toBe(true);
+    expect(cue).toHaveBeenCalledTimes(1);
+    expect(cue).toHaveBeenCalledWith('commit');
+    // Nothing is waited for, or felt, at the end of the fade.
+    await tick(CLOSE_REDUCED_MS + 2000);
+    expect(cue).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not ask for the next screen until the UI thread has begun the fade, however late that is', async () => {
+    const { begin, went, sinkBegun } = await closing(FULL, true);
+    await begin();
+    // The fade's own time has long passed on the clock; the UI thread has not begun it.
+    await tick(CLOSE_REDUCED_MS + 5000);
+    expect(went()).toBe(false);
+    expect(cue).not.toHaveBeenCalled();
+    await sinkBegun();
+    expect(went()).toBe(true);
+  });
+
+  it('goes on anyway only when the fade is never begun at all, a very long time after', async () => {
+    const { begin, went } = await closing(FULL, true);
+    await begin();
+    await tick(CLOSE_REDUCED_MS + UI_HANG_MS - 1);
     expect(went()).toBe(false);
     await tick(1);
     expect(went()).toBe(true);
     expect(cue).toHaveBeenCalledTimes(1);
-    expect(cue).toHaveBeenCalledWith('commit');
   });
 
-  it('shows the closed cover first when there is a question to ask, and then fades', async () => {
-    const { begin, went, state } = await closing(FULL, true);
+  it('shows the closed cover first when there is a question to ask, and then fades, asking as the fade begins', async () => {
+    const { begin, went, state, sinkBegun } = await closing(FULL, true);
     let answer!: () => void;
     await begin({ asking: true, atContact: () => new Promise<void>((r) => (answer = r)) });
     expect(state()).toMatchObject({ reduced: true, sinking: false });
@@ -275,7 +302,20 @@ describe('Reduce Motion', () => {
     await act(async () => answer());
     await tick(0);
     expect(state()).toMatchObject({ sinking: true });
-    await tick(CLOSE_REDUCED_MS);
+    expect(went()).toBe(false);
+    await sinkBegun();
     expect(went()).toBe(true);
+  });
+
+  it('does not ask for the next screen when the entry is hurried away before the fade begins', async () => {
+    const { begin, hurry, went, sinkBegun } = await closing(FULL, true);
+    await begin();
+    await hurry();
+    await tick(CLOSE_REDUCED_MS + 500);
+    // The hurried closing has its own word: the UI thread begins the hurried sink, and the screen goes on.
+    expect(went()).toBe(false);
+    await sinkBegun();
+    expect(went()).toBe(true);
+    expect(cue).not.toHaveBeenCalled();
   });
 });

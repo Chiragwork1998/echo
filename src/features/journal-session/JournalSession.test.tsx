@@ -355,7 +355,8 @@ describe('JournalSession Back', () => {
     const input = await open('daily');
     await fireEvent(input(), 'blur');
     await fireEvent.press(screen.getByTestId('quiet-back'));
-    expect(router.dismissTo).toHaveBeenCalledWith('/home');
+    // The page fades out first, and the screen is popped when it has gone (./ImmersiveSession.leave.test).
+    await waitFor(() => expect(router.dismissTo).toHaveBeenCalledWith('/home'));
     expect(router.navigate).not.toHaveBeenCalled();
   });
 
@@ -368,7 +369,7 @@ describe('JournalSession Back', () => {
     await fireEvent(input(), 'blur');
     await fireEvent.press(screen.getByTestId('quiet-back'));
     await chooseInDialog(label);
-    expect(router.dismissTo).toHaveBeenCalledWith('/home');
+    await waitFor(() => expect(router.dismissTo).toHaveBeenCalledWith('/home'));
     expect(router.navigate).not.toHaveBeenCalled();
   });
 

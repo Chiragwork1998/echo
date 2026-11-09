@@ -5,6 +5,7 @@ import { BackHandler, Keyboard, Pressable, StyleSheet, TextInput, View } from 'r
 import Animated, {
   Easing,
   ReduceMotion,
+  runOnJS,
   useAnimatedKeyboard,
   useAnimatedStyle,
   useSharedValue,
@@ -19,7 +20,7 @@ import { cue } from '@/design/haptics';
 import { useLayout } from '@/design/layout';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
-import { useUiBegun } from '@/features/book/animationEnd';
+import { useUiBegun, watchAnimation } from '@/features/book/animationEnd';
 import { BookPage, useBookFrame } from '@/features/book/BookPage';
 import { controlsBottom, keyboardRise, restingDrop } from '@/features/book/bookPlace';
 import type { Inscribing } from '@/features/book/CoverArt';
@@ -173,6 +174,10 @@ export function ImmersiveSession({
   // The shelf stays until it has finished leaving, which is after the book has been asked for: the book
   // comes as the shelf's last light goes, and there is never a frame of neither.
   const [shelfLeaving, setShelfLeaving] = useState(false);
+  // The book has drawn its first frame. The shelf is kept, part of the way gone, until it has: the shelf's own
+  // fade ran on the UI thread while JS mounted the book, and ended before the book drew (the walked emulator
+  // showed an empty navy frame for 0.51 s, and for 0.12 s the next time).
+  const [bookDrawn, setBookDrawn] = useState(false);
   const [opened, setOpened] = useState(!book);
   const volume = volumeById(picked ?? volumePin() ?? remembered ?? undefined);
   // How many echoes the book holds: a count and nothing else, so that a thicker book riffles a few
@@ -336,6 +341,41 @@ export function ImmersiveSession({
     });
   }, [ask, bookInView, onLeave, ownable, pageOpen, shut]);
 
+  // Leaving without Reflect (Back, then Keep draft or Discard; or Back on an empty page): the page fades out by
+  // its own animation, and the screen is popped when it has gone. The stack's fade was not seen on the walked
+  // emulator, where the book and its controls vanished in one frame. The daily page only: First Echo's way out
+  // is the onboarding stack's own. A touch on the page, or Back, while it goes is not heard.
+  const { onDepart } = session;
+  const departure = useSharedValue(0);
+  const departureBegun = useUiBegun();
+  const [departing, setDeparting] = useState(false);
+  const goingAway = session.daily;
+  useEffect(() => {
+    if (!goingAway) return;
+    return onDepart(
+      () =>
+        new Promise<void>((resolve) => {
+          setDeparting(true);
+          const duration = reduced || screenReader ? tokens.motion.fast : tokens.motion.standard;
+          const watch = watchAnimation(duration, resolve);
+          const { ended } = watch;
+          const faded = () => {
+            'worklet';
+            runOnJS(ended)();
+          };
+          departure.set(
+            withTiming(
+              1,
+              { duration, easing: Easing.out(Easing.quad), reduceMotion: ReduceMotion.Never },
+              faded,
+            ),
+          );
+          departureBegun(watch.began);
+        }),
+    );
+  }, [departure, departureBegun, goingAway, onDepart, reduced, screenReader]);
+  const gone = useAnimatedStyle(() => ({ opacity: 1 - departure.get() }));
+
   // The quiet things leave as the closing begins, and the notes on the page with them.
   const away = useSharedValue(0);
   useEffect(() => {
@@ -466,7 +506,14 @@ export function ImmersiveSession({
         };
 
   return (
-    <View style={styles.root}>
+    <Animated.View
+      testID="session-fade"
+      style={[styles.root, gone]}
+      pointerEvents={departing ? 'none' : 'auto'}
+      // The page is a stack of layers (the book, its controls, the shade) and goes with an opacity: each
+      // faded by itself on Android, they would show through each other. Free while its opacity is 1.
+      needsOffscreenAlphaCompositing
+    >
       {/* The daily echo draws no photograph of its own. This screen is transparent, and the one
           photograph Home was showing, still or alive (D-009), is drawn beneath the stack by
           app/home/_layout.tsx. Another copy here would cover the loop and cut it off. */}
@@ -557,6 +604,7 @@ export function ImmersiveSession({
               countOpen();
               if (named) void countNamedOpen();
             }}
+            onDrawn={() => setBookDrawn(true)}
             inputRef={inputRef}
             value={
               writing ? draft.content.body : appendTranscript(draft.content.body, session.liveText)
@@ -681,6 +729,7 @@ export function ImmersiveSession({
                 offset={shelfOffset}
                 onChoose={choose}
                 onLeft={() => setShelfLeaving(false)}
+                holding={!bookDrawn}
               />
             </View>
           )}
@@ -744,7 +793,7 @@ export function ImmersiveSession({
           />
         )}
       </Animated.View>
-    </View>
+    </Animated.View>
   );
 }
 

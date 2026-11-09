@@ -5,12 +5,13 @@
 import { act, fireEvent, screen } from '@testing-library/react-native';
 import { withTiming } from 'react-native-reanimated';
 
+import { ThemeProvider } from '@/design/theme';
 import { animationClock } from '@/testing/reanimatedMock';
 import { render } from '@/testing/render';
 
 import { ANIMATION_NET_MS, UI_HANG_MS } from './ritual';
 import { netAfterBegin } from './animationEnd';
-import { CHOOSE_AT_MS, Shelf, useShelfOffset } from './Shelf';
+import { CHOOSE_AT_MS, SHELF_FINISH_MS, SHELF_HELD, Shelf, useShelfOffset } from './Shelf';
 import { VOLUMES } from './volumes';
 
 jest.mock('react-native-reanimated', () => {
@@ -31,9 +32,25 @@ const timings = () =>
     duration: (config as { duration?: number } | undefined)?.duration,
   }));
 
-function Row({ onChoose, onLeft }: { onChoose: (index: number) => void; onLeft?: () => void }) {
+function Row({
+  onChoose,
+  onLeft,
+  holding = false,
+}: {
+  onChoose: (index: number) => void;
+  onLeft?: () => void;
+  holding?: boolean;
+}) {
   const offset = useShelfOffset();
-  return <Shelf initial={YOUR_ECHO} offset={offset} onChoose={onChoose} onLeft={onLeft} />;
+  return (
+    <Shelf
+      initial={YOUR_ECHO}
+      offset={offset}
+      onChoose={onChoose}
+      onLeft={onLeft}
+      holding={holding}
+    />
+  );
 }
 
 /** A finger going down on the shelf, as PanResponder reads it. */
@@ -183,6 +200,127 @@ describe('choosing a volume', () => {
     await render(<Row onChoose={onChoose} onLeft={onLeft} />);
     await fireEvent.press(screen.getByTestId('volume-your-echo'));
     expect(onChoose).toHaveBeenCalledTimes(1);
+    expect(onLeft).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('a volume chosen while the book has not yet drawn', () => {
+  // The walked emulator mounted the book for half a second after the choice, while the shelf's own fade, on the
+  // UI thread, ran to nothing: an empty navy frame, 0.51 s of it, between the shelf's last light and the book's
+  // first. The shelf is kept, part of the way gone, until the book says it has drawn (./BookStage onDrawn).
+  const choose = async (props: {
+    holding: boolean;
+    onLeft?: () => void;
+    onChoose?: () => void;
+  }) => {
+    const element = (holding: boolean) => (
+      <Row onChoose={props.onChoose ?? jest.fn()} onLeft={props.onLeft} holding={holding} />
+    );
+    const view = await render(element(props.holding));
+    await tick(ROLL_MS);
+    await fireEvent.press(screen.getByTestId('volume-your-echo'));
+    jest.mocked(withTiming).mockClear();
+    return {
+      view,
+      again: (holding: boolean) =>
+        view.rerender(<ThemeProvider crossfade={false}>{element(holding)}</ThemeProvider>),
+    };
+  };
+
+  it('is held, partly faded and not gone, for as long as the book has not drawn', async () => {
+    const onLeft = jest.fn();
+    const onChoose = jest.fn();
+    await choose({ holding: true, onLeft, onChoose });
+    // The book is asked for as ever.
+    await tick(CHOOSE_AT_MS);
+    expect(onChoose).toHaveBeenCalledTimes(1);
+    // The shelf's fade, which took 320 ms and ended in nothing, goes only part of the way and stops.
+    await tick(OUT_MS * 20);
+    expect(onLeft).not.toHaveBeenCalled();
+    expect(screen.getByTestId('shelf-stage')).toBeTruthy();
+    expect(SHELF_HELD).toBeGreaterThan(0.3);
+    expect(SHELF_HELD).toBeLessThan(0.8);
+  });
+
+  it('goes the rest of the way when the book has drawn, and has left when that has ended', async () => {
+    const onLeft = jest.fn();
+    const { again } = await choose({ holding: true, onLeft });
+    await tick(5000);
+    expect(onLeft).not.toHaveBeenCalled();
+    await again(false);
+    await tick(SHELF_FINISH_MS - 1);
+    expect(onLeft).not.toHaveBeenCalled();
+    await tick(1);
+    expect(onLeft).toHaveBeenCalledTimes(1);
+    await tick(UI_HANG_MS * 2);
+    expect(onLeft).toHaveBeenCalledTimes(1);
+    expect(timings()).toContainEqual({ to: 1, duration: SHELF_FINISH_MS });
+  });
+
+  it('goes on at once when the book has drawn before the shelf’s own first fade is over', async () => {
+    const onLeft = jest.fn();
+    const { again } = await choose({ holding: true, onLeft });
+    await tick(40);
+    await again(false);
+    await tick(SHELF_FINISH_MS);
+    expect(onLeft).toHaveBeenCalledTimes(1);
+  });
+
+  it('has left only when its last fade has really ended, on a phone that is behind the clock', async () => {
+    const onLeft = jest.fn();
+    const { again } = await choose({ holding: true, onLeft });
+    await tick(3000);
+    animationClock.lag = 800;
+    await again(false);
+    await tick(SHELF_FINISH_MS + 400);
+    expect(onLeft).not.toHaveBeenCalled();
+    await tick(500);
+    expect(onLeft).toHaveBeenCalledTimes(1);
+  });
+
+  it('is let go of, a very long time after, if the book never draws', async () => {
+    const onLeft = jest.fn();
+    await choose({ holding: true, onLeft });
+    await tick(UI_HANG_MS - 1);
+    expect(onLeft).not.toHaveBeenCalled();
+    await tick(SHELF_FINISH_MS + 2);
+    expect(onLeft).toHaveBeenCalledTimes(1);
+  });
+
+  it('takes no more touches once it is chosen: a held shelf must not stand between a finger and the page', async () => {
+    await choose({ holding: true });
+    expect(screen.getByTestId('shelf-stage').props.pointerEvents).toBe('none');
+  });
+
+  it('does not hold a shelf that was chosen with no book to wait for', async () => {
+    const onLeft = jest.fn();
+    await choose({ holding: false, onLeft });
+    await tick(OUT_MS);
+    expect(onLeft).toHaveBeenCalledTimes(1);
+  });
+
+  it('is not left behind on a screen that has gone: Back while it is held takes it all back', async () => {
+    const onLeft = jest.fn();
+    const { view } = await choose({ holding: true, onLeft });
+    await view.unmount();
+    await tick(UI_HANG_MS * 2);
+    expect(onLeft).not.toHaveBeenCalled();
+  });
+
+  it('under Reduce Motion asks for the book at once, and keeps the whole shelf until the book has drawn', async () => {
+    mockReduced = true;
+    const onLeft = jest.fn();
+    const onChoose = jest.fn();
+    const element = (holding: boolean) => (
+      <Row onChoose={onChoose} onLeft={onLeft} holding={holding} />
+    );
+    const view = await render(element(true));
+    await fireEvent.press(screen.getByTestId('volume-your-echo'));
+    expect(onChoose).toHaveBeenCalledTimes(1);
+    await tick(5000);
+    expect(onLeft).not.toHaveBeenCalled();
+    await view.rerender(<ThemeProvider crossfade={false}>{element(false)}</ThemeProvider>);
+    await tick(180);
     expect(onLeft).toHaveBeenCalledTimes(1);
   });
 });
