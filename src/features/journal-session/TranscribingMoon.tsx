@@ -48,8 +48,9 @@ export function moonPath(phase: number, cx: number, cy: number, r: number): stri
 }
 
 /**
- * Words are on their way (D-016, D-017): a small moon over the page, turning through its phases while a
- * take becomes words, gone once they land. The owner asked for it on 2026-11-09: "like a moon which is
+ * Words are being made (D-017, D-019): a small moon over the page, turning through its phases while a
+ * live take's words arrive as they are spoken, and while a take becomes words after it ends, gone once
+ * they land. The owner asked for it on 2026-11-09: "like a moon which is
  * changing shape ... something fairly aesthetic". It is the sky's own sign, in the warm accent, with the
  * dark of the moon faintly there, so a new moon is still a moon. Under Reduce Motion it rests at half and
  * only comes and goes.

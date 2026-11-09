@@ -84,6 +84,7 @@ type Voice = ReturnType<typeof useVoiceRecorder>;
 let voice: Voice;
 let journal: Journal;
 let tap: PcmTap | undefined;
+let liveLost: (() => void) | undefined;
 let handlers: LiveHandlers;
 let socket: { appendAudio: jest.Mock; commit: jest.Mock; close: jest.Mock };
 /** The real recorder re-renders the page when its state changes. This does the same for the stand-in. */
@@ -109,6 +110,7 @@ beforeEach(() => {
   jest.spyOn(AccessibilityInfo, 'isScreenReaderEnabled').mockImplementation(async () => false);
 
   tap = undefined;
+  liveLost = undefined;
   socket = { appendAudio: jest.fn(), commit: jest.fn(), close: jest.fn() };
   openSocket.mockImplementation(async (given) => {
     handlers = given;
@@ -123,8 +125,10 @@ beforeEach(() => {
     state: 'idle',
     elapsedSeconds: 0,
     error: null,
-    start: jest.fn(async (options?: { tap?: PcmTap }) => {
+    deaf: false,
+    start: jest.fn(async (options?: { tap?: PcmTap; onLiveLost?: () => void }) => {
       tap = options?.tap;
+      liveLost = options?.onLiveLost;
       voice.state = 'recording';
       rerender();
       return null;
@@ -152,6 +156,8 @@ afterEach(() => {
 const scenery = () => screen.getByTestId('session-scenery');
 const field = () => screen.getByLabelText(copy.home.prompt);
 const wordsControl = () => screen.getByTestId('quiet-words');
+/** The moon turns, and says so to a screen reader, only while words are being made. */
+const moonTurning = () => screen.queryByLabelText(sessionCopy.transcribe.listening) !== null;
 const tick = (ms: number) => act(() => void jest.advanceTimersByTime(ms));
 const settle = () => act(async () => void (await Promise.resolve()));
 
@@ -366,7 +372,10 @@ describe('words shown, heard live', () => {
   it('streams the take, shows the words as they come, in order, and puts them in the draft on stop', async () => {
     await open();
     await startTake();
-    expect(voice.start).toHaveBeenCalledWith({ tap: expect.any(Function) });
+    expect(voice.start).toHaveBeenCalledWith({
+      tap: expect.any(Function),
+      onLiveLost: expect.any(Function),
+    });
     await waitFor(() => expect(openSocket).toHaveBeenCalledTimes(1));
     await settle();
     expect(socket.appendAudio).toHaveBeenCalled();
@@ -428,6 +437,42 @@ describe('words shown, heard live', () => {
     expect(screen.queryByText(sessionCopy.liveStopped)).toBeNull();
   });
 
+  it('turns the moon while the words are heard, and until they land', async () => {
+    await open();
+    expect(moonTurning()).toBe(false);
+    await startTake();
+    await waitFor(() => expect(openSocket).toHaveBeenCalled());
+    await settle();
+    expect(moonTurning()).toBe(true);
+    await say({ kind: 'committed', itemId: 'one' });
+    await stopTake();
+    // Still turning while the last words are finished.
+    expect(moonTurning()).toBe(true);
+    await say({ kind: 'completed', itemId: 'one', text: 'The river was loud.' });
+    await waitFor(async () => expect(await body()).toBe('The river was loud.'));
+    await waitFor(() => expect(moonTurning()).toBe(false));
+  });
+
+  // The owner's phone, 2026-11-09: the stream gave nothing but zeros. The recorder takes over the take
+  // (useVoiceRecorder.ts), and the page says calmly that the words will come when it ends.
+  it('stops the live words calmly when the stream hears nothing, and the recording brings the words', async () => {
+    await open();
+    await startTake();
+    await waitFor(() => expect(openSocket).toHaveBeenCalled());
+    await settle();
+
+    await act(async () => liveLost?.());
+    expect(await screen.findByText(sessionCopy.liveStopped)).toBeTruthy();
+    expect(socket.close).toHaveBeenCalled();
+    expect(voice.stop).not.toHaveBeenCalled();
+    // Nothing is being heard live now, so the moon rests until the take ends.
+    expect(moonTurning()).toBe(false);
+
+    await stopTake();
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    await waitFor(async () => expect(await body()).toBe('Spoken after the take.'));
+  });
+
   it('falls back to the recording when the connection cannot be opened at all', async () => {
     openSocket.mockResolvedValue(null);
     await open();
@@ -474,5 +519,32 @@ describe('words shown, heard live', () => {
     await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(field().props.value).toBe('Spoken after the take.'));
     expect(openSocket).not.toHaveBeenCalled();
+  });
+});
+
+// A microphone that gives nothing at all, as when another app has it: Android silences the app rather than
+// refusing it, so the take would otherwise run on and end with "didn't hear any words".
+describe('a microphone that gives nothing', () => {
+  const deafen = (deaf: boolean) =>
+    act(async () => {
+      (voice as unknown as { deaf: boolean }).deaf = deaf;
+      rerender();
+    });
+
+  it.each([
+    ['hidden', false],
+    ['shown', true],
+  ])('is said while it lasts, with words %s, and goes once sound comes', async (_, shown) => {
+    if (shown) {
+      allowedLive();
+      usePreferences.setState({ wordsShown: true });
+    }
+    await open();
+    await startTake();
+    expect(screen.queryByText(sessionCopy.micSilent)).toBeNull();
+    await deafen(true);
+    expect(await screen.findByText(sessionCopy.micSilent)).toBeTruthy();
+    await deafen(false);
+    await waitFor(() => expect(screen.queryByText(sessionCopy.micSilent)).toBeNull());
   });
 });

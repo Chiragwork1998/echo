@@ -124,6 +124,11 @@ export const sessionCopy = {
   /** Live words stopped, mid-take. Said calmly, and always visible. */
   liveStopped:
     'Live words stopped. Your recording carries on, and the words will follow when you stop.',
+  /**
+   * The microphone gives nothing at all, mid-take: Android silences an app when another has the
+   * microphone. Said while it lasts, and gone once sound comes. Working copy for the owner's approval.
+   */
+  micSilent: 'ECHO can’t hear your microphone. Another app may be using it.',
   speak: {
     ready: 'Tap when you’re ready.',
     starting: 'Getting ready…',

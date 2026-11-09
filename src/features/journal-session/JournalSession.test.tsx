@@ -115,6 +115,7 @@ beforeEach(() => {
     state: 'idle',
     elapsedSeconds: 0,
     error: null,
+    deaf: false,
     start: jest.fn(async () => null),
     stop: jest.fn(),
     cancel: jest.fn(),

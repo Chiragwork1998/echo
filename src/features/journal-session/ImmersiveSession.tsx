@@ -855,10 +855,7 @@ export function ImmersiveSession({
       />
 
       {session.daily && (
-        <TranscribingMoon
-          visible={session.listening && session.wordsShown}
-          top={insets.top + MOON_BELOW_TOP}
-        />
+        <TranscribingMoon visible={session.transcribing} top={insets.top + MOON_BELOW_TOP} />
       )}
 
       <Animated.View testID="session-row" pointerEvents="box-none" style={[styles.bottom, lift]}>

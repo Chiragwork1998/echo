@@ -36,6 +36,10 @@ describe('the recorder', () => {
     expect(options.ios).toMatchObject({ outputFormat: 'aac ', audioQuality: 64 });
   });
 
+  it('reads the level, so a microphone that gives nothing can be told from a quiet room', () => {
+    expect(options.isMeteringEnabled).toBe(true);
+  });
+
   it('sends only extensions the voice server accepts', () => {
     const accepted = /\.(m4a|mp4|aac|mp3|wav|webm)$/i; // voice-api/api/transcribe.ts
     expect(options.extension).toMatch(accepted);

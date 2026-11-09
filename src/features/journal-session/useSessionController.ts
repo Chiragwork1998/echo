@@ -234,6 +234,8 @@ export function useSessionController({ variant, initialMode, draftId, become }: 
   const stopping = useRef(false);
   const beginning = useRef(false);
   const [liveAsk, setLiveAsk] = useState<'toggle' | 'record' | null>(null);
+  // A live take is being heard now, its words arriving as they are spoken.
+  const [liveRunning, setLiveRunning] = useState(false);
   // Speak, unless the person last chose to write. Where there is no microphone to speak into, the
   // page they can use opens instead.
   const [mode, setMode] = useState<SessionMode>(
@@ -305,6 +307,7 @@ export function useSessionController({ variant, initialMode, draftId, become }: 
   const dropLive = () => {
     const take = liveTake.current;
     liveTake.current = null;
+    setLiveRunning(false);
     take?.abort();
     take?.settle();
   };
@@ -329,9 +332,16 @@ export function useSessionController({ variant, initialMode, draftId, become }: 
     }
     const live = daily && shown && voice.liveAvailable ? liveWords.begin() : null;
     liveTake.current = live?.handle ?? null;
+    setLiveRunning(live !== null);
     // A take still waiting for its words keeps a copy of its recording, which this one will replace.
     await transcription.holdCurrent();
-    const code = await voice.start(live ? { tap: live.tap } : undefined);
+    // If the stream turns out to hear nothing, the take goes on with the file recorder: the live words
+    // stop, calmly, and the recording brings the words when the take ends (useVoiceRecorder.ts).
+    const liveLost = () => {
+      liveTake.current?.abort();
+      setLiveRunning(false);
+    };
+    const code = await voice.start(live ? { tap: live.tap, onLiveLost: liveLost } : undefined);
     if (code !== null) dropLive();
     if (code === 'permission_required') await askForMicrophone();
   };
@@ -373,6 +383,7 @@ export function useSessionController({ variant, initialMode, draftId, become }: 
   const stop = async () => {
     const live = liveTake.current;
     liveTake.current = null;
+    setLiveRunning(false);
     stopping.current = true;
     // Capture ends first, so the last words are already being finished while the recording is sealed.
     const result = await voice.stop();
@@ -405,8 +416,8 @@ export function useSessionController({ variant, initialMode, draftId, become }: 
       return;
     }
     // Live words are ECHO Plus (docs/PRODUCT_V1.md): without it the paywall opens instead. Words shown once a
-    // take has ended are not live, and are anyone's: with live words off (D-016), Show words simply shows them.
-    // Gated as live, the press did nothing on the owner's phone, where Plus was not yet on sale (2026-11-09).
+    // take has ended are not live, and are anyone's: where live words are not available, Show words simply
+    // shows them. A build that cannot sell Plus yet treats everyone as having it (services/plus).
     if (voice.liveAvailable && !requirePlus('live-words')) return;
     if (daily && voice.liveAvailable && !liveAllowed(prefs.voiceConsent)) setLiveAsk('toggle');
     else prefs.setWordsShown(true);
@@ -652,6 +663,8 @@ export function useSessionController({ variant, initialMode, draftId, become }: 
 
   // A live take that broke is said calmly and stays on screen until its words arrive some other way.
   const liveNote = wordsShown && liveWords.failed ? sessionCopy.liveStopped : null;
+  // A microphone that gives nothing at all, as when another app has it, is said while it lasts.
+  const micNote = voice.deaf ? sessionCopy.micSilent : null;
 
   const notice =
     problem ??
@@ -676,8 +689,17 @@ export function useSessionController({ variant, initialMode, draftId, become }: 
     notice,
     /** Spoken words are on their way: a quiet line, and the light keeps breathing. */
     listening: transcription.phase.kind === 'listening',
+    /**
+     * Words are being made where they can be seen: as they are spoken, on a live take, and once a take
+     * has ended until they land. The daily session shows a turning moon for it (TranscribingMoon).
+     */
+    transcribing:
+      wordsShown &&
+      (transcription.phase.kind === 'listening' ||
+        (liveRunning && recordingBusy && !liveWords.failed)),
     // The daily session says it with a moon instead (TranscribingMoon): the line is for First Echo.
     quietLine:
+      micNote ??
       liveNote ??
       (!daily && wordsShown && transcription.phase.kind === 'listening'
         ? sessionCopy.transcribe.listening

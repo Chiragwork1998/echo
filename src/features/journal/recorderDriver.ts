@@ -47,8 +47,27 @@ export function recordingOptions(module: ExpoAudio): RecordingOptions {
     android: { ...preset.android, extension: '.aac', outputFormat: 'aac_adts' },
     // MAX quality asks for more than a 40 kbps speech stream can carry. The bit rate is the limit.
     ios: { ...preset.ios, audioQuality: module.AudioQuality?.MEDIUM ?? 64 },
+    // The level, so that a take can tell a quiet room from a microphone that gives it nothing.
+    isMeteringEnabled: true,
   };
 }
+
+/**
+ * The level a recorder reports when it was given nothing at all: Android's loudest sample since it was
+ * last asked was exactly zero, which a room never is, and iOS's floor. A silenced capture reads this.
+ */
+export const SILENT_DB = -159;
+
+/**
+ * Whether this phone's recorder has reported a level above the floor since the app opened. A recorder
+ * that only ever reports the floor may be one that does not measure at all, so a take is said to hear
+ * nothing only on a phone whose recorder has shown it can tell.
+ */
+let levelsProven = false;
+/** Tests only: forget that the levels were ever proven. */
+export const forgetLevelsForTests = () => {
+  levelsProven = false;
+};
 
 const options = audio ? recordingOptions(audio) : null;
 const useNoRecorder = () => null;
@@ -58,7 +77,12 @@ const useNativeRecorder: (options: RecordingOptions) => NativeRecorder | null =
 export type RecorderDriver = {
   prepare(fileName: string): Promise<void>;
   record(): void;
+  /** How long it has recorded. Each call also reads the level since the last one. */
   elapsedSeconds(): number;
+  /** Whether any sound at all has come since recording began, as far as the calls above have read. */
+  heardAny(): boolean;
+  /** How long since the microphone last gave any sound, or since recording began if it never has. */
+  quietForMs(): number;
   stop(): Promise<{ uri: string | null; durationSeconds: number }>;
 };
 
@@ -69,14 +93,32 @@ export function useRecorderDriver(): RecorderDriver | null {
   return useMemo(() => {
     if (!recorder || !audio || !options) return null;
     const { setAudioModeAsync } = audio;
-    const elapsedSeconds = () => recorder.getStatus().durationMillis / 1000;
+    // When recording began, and when the level last said there was any sound.
+    const sound = { since: 0, last: 0 };
+    const elapsedSeconds = () => {
+      const status = recorder.getStatus();
+      // No level reported is not silence: only a level at the floor says the microphone gave nothing.
+      if (typeof status.metering !== 'number') sound.last = Date.now();
+      else if (status.metering > SILENT_DB) {
+        sound.last = Date.now();
+        levelsProven = true;
+      }
+      return status.durationMillis / 1000;
+    };
     return {
       async prepare(fileName) {
         await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
         await recorder.prepareToRecordAsync({ ...options, fileName });
       },
-      record: () => recorder.record(),
+      record: () => {
+        recorder.record();
+        // Android's first level is always nothing: the loudest sample since a call there has not been.
+        recorder.getStatus();
+        Object.assign(sound, { since: Date.now(), last: 0 });
+      },
       elapsedSeconds,
+      heardAny: () => sound.last > 0,
+      quietForMs: () => (levelsProven ? Date.now() - Math.max(sound.last, sound.since) : 0),
       async stop() {
         const durationSeconds = elapsedSeconds(); // Reads 0 once stopped.
         await recorder.stop();

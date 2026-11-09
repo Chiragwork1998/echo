@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import { act, renderHook } from '@testing-library/react-native';
+import { act, cleanup, renderHook } from '@testing-library/react-native';
 import { AppState } from 'react-native';
 
 import { LIVE_RATE } from '@/services/liveAudio';
@@ -13,7 +13,8 @@ import { setJournal } from './runtime';
 import { createSqlJournal } from './sqlJournal';
 import type { JournalResult } from './types';
 import { useDraft } from './useDraft';
-import { useVoiceRecorder } from './useVoiceRecorder';
+import { forgetLevelsForTests } from './recorderDriver';
+import { DEAF_MS, STREAM_PROOF_MS, useVoiceRecorder } from './useVoiceRecorder';
 import { liveWords } from './liveWords';
 
 // A live take is captured by the stream and written as a WAV, and is sealed and recovered exactly
@@ -166,7 +167,6 @@ const recordings = async () =>
   (await rt.db.first<{ total: number }>('SELECT COUNT(*) AS total FROM recordings'))?.total;
 
 beforeEach(async () => {
-  // The live path is off in 1.0 (./liveWords.ts); these are its tests.
   liveWords.enabled = true;
   rt = await createTestRuntime();
   fake.cache = join(rt.root, 'cache');
@@ -181,7 +181,7 @@ beforeEach(async () => {
   installRecorder();
 });
 afterEach(() => {
-  liveWords.enabled = false;
+  liveWords.enabled = true;
   jest.restoreAllMocks();
   setJournal(null);
   fake.stream = null;
@@ -189,7 +189,7 @@ afterEach(() => {
   fake.onBuffer = null;
 });
 
-describe('in 1.0, with live words off', () => {
+describe('with live words off', () => {
   it('offers no live take, though the stream is there, and records every take to a file', async () => {
     liveWords.enabled = false;
     const stream = installStream();
@@ -352,5 +352,173 @@ describe('a live take', () => {
     expect(tap).toHaveBeenLastCalledWith(null);
     expect(await recordings()).toBe(0);
     expect(view.result.current.voice.state).toBe('idle');
+  });
+});
+
+// The owner's phone, 2026-11-09: a live take came back as pure silence while the file recorder, two minutes
+// before, heard every word. Android silences an app with exact zeros rather than refusing it, so a stream
+// of nothing but zeros hands its take to the file recorder, and the take goes on. Timers are faked here,
+// and only here, at the end of the file: everything the journal does on disk still runs on its own.
+describe('a microphone that gives nothing', () => {
+  beforeEach(() => {
+    jest.useFakeTimers({
+      doNotFake: ['setImmediate', 'clearImmediate', 'nextTick', 'queueMicrotask'],
+    });
+    forgetLevelsForTests();
+  });
+  // The hook is let go while the timers are still the fake ones it was given, or its cleanup finds none.
+  afterEach(async () => {
+    await cleanup();
+    jest.useRealTimers();
+  });
+
+  const BUFFER_MS = 100;
+  const buffer = (samples: Int16Array) => ({
+    data: samples.buffer as ArrayBuffer,
+    sampleRate: LIVE_RATE,
+    channels: 1,
+    timestamp: 0,
+  });
+  /** What the stream hands over for `ms`: exact zeros, or a room's faint noise. */
+  async function feed(ms: number, sound: 'zeros' | 'room') {
+    for (let at = 0; at < ms; at += BUFFER_MS) {
+      const samples = new Int16Array((LIVE_RATE * BUFFER_MS) / 1000);
+      if (sound === 'room') samples[7] = 3;
+      await act(async () => {
+        fake.onBuffer?.(buffer(samples));
+        jest.advanceTimersByTime(BUFFER_MS);
+      });
+    }
+    await settle();
+    await settle();
+  }
+
+  it('goes on with the file recorder when the stream gives only zeros, under the same ledger entry', async () => {
+    const stream = installStream();
+    const view = await mount();
+    const onLiveLost = jest.fn();
+    const heard: (Int16Array | null)[] = [];
+    await act(async () => {
+      await view.result.current.voice.start({ tap: (samples) => heard.push(samples), onLiveLost });
+    });
+    const [{ uri: wav }] = stream.startFileRecordingAsync.mock.calls[0] as [{ uri: string }];
+
+    await feed(STREAM_PROOF_MS - 300, 'zeros');
+    // Not yet: a person who has not begun to speak is given time.
+    expect(fake.recorder!.record).not.toHaveBeenCalled();
+    await feed(600, 'zeros');
+
+    expect(onLiveLost).toHaveBeenCalledTimes(1);
+    expect(heard.at(-1)).toBeNull();
+    expect(stream.stop).toHaveBeenCalled();
+    // The zeros are gone, and the recorder writes the take under the ledger's own name.
+    expect(existsSync(wav)).toBe(false);
+    const ledger = await rt.db.first<{ id: string }>('SELECT id FROM recordings');
+    expect(fake.recorder!.prepareToRecordAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ fileName: ledger?.id }),
+    );
+    expect(fake.recorder!.record).toHaveBeenCalledTimes(1);
+    expect(view.result.current.voice.state).toBe('recording');
+
+    await act(async () => {
+      const audio = unwrap(await view.result.current.voice.stop());
+      expect(audio.extension).toBe('.aac');
+    });
+    expect(fake.recorder!.stop).toHaveBeenCalledTimes(1);
+    expect(stream.stopFileRecordingAsync).toHaveBeenCalledTimes(1);
+    // Sealed, the plaintext gone, nothing left for the sweep.
+    expect(await recordings()).toBe(0);
+  });
+
+  it('keeps a stream that has given any sound at all, however quiet the room', async () => {
+    const stream = installStream();
+    const view = await mount();
+    const onLiveLost = jest.fn();
+    await act(async () => {
+      await view.result.current.voice.start({ tap: jest.fn(), onLiveLost });
+    });
+    await feed(200, 'room');
+    await feed(STREAM_PROOF_MS + 600, 'zeros');
+    expect(onLiveLost).not.toHaveBeenCalled();
+    expect(stream.stop).not.toHaveBeenCalled();
+    expect(fake.recorder!.record).not.toHaveBeenCalled();
+  });
+
+  /** A take whose recorder heard something: this phone's recorder is known to measure. */
+  async function proveLevels() {
+    const status = { durationMillis: 1_000, metering: -38 };
+    fake.recorder!.getStatus.mockImplementation(() => status);
+    const view = await mount();
+    await act(async () => {
+      await view.result.current.voice.start();
+    });
+    await act(async () => void jest.advanceTimersByTime(500));
+    await act(async () => {
+      await view.result.current.voice.stop();
+    });
+    await view.unmount();
+    // A fresh recorder for the take under test. What was proven is the phone's, and stays.
+    installRecorder();
+  }
+
+  it('says it cannot hear while the recorder too is given nothing, and stops saying so when sound comes', async () => {
+    await proveLevels();
+    installStream();
+    const status = { durationMillis: 1_000, metering: -160 };
+    fake.recorder!.getStatus.mockImplementation(() => status);
+    const view = await mount();
+    await act(async () => {
+      await view.result.current.voice.start({ tap: jest.fn(), onLiveLost: jest.fn() });
+    });
+    await feed(STREAM_PROOF_MS + 300, 'zeros');
+    expect(fake.recorder!.record).toHaveBeenCalledTimes(1);
+    expect(view.result.current.voice.deaf).toBe(false);
+
+    await act(async () => void jest.advanceTimersByTime(DEAF_MS + 300));
+    expect(view.result.current.voice.deaf).toBe(true);
+
+    status.metering = -42;
+    await act(async () => void jest.advanceTimersByTime(300));
+    expect(view.result.current.voice.deaf).toBe(false);
+
+    // Never once a take has ended.
+    status.metering = -160;
+    await act(async () => void jest.advanceTimersByTime(DEAF_MS + 300));
+    expect(view.result.current.voice.deaf).toBe(true);
+    await act(async () => {
+      await view.result.current.voice.stop();
+    });
+    expect(view.result.current.voice.deaf).toBe(false);
+  });
+
+  it('says so for a take the file recorder makes from the start, words hidden', async () => {
+    await proveLevels();
+    const status: { durationMillis: number; metering?: number } = {
+      durationMillis: 1_000,
+      metering: -160,
+    };
+    fake.recorder!.getStatus.mockImplementation(() => status);
+    const view = await mount();
+    await act(async () => {
+      await view.result.current.voice.start();
+    });
+    await act(async () => void jest.advanceTimersByTime(DEAF_MS - 500));
+    expect(view.result.current.voice.deaf).toBe(false);
+    await act(async () => void jest.advanceTimersByTime(800));
+    expect(view.result.current.voice.deaf).toBe(true);
+    // A platform that reports no level is never said to be deaf.
+    delete status.metering;
+    await act(async () => void jest.advanceTimersByTime(300));
+    expect(view.result.current.voice.deaf).toBe(false);
+  });
+
+  it('never says so on a phone whose recorder has not shown it can measure', async () => {
+    fake.recorder!.getStatus.mockImplementation(() => ({ durationMillis: 1_000, metering: -160 }));
+    const view = await mount();
+    await act(async () => {
+      await view.result.current.voice.start();
+    });
+    await act(async () => void jest.advanceTimersByTime(DEAF_MS * 3));
+    expect(view.result.current.voice.deaf).toBe(false);
   });
 });
