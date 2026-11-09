@@ -288,7 +288,7 @@ describe('the spoken daily echo (D-006)', () => {
     expect(voice.start).toHaveBeenCalledTimes(1);
   });
 
-  it('shows ...listening on the sky, then lets the words in, and the light is ready for another take', async () => {
+  it('shows the moon while the words come, then lets them in, and the light is ready for another take', async () => {
     let arrive: (value: ReturnType<typeof said>) => void = () => undefined;
     send.mockReturnValue(new Promise((resolve) => (arrive = resolve)));
     voice = { ...voice, state: 'recording' } as Voice;
@@ -301,13 +301,15 @@ describe('the spoken daily echo (D-006)', () => {
     }) as never;
     const input = await open();
     await fireEvent.press(screen.getByRole('button', { name: sessionCopy.quiet.stop }));
-    expect(await screen.findByText(sessionCopy.transcribe.listening)).toBeTruthy();
+    // The moon says the words are on their way, in place of a line of text (TranscribingMoon).
+    expect(await screen.findByLabelText(sessionCopy.transcribe.listening)).toBeTruthy();
+    expect(screen.queryByText(sessionCopy.transcribe.listening)).toBeNull();
     // The quiet row stays; nothing traps the person while the words come.
     expect(controls()).toBeTruthy();
 
     await act(async () => arrive(said('Something I have been avoiding.')));
     await waitFor(() => expect(input().props.value).toBe('Something I have been avoiding.'));
-    expect(screen.queryByText(sessionCopy.transcribe.listening)).toBeNull();
+    expect(screen.queryByLabelText(sessionCopy.transcribe.listening)).toBeNull();
 
     // A second take: a tap on the sky begins it, whether or not the first has landed.
     await fireEvent.press(scenery());

@@ -56,6 +56,7 @@ import { sessionCopy } from './sessionCopy';
 import { SessionHeader } from './SessionHeader';
 import { CONTROLS, qaKeyboardHeight, useSkyFrame, useSkyInk } from './sky';
 import { SkyInput } from './SkyInput';
+import { TranscribingMoon } from './TranscribingMoon';
 import type { SpeakView } from './SpeakPanel';
 import type { SessionController } from './useSessionController';
 import { useQuietControls } from './useQuietControls';
@@ -78,6 +79,8 @@ const SERIF = 'CormorantGaramond_500Medium';
  * gone as Home is whole: the two cross, and there is no dim frame of neither (walk v12).
  */
 const HOME_RISE_OVER_MS = 100;
+/** The moon that says words are on their way sits this far below the top edge of the sky. */
+const MOON_BELOW_TOP = 18;
 /** The written name is held on the cover this long before the book goes. */
 const NAME_HOLD_MS = 400;
 /**
@@ -848,6 +851,13 @@ export function ImmersiveSession({
         }
         style={[styles.ground, span]}
       />
+
+      {session.daily && (
+        <TranscribingMoon
+          visible={session.listening && session.wordsShown}
+          top={insets.top + MOON_BELOW_TOP}
+        />
+      )}
 
       <Animated.View testID="session-row" pointerEvents="box-none" style={[styles.bottom, lift]}>
         {notice !== null && (

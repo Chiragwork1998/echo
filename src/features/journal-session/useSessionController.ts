@@ -403,8 +403,10 @@ export function useSessionController({ variant, initialMode, draftId, become }: 
       dropLive();
       return;
     }
-    // Live words are ECHO Plus (docs/PRODUCT_V1.md). Without it the paywall opens instead.
-    if (!requirePlus('live-words')) return;
+    // Live words are ECHO Plus (docs/PRODUCT_V1.md): without it the paywall opens instead. Words shown once a
+    // take has ended are not live, and are anyone's: with live words off (D-016), Show words simply shows them.
+    // Gated as live, the press did nothing on the owner's phone, where Plus was not yet on sale (2026-11-09).
+    if (voice.liveAvailable && !requirePlus('live-words')) return;
     if (daily && voice.liveAvailable && !liveAllowed(prefs.voiceConsent)) setLiveAsk('toggle');
     else prefs.setWordsShown(true);
   };
@@ -673,9 +675,10 @@ export function useSessionController({ variant, initialMode, draftId, become }: 
     notice,
     /** Spoken words are on their way: a quiet line, and the light keeps breathing. */
     listening: transcription.phase.kind === 'listening',
+    // The daily session says it with a moon instead (TranscribingMoon): the line is for First Echo.
     quietLine:
       liveNote ??
-      (wordsShown && transcription.phase.kind === 'listening'
+      (!daily && wordsShown && transcription.phase.kind === 'listening'
         ? sessionCopy.transcribe.listening
         : null),
     /** The sentence for the transcription states that have actions. */
