@@ -78,6 +78,15 @@ const UNMOUNT_CAP_MS = 1200;
  * is only how long it waits for that word before arriving anyway, so no sheet is left invisible.
  */
 const LAYOUT_WAIT_MS = 400;
+/** Two heights this close, in points, are the same: a layout's rounding to the pixel. */
+const SAME_SIZE = 1;
+/**
+ * The window outlasts a keyboard that it raised by this much after the keyboard has said it is gone.
+ * The system goes on putting the keyboard away for a while after it has been seen to go, and a window
+ * taken away meanwhile gave it back to the screen beneath, whole, for two frames (the walk, v11: on You,
+ * after a name was written).
+ */
+export const KEYS_SETTLE_MS = 300;
 // Reduce Motion: the sheet and the scrim fade, and nothing travels.
 const REDUCED_IN_MS = tokens.motion.fast;
 const REDUCED_OUT_MS = 140;
@@ -88,6 +97,21 @@ const KEYBOARD_MS = 220;
 const HANDOFF_MS = 200;
 
 const nothing = () => undefined;
+
+/**
+ * Whether a layout of a sheet's window is the window at its own size, so that the sheet may begin to
+ * arrive. Android lays a Modal out first at a size worked out from the app's window less the bars it
+ * knows of, and again at its real size once the system has made the window, which is edge to edge: the
+ * whole of the app's window (the walk, v11: 840 points, then 914; a sheet that began to arrive on the
+ * first was drawn some 50 points above its place, then dropped 74). There a layout is the real one when
+ * it is as tall as the app's window, or when it follows one of another height. The keyboard changes
+ * neither: the stage makes room for the keys inside itself. Elsewhere the first layout is the real one.
+ */
+function ownSize(height: number, first: number | null): boolean {
+  if (Platform.OS !== 'android') return true;
+  if (Math.abs(height - Dimensions.get('window').height) <= SAME_SIZE) return true;
+  return first !== null && Math.abs(height - first) > SAME_SIZE;
+}
 
 /**
  * The action that was chosen keeps the look of being pressed while the sheet leaves. A sheet that
@@ -174,11 +198,15 @@ export function Sheet({
   const present = animated ? mounted : visible;
   const leaving = present && !visible;
 
-  // The window has been laid out at a size of its own (see LAYOUT_WAIT_MS). Each window starts without.
+  // The window has been laid out at a size of its own (see LAYOUT_WAIT_MS and ownSize). Each window
+  // starts without, and with no first height.
   const [placed, setPlaced] = useState(false);
   if (!present && placed) setPlaced(false);
+  const firstHeight = useRef<number | null>(null);
   const onStageLayout = useCallback(({ nativeEvent: { layout } }: LayoutChangeEvent) => {
-    if (layout.width > 0 && layout.height > 0) setPlaced(true);
+    if (layout.width <= 0 || layout.height <= 0) return;
+    if (ownSize(layout.height, firstHeight.current)) setPlaced(true);
+    firstHeight.current ??= layout.height;
   }, []);
 
   // What the sheet says is what it said when it left: the words and the actions that were on it are
@@ -202,13 +230,23 @@ export function Sheet({
   const fade = useSharedValue(rest ? 1 : 0);
   const y = useSharedValue(rest || reduced ? 0 : RISE);
   const wasVisible = useRef(visible);
-  // The scrim has been seen to reach nothing: the exit is over, and the window may go. An answer
-  // from an exit that has since been undone (the sheet is back) is not the window's to act on.
-  const exited = useCallback(() => {
+  // The window goes once its scrim has been seen to reach nothing, and once a keyboard it raised has
+  // gone (see KEYS_SETTLE_MS). An answer from an exit that has since been undone (the sheet is back)
+  // is not the window's to act on.
+  const ending = useRef({ faded: false, keysAway: false });
+  const end = useCallback(() => {
     if (wasVisible.current) return;
     setHandoff(false);
     setMounted(false);
   }, []);
+  const exited = useCallback(() => {
+    ending.current.faded = true;
+    if (ending.current.keysAway) end();
+  }, [end]);
+  const keysAway = useCallback(() => {
+    ending.current.keysAway = true;
+    if (ending.current.faded) end();
+  }, [end]);
 
   useEffect(() => {
     const was = wasVisible.current;
@@ -219,6 +257,8 @@ export function Sheet({
       y.set(reduced ? 0 : RISE);
     };
     if (visible) {
+      // Whatever went before, the next exit has neither faded nor seen any keyboard go.
+      ending.current = { faded: false, keysAway: false };
       if (!animated) {
         dim.set(1);
         fade.set(1);
@@ -288,18 +328,19 @@ export function Sheet({
     return () => clearTimeout(late);
   }, [animated, placed, present, visible]);
 
-  // The window's last word, if the fade never reports. It lives in its own effect so that anything
-  // that changes during the exit (the lock engaging, Reduce Motion) re-arms it rather than leaving
-  // a window that is invisible, full screen, and swallowing touches.
+  // The window's last word, if the fade or the keyboard never reports. It lives in its own effect so
+  // that anything that changes during the exit (the lock engaging, Reduce Motion) re-arms it rather
+  // than leaving a window that is invisible, full screen, and swallowing touches.
   useEffect(() => {
     if (visible || !mounted) return;
-    const done = setTimeout(exited, UNMOUNT_CAP_MS);
+    const done = setTimeout(end, UNMOUNT_CAP_MS);
     return () => clearTimeout(done);
-  }, [exited, visible, mounted, reduced]);
+  }, [end, visible, mounted, reduced]);
 
   // Once the window is gone the next opening starts from nothing.
   useEffect(() => {
     if (mounted) return;
+    firstHeight.current = null;
     dim.set(0);
     fade.set(0);
     y.set(reduced ? 0 : RISE);
@@ -332,6 +373,7 @@ export function Sheet({
             bottom={bottom}
             resting={resting}
             onLayout={onStageLayout}
+            onKeysAway={keysAway}
           >
             <Animated.View
               testID={testID && `${testID}-scrim`}
@@ -435,6 +477,7 @@ function useKeyboardRoom(frozen: boolean): { room: SharedValue<number>; up: () =
  * sheet, and its buttons, ride up above it. A sheet taller than what is left scrolls inside. When the
  * sheet leaves, the keyboard it raised is put away first (it would otherwise stay up over the page
  * for as long as the system takes to notice that its window has gone), and the ground stays put.
+ * `onKeysAway` says when the window no longer has a keyboard to wait for (see KEYS_SETTLE_MS).
  */
 function Stage({
   testID,
@@ -442,6 +485,7 @@ function Stage({
   bottom,
   resting,
   onLayout,
+  onKeysAway,
   children,
 }: PropsWithChildren<{
   testID?: string;
@@ -449,13 +493,28 @@ function Stage({
   bottom: number;
   resting: number;
   onLayout: (event: LayoutChangeEvent) => void;
+  onKeysAway: () => void;
 }>) {
   const { room, up } = useKeyboardRoom(leaving);
   // Only a keyboard that this window raised: the page behind may have one of its own, and a sheet
   // that closes (Keep your draft?) hands the screen back to it.
   useEffect(() => {
-    if (leaving && up()) Keyboard.dismiss();
-  }, [leaving, up]);
+    if (!leaving) return;
+    if (!up()) {
+      onKeysAway();
+      return;
+    }
+    let settle: ReturnType<typeof setTimeout> | undefined;
+    const gone = Keyboard.addListener('keyboardDidHide', () => {
+      clearTimeout(settle);
+      settle = setTimeout(onKeysAway, KEYS_SETTLE_MS);
+    });
+    Keyboard.dismiss();
+    return () => {
+      gone.remove();
+      clearTimeout(settle);
+    };
+  }, [leaving, onKeysAway, up]);
   // Android reports the keyboard without the navigation bar it also covers.
   const under = Platform.OS === 'android' ? bottom : 0;
   // The visual harness has no keyboard, so it reserves the room of one by name. That is a plain

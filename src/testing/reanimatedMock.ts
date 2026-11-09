@@ -115,12 +115,25 @@ function read(reaction: Reaction) {
   reaction.last = now;
   reaction.react(now, before);
 }
+/** Values set by a reaction while reactions are being run: theirs run next, as Reanimated's mappers do. */
+const unsettled: Mock[] = [];
+/** A chain of reactions setting each other's values that never comes to rest is a bug: it is cut here. */
+const SETTLE_LIMIT = 1000;
 function settle(moved: Mock) {
-  if (reading) return;
+  if (reading) {
+    unsettled.push(moved);
+    return;
+  }
   reading = true;
   try {
-    for (const reaction of [...reactions]) if (reaction.inputs.has(moved)) read(reaction);
+    let next: Mock | undefined = moved;
+    for (let runs = 0; next && runs < SETTLE_LIMIT; runs += 1) {
+      const value = next;
+      for (const reaction of [...reactions]) if (reaction.inputs.has(value)) read(reaction);
+      next = unsettled.shift();
+    }
   } finally {
+    unsettled.length = 0;
     reading = false;
   }
 }
@@ -389,6 +402,10 @@ const useSharedValue = <T>(initial: T) => useState(() => makeSharedValue(initial
 
 /** The keyboard's height, for the one hook that reads it: tests move it with `keyboard.set(…)`. */
 export const keyboard = makeSharedValue(0);
+/** Reanimated's KeyboardState, by its numbers. */
+const KeyboardState = { UNKNOWN: 0, OPENING: 1, OPEN: 2, CLOSING: 3, CLOSED: 4 } as const;
+/** The keyboard's state, beside its height: tests move it with `keyboardState.set(…)`. */
+export const keyboardState = makeSharedValue<number>(KeyboardState.UNKNOWN);
 
 const AnimatedView = animated(View as ComponentType<never>, 'View');
 const AnimatedText = animated(Text as ComponentType<never>, 'Text');
@@ -439,11 +456,8 @@ export const reanimatedMock = {
     useStyleHandle(uiThread(compute)() as object, compute),
   useAnimatedProps: (compute: () => object) => uiThread(compute)(),
   useReducedMotion: () => false,
-  useAnimatedKeyboard: () => {
-    const state = { value: 0, get: () => 0 };
-    uiOwned.add(state);
-    return { height: keyboard, state };
-  },
+  useAnimatedKeyboard: () => ({ height: keyboard, state: keyboardState }),
+  KeyboardState,
   useAnimatedReaction: (prepare: () => unknown, react: (now: unknown, before: unknown) => void) => {
     const latest = useRef({ prepare, react });
     useEffect(() => {

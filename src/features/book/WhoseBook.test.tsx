@@ -3,6 +3,7 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import { AccessibilityInfo, BackHandler } from 'react-native';
+import { KeyboardState } from 'react-native-reanimated';
 
 import { copy } from '@/content/copy';
 import { cue } from '@/design/haptics';
@@ -13,7 +14,7 @@ import { NAME_IDLE_MS } from '@/features/journal-session/NamePrompt';
 import { clearDialogs } from '@/features/tab-pages/Dialog';
 import { initialOnboarding, useOnboarding } from '@/state/onboarding';
 import { resetPreferences } from '@/state/preferences';
-import { animationClock, keyboard } from '@/testing/reanimatedMock';
+import { animationClock, keyboard, keyboardState } from '@/testing/reanimatedMock';
 import { render } from '@/testing/render';
 
 import { bookCopy } from './bookCopy';
@@ -38,12 +39,13 @@ jest.mock(
   'react-native-safe-area-context',
   () => jest.requireActual('react-native-safe-area-context/jest/mock').default,
 );
-// The keyboard's height is the stand-in's own shared value, so that a test can raise the keys and let them go.
+// The keyboard's height and state are the stand-in's own shared values, so that a test can raise the keys and
+// let them go. A height is believed once the keys are seen to move (src/features/book/useEasedKeys.ts).
 jest.mock('react-native-reanimated', () => {
   const stand = jest.requireActual('@/testing/reanimatedMock');
   return {
     ...stand.reanimatedMock,
-    useAnimatedKeyboard: () => ({ height: stand.keyboard, state: { get: () => 0 } }),
+    useAnimatedKeyboard: () => ({ height: stand.keyboard, state: stand.keyboardState }),
   };
 });
 let mockReduced = false;
@@ -77,6 +79,7 @@ beforeEach(() => {
   animationClock.reset();
   animationClock.stepped = true;
   keyboard.set(0);
+  keyboardState.set(KeyboardState.UNKNOWN);
   mockRecord = { v: 1, name: null, asked: false, namedOpens: 0 };
   jest.useFakeTimers();
   jest.clearAllMocks();
@@ -102,6 +105,7 @@ beforeEach(() => {
 afterEach(() => {
   animationClock.reset();
   keyboard.set(0);
+  keyboardState.set(KeyboardState.UNKNOWN);
   setJournal(null);
   resetBookOwner();
   jest.restoreAllMocks();
@@ -109,6 +113,19 @@ afterEach(() => {
 
 // A frame at a time, so that what a step asks of the screen is drawn before the next one.
 const FRAME_MS = 16;
+
+/** The keys come up as a real keyboard's do: seen opening, then open at their height. */
+function raiseKeys(height: number) {
+  keyboardState.set(KeyboardState.OPENING);
+  keyboard.set(height);
+  keyboardState.set(KeyboardState.OPEN);
+}
+/** And go the same way. */
+function lowerKeys() {
+  keyboardState.set(KeyboardState.CLOSING);
+  keyboard.set(0);
+  keyboardState.set(KeyboardState.CLOSED);
+}
 const tick = async (ms: number) => {
   for (let left = ms; left > 0; left -= FRAME_MS) {
     await act(async () => {
@@ -282,17 +299,16 @@ describe('Not now', () => {
     await writeAndReflect();
     await toContact();
     // The field has the keys: the closed book has stepped back, and risen, from them.
-    await act(async () => keyboard.set(300));
+    await act(async () => raiseKeys(300));
     await tick(KEYS_EASE_MS + 100);
     await fireEvent.press(screen.getByTestId('name-not-now'));
     // The line is long gone, but the keys are still up and the book is not back: nothing goes.
     await tick(NAME_UNDRAW_MS + FULL.close.gap + 400);
     expect(router.navigate).not.toHaveBeenCalled();
-    // The keys go, and the book eases back after them; back, it rests, and then it sinks.
-    await act(async () => keyboard.set(0));
-    await tick(KEYS_EASE_MS - 40);
-    expect(router.navigate).not.toHaveBeenCalled();
-    await tick(40 + FULL.close.gap + 100);
+    // The keys go, and the book, which follows them down frame by frame, is back with them; back, it
+    // rests, and then it sinks. It does not wait for the net.
+    await act(async () => lowerKeys());
+    await tick(FULL.close.gap + 150);
     expect(navigated()).toEqual(['/home/complete']);
     expect(mockRecord).toMatchObject({ name: null, asked: true });
   });
@@ -300,7 +316,7 @@ describe('Not now', () => {
   it('goes anyway, a moment later, when the keyboard height is never given back', async () => {
     await writeAndReflect();
     await toContact();
-    await act(async () => keyboard.set(300));
+    await act(async () => raiseKeys(300));
     await tick(KEYS_EASE_MS + 100);
     await fireEvent.press(screen.getByTestId('name-not-now'));
     await tick(NAME_UNDRAW_MS + BACK_IN_PLACE_NET_MS - 60);

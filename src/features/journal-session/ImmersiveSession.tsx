@@ -6,7 +6,6 @@ import Animated, {
   Easing,
   ReduceMotion,
   runOnJS,
-  useAnimatedKeyboard,
   useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
@@ -56,6 +55,7 @@ import { sessionCopy } from './sessionCopy';
 import { SessionHeader } from './SessionHeader';
 import { CONTROLS, qaKeyboardHeight, useSkyFrame, useSkyInk } from './sky';
 import { SkyInput } from './SkyInput';
+import type { SpeakView } from './SpeakPanel';
 import type { SessionController } from './useSessionController';
 import { useQuietControls } from './useQuietControls';
 import { useScreenReader } from './useScreenReader';
@@ -88,6 +88,11 @@ export const NAME_UNDRAW_MS = 160;
 export const BACK_IN_PLACE_NET_MS = 1200;
 /** The keys are down, and the book back in its place, within a point of where they rest. */
 const KEYS_DOWN = 1;
+/**
+ * Speaking, where a touch on the sky starts nothing: the note on the page says why, and offers its own
+ * way on (allow the microphone, open Settings, write instead).
+ */
+const TOUCH_ANSWERED: readonly SpeakView[] = ['explain', 'denied', 'unavailable', 'kept'];
 /** The book keeps this far clear of the question while it is asked. */
 const PROMPT_GAP = 22;
 /** However tall the question grows, the book steps back no further than this. */
@@ -460,34 +465,29 @@ export function ImmersiveSession({
   // A note is actually drawn: the words behind it drop to a faint trace so neither fights the other.
   const noteDrawn = (voiceNote || failure !== null) && notesMayShow;
 
-  // The keyboard rises over the lower scenery. The photograph and the words stay where they are:
-  // only the quiet controls ride above it.
-  const keyboard = useAnimatedKeyboard({
-    isStatusBarTranslucentAndroid: true,
-    isNavigationBarTranslucentAndroid: true,
-  });
-  const resting = insets.bottom + CONTROLS.aboveEdge;
+  // The keyboard rises over the lower scenery. The photograph and the words stay where they are: the
+  // quiet controls ride above it, and the book rises only as far as it must. The book, the controls and
+  // their shade all read the keys from one value, so that they move together, and only keys this screen
+  // has seen come are believed (src/features/book/useEasedKeys.ts).
   const qaKeyboard = qaKeyboardHeight();
-  const lift = useAnimatedStyle(() => {
-    const height = Math.max(keyboard.height.get(), qaKeyboard);
-    return { bottom: controlsBottom(height, resting, CONTROLS.aboveKeyboard) };
-  });
+  const keys = useEasedKeys(qaKeyboard);
+  const resting = insets.bottom + CONTROLS.aboveEdge;
+  const lift = useAnimatedStyle(() => ({
+    bottom: controlsBottom(keys.get(), resting, CONTROLS.aboveKeyboard),
+  }));
 
   // The shade under the controls reaches from the bottom of the screen to above them.
-  const span = useAnimatedStyle(() => {
-    const height = Math.max(keyboard.height.get(), qaKeyboard);
-    return { height: controlsBottom(height, resting, CONTROLS.aboveKeyboard) + GROUND_FADE };
-  });
+  const span = useAnimatedStyle(() => ({
+    height: controlsBottom(keys.get(), resting, CONTROLS.aboveKeyboard) + GROUND_FADE,
+  }));
 
   // The book rises with the keyboard, just far enough for the words being typed to stay in view.
   // While the closed book asks whose it is, it also keeps clear of the question beneath it: it steps
-  // back from its top as the keys come up, and comes forward again as they go.
+  // back from its top as the keys come up, in the same frame as the question rides up on them, and
+  // comes forward again as they go.
   const promptRoom = useSharedValue(0);
   const bookTop = bookFrame.top;
   const bookHeight = bookFrame.height;
-  // The book sees the keys eased where they jump: a keyboard that goes without animating (or a late
-  // frame) would otherwise take the closed book from its stepped-back size to its full size in one frame.
-  const keys = useEasedKeys(keyboard.height, qaKeyboard);
   const bookRise = useAnimatedStyle(() => {
     const height = keys.get();
     const rise = keyboardRise(height, screenHeight, bookBottom, bookDrop);
@@ -501,7 +501,12 @@ export function ImmersiveSession({
   // The answered book is back in its place once the keys it follows are down (see `answered`).
   const backInPlace = useCallback(() => inPlace.current?.(), []);
   useAnimatedReaction(
-    () => awaitingPlace.get() === 1 && keys.get() <= qaKeyboard + KEYS_DOWN,
+    () => {
+      // Both are read every time, so that each is something the reaction follows.
+      const awaiting = awaitingPlace.get() === 1;
+      const down = keys.get() <= qaKeyboard + KEYS_DOWN;
+      return awaiting && down;
+    },
     (back, was) => {
       if (back && !was) runOnJS(backInPlace)();
     },
@@ -562,14 +567,24 @@ export function ImmersiveSession({
     session.writeInstead();
   };
 
-  const scenery =
-    writing || !ready
-      ? { accessible: false }
-      : {
-          accessible: true,
-          accessibilityRole: 'button' as const,
-          accessibilityLabel: recording ? sessionCopy.speak.stop : sessionCopy.speak.record,
-        };
+  // To a screen reader the scenery is a button only where a touch on it does a thing of its own: on the
+  // open page, speaking, it starts a take or stops one. Anywhere else it is not there for a screen reader
+  // at all; the scenery is clickable, so leaving it unnamed made it a full-screen stop with nothing to say
+  // (the walk, v11, while writing). Its other touches (the caret, a hurried ritual) have their own ways.
+  const sceneryButton =
+    !writing &&
+    ready &&
+    failure === null &&
+    !parting &&
+    (!book || (settled && pageOpen)) &&
+    !TOUCH_ANSWERED.includes(speakView);
+  const scenery = sceneryButton
+    ? {
+        accessible: true,
+        accessibilityRole: 'button' as const,
+        accessibilityLabel: recording ? sessionCopy.speak.stop : sessionCopy.speak.record,
+      }
+    : { accessible: false, importantForAccessibility: 'no' as const };
 
   return (
     <Animated.View
@@ -636,6 +651,7 @@ export function ImmersiveSession({
 
       {bookInView && (
         <Animated.View
+          testID="session-book"
           pointerEvents="box-none"
           style={[
             StyleSheet.absoluteFill,
@@ -815,7 +831,7 @@ export function ImmersiveSession({
         style={[styles.ground, span]}
       />
 
-      <Animated.View pointerEvents="box-none" style={[styles.bottom, lift]}>
+      <Animated.View testID="session-row" pointerEvents="box-none" style={[styles.bottom, lift]}>
         {notice !== null && (
           // A line that appears because the state changed comes up, while its shade does.
           <Animated.View style={leaving}>

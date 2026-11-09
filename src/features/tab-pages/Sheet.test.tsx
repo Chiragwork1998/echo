@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
-import { DeviceEventEmitter, Keyboard, Platform, StyleSheet, Text } from 'react-native';
+import { DeviceEventEmitter, Dimensions, Keyboard, Platform, StyleSheet, Text } from 'react-native';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 
 import { cue } from '@/design/haptics';
@@ -11,7 +11,7 @@ import { ownWindowOpen } from '@/state/ownWindows';
 import { layOutSheet, modalHost } from '@/testing/dialogs';
 import { animationClock, reanimatedMock, uiRuntime } from '@/testing/reanimatedMock';
 
-import { Sheet, SheetAction, SheetButton } from './Sheet';
+import { KEYS_SETTLE_MS, Sheet, SheetAction, SheetButton } from './Sheet';
 
 jest.mock('@/design/haptics');
 jest.mock('@/design/useReduceMotion', () => ({ useReduceMotion: jest.fn(() => false) }));
@@ -644,6 +644,127 @@ describe('the first frame a sheet is drawn in', () => {
   });
 });
 
+// The walk (v11): "Delete this echo?" and "If you are struggling" were first drawn faint and about 53 dp
+// above their place, then about 20 dp below it, before rising. Android lays a Modal out first at a size
+// it works out from the app's window less its bars (840 points of a 914-point window on the walked
+// emulator), and then at the window's own size; the sheet, which sits at the window's foot, began to
+// arrive on the first and dropped 74 points with the second. It begins only once the window is its own
+// size, which, edge to edge, is the whole of the app's window.
+describe('a sheet’s window on Android, laid out first at a guess', () => {
+  const FRAME = 16;
+  const WINDOW = { width: 411, height: 914.2857, scale: 2.625, fontScale: 1 };
+  type Look = { opacity?: number; transform?: { translateY: number }[] };
+  const look = (id: string) =>
+    StyleSheet.flatten(screen.getByTestId(id, { includeHiddenElements: true }).props.style) as Look;
+  const drawn = () => ({
+    sheet: look('sheet-paper').opacity,
+    low: look('sheet-paper').transform?.[0]?.translateY,
+    scrim: look('sheet-scrim').opacity,
+  });
+  const START = { sheet: 0, low: 24, scrim: 0 };
+  const AT_REST = { sheet: 1, low: 0, scrim: 1 };
+  const layOut = (height: number) =>
+    fireEvent(screen.getByTestId('sheet-stage', { includeHiddenElements: true }), 'layout', {
+      nativeEvent: { layout: { x: 0, y: 0, width: WINDOW.width, height } },
+    });
+  async function frames(
+    view: { rerender: (element: React.ReactElement) => unknown },
+    count: number,
+  ) {
+    const seen: ReturnType<typeof drawn>[] = [];
+    for (let frame = 0; frame < count; frame += 1) {
+      await advance(FRAME);
+      await view.rerender(sheet({ visible: true }));
+      seen.push(drawn());
+    }
+    return seen;
+  }
+
+  let restore: () => void;
+  beforeEach(() => {
+    animationClock.stepped = true;
+    const platform = jest.replaceProperty(Platform, 'OS', 'android');
+    const dimensions = jest.spyOn(Dimensions, 'get').mockReturnValue(WINDOW);
+    restore = () => {
+      dimensions.mockRestore();
+      platform.restore();
+    };
+  });
+  afterEach(() => restore());
+
+  it('does not begin on the first guess, and arrives from its start once the window is its own size', async () => {
+    const view = await render(sheet({ visible: true }));
+    await layOut(840);
+    // The window is drawn at the guess for a frame or two: nothing of the sheet is in it yet.
+    for (const frame of await frames(view, 6)) expect(frame).toEqual(START);
+    await layOut(WINDOW.height);
+    const seen = await frames(view, 45);
+    expect(seen[0]!.sheet).toBeLessThan(1);
+    expect(seen[0]!.low).toBeGreaterThan(0);
+    // And it only rises: never above its place, never dropping back below where it was.
+    const low = seen.map(({ low: value }) => value ?? 0);
+    expect(low).toEqual([...low].sort((a, b) => b - a));
+    expect(Math.min(...low)).toBe(0);
+    expect(seen.at(-1)).toEqual(AT_REST);
+  });
+
+  it('waits the same way with the keys up: they pad the stage, and never change its height', async () => {
+    const view = await render(sheet({ visible: true }));
+    await act(async () => {
+      DeviceEventEmitter.emit('keyboardDidShow', { endCoordinates: { height: 312, screenY: 600 } });
+    });
+    await layOut(840);
+    for (const frame of await frames(view, 6)) expect(frame).toEqual(START);
+    await layOut(WINDOW.height);
+    const seen = await frames(view, 45);
+    expect(seen[0]!.low).toBeGreaterThan(0);
+    expect(seen.at(-1)).toEqual(AT_REST);
+    await act(async () => {
+      DeviceEventEmitter.emit('keyboardDidHide', { endCoordinates: { height: 0 } });
+    });
+  });
+
+  it('arrives on its first layout when that is already the whole window', async () => {
+    const view = await render(sheet({ visible: true }));
+    await layOut(WINDOW.height - 0.5);
+    const seen = await frames(view, 3);
+    expect(seen.at(-1)!.low).toBeLessThan(START.low);
+  });
+
+  it('takes a second size as the window’s own, though it is not the whole window (a split screen)', async () => {
+    const view = await render(sheet({ visible: true }));
+    await layOut(840);
+    await layOut(452);
+    const seen = await frames(view, 45);
+    expect(seen[0]!.low).toBeGreaterThan(0);
+    expect(seen.at(-1)).toEqual(AT_REST);
+  });
+
+  it('arrives anyway, a little late, if the window never says more than its guess', async () => {
+    const view = await render(sheet({ visible: true }));
+    await layOut(840);
+    await advance(300);
+    await view.rerender(sheet({ visible: true }));
+    expect(drawn()).toEqual(START);
+    await advance(150);
+    const seen = await frames(view, 45);
+    expect(seen.at(-1)).toEqual(AT_REST);
+  });
+
+  it('waits for the next window’s own size too, when it opens again', async () => {
+    const view = await render(sheet({ visible: true }));
+    await layOut(840);
+    await layOut(WINDOW.height);
+    await advance(1000);
+    await view.rerender(sheet({ visible: false }));
+    await advance(1500);
+    await view.rerender(sheet({ visible: false }));
+    await view.rerender(sheet({ visible: true }));
+    await layOut(840);
+    for (const frame of await frames(view, 6)) expect(frame).toEqual(START);
+  });
+});
+
 // The walk (v10), the name sheet: on "Write it" the sheet re-laid out into its named state mid-exit (a
 // "Remove my name" row appeared) and jumped up about 120 px as it faded, and the keyboard stayed over
 // You for 350 ms after the sheet had gone. A sheet that is leaving shows what it showed when it left,
@@ -752,6 +873,73 @@ describe('a sheet leaving over the keyboard', () => {
     await advance(100);
     await view.rerender(named(false, null));
     expect(stageStyle().paddingBottom).toBe(raised);
+  });
+
+  // The walk (v11), a name written on You: the sheet and its keys left together, You was whole, and then
+  // the keyboard came back over You, whole, for two frames as the sheet's window went. The system goes
+  // on putting the keys away after they have been seen to go, and a window taken away meanwhile handed
+  // them back. The window stays, invisible and untouchable, until the keys have gone and a moment more.
+  const window = () => screen.queryByTestId('sheet-stage', { includeHiddenElements: true });
+  const gone = () =>
+    act(async () => {
+      DeviceEventEmitter.emit('keyboardDidHide', { endCoordinates: { height: 0 } });
+    });
+
+  it('keeps its window until the keyboard it put away has gone, and a moment more', async () => {
+    const view = await render(named(true, null));
+    await keyboardUp();
+    await view.rerender(named(false, 'Quorvenel'));
+    // The exit has faded, and the keys have not said they have gone.
+    await advance(600);
+    expect(window()).toBeTruthy();
+    expect(ownWindowOpen()).toBe(true);
+    await gone();
+    await advance(KEYS_SETTLE_MS - 20);
+    expect(window()).toBeTruthy();
+    await advance(40);
+    expect(window()).toBeNull();
+    expect(ownWindowOpen()).toBe(false);
+  });
+
+  it('waits for its fade too, when the keys are gone first', async () => {
+    // A UI thread half a second late: the scrim reaches nothing long after the keys have gone.
+    animationClock.lag = 500;
+    const view = await render(named(true, null));
+    await keyboardUp();
+    await view.rerender(named(false, null));
+    await gone();
+    await advance(KEYS_SETTLE_MS + 100);
+    expect(window()).toBeTruthy();
+    await advance(500);
+    expect(window()).toBeNull();
+  });
+
+  it('is taken away at last, however long the keyboard takes to say it has gone', async () => {
+    const view = await render(named(true, null));
+    await keyboardUp();
+    await view.rerender(named(false, null));
+    await advance(1250);
+    expect(window()).toBeNull();
+    expect(ownWindowOpen()).toBe(false);
+  });
+
+  it('goes with its fade when it raised no keyboard, as it always has', async () => {
+    const view = await render(named(true, null));
+    await view.rerender(named(false, null));
+    await advance(270);
+    expect(window()).toBeNull();
+  });
+
+  it('stays, and stays open, if it comes back while it waits for the keys', async () => {
+    const view = await render(named(true, null));
+    await keyboardUp();
+    await view.rerender(named(false, null));
+    await advance(400);
+    await view.rerender(named(true, null));
+    await gone();
+    await advance(2000);
+    expect(screen.getByTestId('sheet')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Write it' })).toBeEnabled();
   });
 
   it('catches up with the keyboard if it comes back during its exit', async () => {
