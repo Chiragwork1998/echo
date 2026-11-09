@@ -3,9 +3,7 @@ import { useCallback, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { backgroundSources } from './generated/backgrounds';
-import { plateColour } from './plateColour';
 import { useBackingPlate, type ShownPlate } from './platePaint';
-import { useTheme } from './theme';
 
 const sameAs = (a: ShownPlate | null, b: ShownPlate | null) =>
   a?.theme === b?.theme && a?.screen === b?.screen;
@@ -48,27 +46,25 @@ function Photograph({
  * that was on show stays beneath the new one until the new one has been drawn, so there is no
  * moment at which it is empty. At most two photographs are held, and only for that moment.
  *
- * A flat colour, the plate's dominant colour and never white, is only what it stands on before the
- * first plate has been drawn, which the splash covers.
+ * It has no colour of its own. The walk (v10) caught its old base, the Night plate's dominant colour,
+ * alone on the screen for one frame inside the splash (runs 4 and 5): whatever is drawn at the moment
+ * the splash goes is seen, and a flat colour that is not the splash's own is a flash. Before the first
+ * plate has been drawn it is clear, so only the window beneath it, which is the splash's own navy
+ * (app.json's backgroundColor), can show; and the splash is held until the first plate has been
+ * drawn in any case (app/_layout), so that the first frame it uncovers is a photograph.
  */
 export function PlateBacking() {
-  const { target, colors } = useTheme();
   const wanted = useBackingPlate();
   // The photograph that has been drawn here, which is what is on show while the wanted one is drawn.
   const [drawn, setDrawn] = useState<ShownPlate | null>(null);
   const settle = useCallback((plate: ShownPlate) => setDrawn(plate), []);
 
   const beneath = drawn && !sameAs(drawn, wanted) ? drawn : null;
-  const base = plateColour(
-    (wanted ?? drawn)?.theme ?? target,
-    (wanted ?? drawn)?.screen ?? 'landing',
-    colors.textInk,
-  );
 
   return (
     <View
       testID="plate-backing"
-      style={[StyleSheet.absoluteFill, { backgroundColor: base }]}
+      style={StyleSheet.absoluteFill}
       pointerEvents="none"
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"

@@ -8,6 +8,14 @@ import {
   type PropsWithChildren,
 } from 'react';
 import { useColorScheme } from 'react-native';
+import {
+  Easing,
+  makeMutable,
+  ReduceMotion,
+  withDelay,
+  withTiming,
+  type SharedValue,
+} from 'react-native-reanimated';
 
 import { usePreferences } from '@/state/preferences';
 import { qa } from '@/testing/qa';
@@ -31,6 +39,13 @@ type ThemeValue = {
   target: ThemeName;
   preference: ThemePreference;
   setPreference: (preference: ThemePreference) => void;
+  /**
+   * How much of Night there is in the things that tint rather than write (the glass): 1 is Night's
+   * own, 0 is Day's. It moves on the UI thread, over the controls' colour time and after the same
+   * wait, so a JavaScript thread that is busy cannot take its steps late and all at once, as it can
+   * the colours above (see useShownTheme).
+   */
+  mix: SharedValue<number>;
 };
 
 const ThemeContext = createContext<ThemeValue | null>(null);
@@ -90,6 +105,42 @@ function useShownTheme(target: ThemeName, animate: boolean): Shown {
   return animate ? shown : rest(target);
 }
 
+/**
+ * The mix of Night and Day for glass: a number the UI thread moves, on the schedule the controls'
+ * colours keep (they wait LEAD_MS, and then move over CONTROLS_MS). A change that comes while it is
+ * moving goes back from where it had reached.
+ */
+function useMixValue(target: ThemeName, animate: boolean): SharedValue<number> {
+  const reduced = useReduceMotion();
+  // Made outside the hooks that screens draw their own values with: the provider is above every
+  // screen, and a value it took in their order would be the first any of them saw.
+  const [mix] = useState(() => makeMutable(target === 'night' ? 1 : 0));
+  // Nothing is changing when the provider first mounts.
+  const begun = useRef(false);
+  useEffect(() => {
+    if (!begun.current) {
+      begun.current = true;
+      return;
+    }
+    const to = target === 'night' ? 1 : 0;
+    if (!animate) {
+      mix.set(to);
+      return;
+    }
+    mix.set(
+      withDelay(
+        reduced ? 0 : LEAD_MS,
+        withTiming(to, {
+          duration: reduced ? REDUCED_MS : CONTROLS_MS,
+          easing: Easing.inOut(Easing.quad),
+          reduceMotion: ReduceMotion.Never,
+        }),
+      ),
+    );
+  }, [animate, mix, reduced, target]);
+  return mix;
+}
+
 type ProviderProps = PropsWithChildren<{
   /**
    * Moves between themes over time. Tests turn it off, so that a change is complete the moment it
@@ -113,11 +164,17 @@ export function ThemeProvider({ children, crossfade = true }: ProviderProps) {
   const target = held ? frozen : wanted;
 
   const { name, colors } = useShownTheme(target, crossfade);
+  const mix = useMixValue(target, crossfade);
   const value = useMemo(
-    () => ({ name, colors, target, preference, setPreference }),
-    [name, colors, target, preference, setPreference],
+    () => ({ name, colors, target, preference, setPreference, mix }),
+    [name, colors, target, preference, setPreference, mix],
   );
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
+}
+
+/** How much of Night there is in the glass, for a fill that tints (see GlassFill). */
+export function useThemeMix(): SharedValue<number> {
+  return useTheme().mix;
 }
 
 export function useTheme() {

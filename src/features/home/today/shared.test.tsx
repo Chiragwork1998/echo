@@ -1,18 +1,34 @@
-import { screen } from '@testing-library/react-native';
+import { act, screen } from '@testing-library/react-native';
+import { Image } from 'expo-image';
 import { StyleSheet } from 'react-native';
 
+import { backgroundSources } from '@/design/generated/backgrounds';
+import { resetPlateThumbsForTests, warmPlateThumbs } from '@/design/plateThumbs';
+import { tokens } from '@/design/tokens';
+import { usePreferences } from '@/state/preferences';
 import { render } from '@/testing/render';
 
 import { homeLabels } from './homeLabels';
-import { backgroundSources } from '@/design/generated/backgrounds';
-import { tokens } from '@/design/tokens';
 
 import { CardSkeleton, PlateThumb } from './shared';
 
 // The picture itself is not what is under test: how it arrives is.
 jest.mock('expo-image', () => {
   const { View: Box } = jest.requireActual('react-native');
-  return { Image: (props: object) => <Box testID="thumb" {...props} /> };
+  // Nothing is decoded until a test says so: a screen that mounts first meets a picture that is late.
+  const Image = Object.assign((props: object) => <Box testID="thumb" {...props} />, {
+    loadAsync: jest.fn(() => new Promise(() => undefined)),
+  });
+  return { Image };
+});
+
+const loadAsync = jest.mocked(Image.loadAsync);
+const decoded = (name: string) => ({ decoded: name }) as never;
+
+beforeEach(() => {
+  resetPlateThumbsForTests();
+  loadAsync.mockClear();
+  loadAsync.mockImplementation(() => new Promise(() => undefined));
 });
 
 type Node = { props?: { style?: unknown }; children?: (Node | string)[] };
@@ -67,5 +83,73 @@ describe('the thumbnail of the plate on Home’s card and avatar', () => {
       image.props.source,
     );
     expect(image.props.contentFit).toBe('fill');
+  });
+});
+
+// The walk (v10): the card's thumbnail was empty for one frame and popped in, at the welcome and after
+// every tab change; the header's avatar showed no fade. The plate is decoded ahead of time and kept
+// (src/design/plateThumbs.ts), so a screen that comes back draws it whole in its first frame.
+describe('the thumbnail when the plate has been decoded ahead of time', () => {
+  const thumb = () => screen.getByTestId('thumb', { includeHiddenElements: true });
+
+  beforeEach(async () => {
+    await act(async () => usePreferences.setState({ theme: 'night' }));
+  });
+
+  it('draws the decoded picture in the very first frame, with no dissolve to wait through', async () => {
+    const night = decoded('night');
+    loadAsync.mockResolvedValue(night);
+    await act(async () => warmPlateThumbs('night'));
+    await render(<PlateThumb size={72} radius={12} />);
+    expect(thumb().props.source).toBe(night);
+    expect(thumb().props.transition).toBe(0);
+  });
+
+  it('draws it the same way each time the screen comes back, after a tab change', async () => {
+    const night = decoded('night');
+    loadAsync.mockResolvedValue(night);
+    await act(async () => warmPlateThumbs('night'));
+    const first = await render(<PlateThumb size={72} radius={12} />);
+    await first.unmount();
+    await render(<PlateThumb size={72} radius={12} />);
+    expect(thumb().props.source).toBe(night);
+    expect(thumb().props.transition).toBe(0);
+  });
+
+  it('takes the picture of the theme that is on show', async () => {
+    loadAsync.mockImplementation(async (source) =>
+      source === backgroundSources.day.home ? decoded('day') : decoded('night'),
+    );
+    await act(async () => warmPlateThumbs('night'));
+    await act(async () => usePreferences.setState({ theme: 'day' }));
+    await render(<PlateThumb size={72} radius={12} />);
+    expect(thumb().props.source).toEqual(decoded('day'));
+  });
+
+  it('keeps the crop it always had: the same place on the plate, at the same size', async () => {
+    loadAsync.mockResolvedValue(decoded('night'));
+    await act(async () => warmPlateThumbs('night'));
+    await render(<PlateThumb size={72} radius={12} focus={{ x: 0, y: 0.24, width: 1 }} />);
+    expect(thumb().props.contentFit).toBe('fill');
+    const crop = StyleSheet.flatten(thumb().props.style as object) as Record<string, number>;
+    expect(crop).toMatchObject({ position: 'absolute', width: 72 });
+    expect(crop.left).toBeCloseTo(0);
+    expect(crop.top).toBeCloseTo(-0.24 * 72 * (2796 / 1290));
+  });
+
+  it('swaps to the decoded picture without a second dissolve if it arrives once the screen is up', async () => {
+    let finish: (image: never) => void = () => undefined;
+    loadAsync.mockImplementation(() => new Promise((resolve) => (finish = resolve as never)));
+    await render(<PlateThumb size={72} radius={12} />);
+    // Late: the plate's own file, dissolving in over the glass, as before.
+    expect(thumb().props.source).toBe(backgroundSources.night.home);
+    expect(thumb().props.transition).toEqual({
+      duration: tokens.motion.fast,
+      effect: 'cross-dissolve',
+    });
+    const night = decoded('night');
+    await act(async () => finish(night));
+    expect(thumb().props.source).toBe(night);
+    expect(thumb().props.transition).toBe(0);
   });
 });

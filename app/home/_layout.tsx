@@ -9,7 +9,7 @@ import { tokens } from '@/design/tokens';
 import { useReduceMotion } from '@/design/useReduceMotion';
 import { HomeDissolveProvider } from '@/features/home/dissolve';
 import { NightHomeLoop } from '@/features/home/NightHomeLoop';
-import { SESSION_ROUTE } from '@/features/home/sessionRoute';
+import { overHome, SESSION_ROUTE } from '@/features/home/sessionRoute';
 import { readWelcomeCandidate } from '@/features/home/today/useStoneArrival';
 import { HomeTabBar } from '@/features/home/tabs/HomeTabBar';
 import { useGate } from '@/state/gate';
@@ -44,7 +44,7 @@ export default function HomeLayout() {
     >
       {/* Reached by dissolve, so Home has already melted when it arrives; its fade out is the stack's
           own, so the book goes gently (src/features/home/sessionRoute.ts). */}
-      <Stack.Screen name="session" options={SESSION_ROUTE} />
+      <Stack.Screen name="session" options={{ ...SESSION_ROUTE, ...overHome() }} />
       {/* Breathe is reached the same way, and breathes over the same plate. */}
       <Stack.Screen
         name="breathe"
@@ -53,8 +53,11 @@ export default function HomeLayout() {
       {/* Rehearse fades in over the session it follows, onto the same plate. */}
       <Stack.Screen
         name="rehearse"
-        options={{ gestureEnabled: false, contentStyle: CLEAR_SCREEN }}
+        options={{ gestureEnabled: false, contentStyle: CLEAR_SCREEN, ...overHome() }}
       />
+      {/* Completion follows the session, and Enter your space goes back through it to Home. Presented
+          over Home like the session, so that Home's interface is there when its card goes. */}
+      <Stack.Screen name="complete" options={{ contentStyle: CLEAR_SCREEN, ...overHome() }} />
     </Stack>
   );
   return (

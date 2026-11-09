@@ -22,12 +22,13 @@ import {
 import { withBillingForTests, withoutBillingForTests } from '@/testing/plus';
 
 import RootLayout from '../../app/_layout';
-import { PLATE_WAIT_MS, resetPlatesForTests } from '@/design/platePaint';
+import { noteShownPlate, PLATE_WAIT_MS, resetPlatesForTests } from '@/design/platePaint';
+import { warmPlateThumbs } from '@/design/plateThumbs';
 
 import { bootApp, RELOCK_AFTER_MS, resetGateForTests, unlock, useGate } from './gate';
 import { gateCopy } from './gateCopy';
 import { resetOnboarding, useOnboarding } from './onboarding';
-import { ownWindowOpen } from './ownWindows';
+import { openSystemPicker, ownWindowOpen } from './ownWindows';
 
 // Lives here because Expo Router treats every file under app/ as a route.
 
@@ -113,6 +114,11 @@ jest.mock('@/services/biometric', () => ({
   authenticate: jest.fn(),
 }));
 
+jest.mock('@/design/plateThumbs', () => ({
+  ...jest.requireActual('@/design/plateThumbs'),
+  warmPlateThumbs: jest.fn(async () => undefined),
+}));
+
 jest.mock('@/services/plus/engine', () => ({
   ...jest.requireActual('@/services/plus/engine'),
   startPlus: jest.fn(async () => undefined),
@@ -178,10 +184,11 @@ describe('before the gate resolves', () => {
 });
 
 describe('once ready', () => {
-  it('mounts the navigator and lifts the splash', async () => {
+  it('mounts the navigator and lifts the splash once the first photograph is up', async () => {
     await render(<RootLayout />);
     await setGate({ status: { kind: 'ready', resume: '/' } });
     expect(screen.getByTestId(NAVIGATOR)).toBeTruthy();
+    await act(async () => noteShownPlate('landing', 'night', 'landing'));
     expect(hideSplash).toHaveBeenCalled();
   });
 
@@ -223,6 +230,15 @@ describe('once ready', () => {
     await setGate({ status: { kind: 'ready', resume: '/onboarding/completion' } });
     await act(async () => useOnboarding.setState({ completedAt: 1 }));
     expect(replace).toHaveBeenLastCalledWith('/home');
+  });
+
+  // Home's card and avatar draw a thumbnail of the plate. Decoded ahead of time, it is whole in the
+  // first frame they are asked for (src/design/plateThumbs.ts).
+  it('decodes the thumbnails of Home’s plate once the gate is ready, the theme on show first', async () => {
+    await render(<RootLayout />);
+    expect(warmPlateThumbs).not.toHaveBeenCalled();
+    await setGate({ status: { kind: 'ready', resume: '/' } });
+    expect(warmPlateThumbs).toHaveBeenCalledWith('night');
   });
 
   it('starts ECHO Plus once, at launch', async () => {
@@ -319,6 +335,7 @@ describe('a flat colour is never what is on the screen', () => {
 
 describe('the splash waits for the first photograph', () => {
   const home = { status: { kind: 'ready', resume: '/home' } as const };
+  const shown = () => act(async () => noteShownPlate('home', 'night', 'home'));
 
   beforeEach(() => {
     mockPlates = true;
@@ -332,6 +349,27 @@ describe('the splash waits for the first photograph', () => {
     expect(screen.getByTestId(NAVIGATOR)).toBeTruthy();
     expect(hideSplash).not.toHaveBeenCalled();
     await act(async () => mockSettlePlate?.());
+    await shown();
+    expect(hideSplash).toHaveBeenCalledTimes(1);
+  });
+
+  // The walk (v10, runs 4 and 5) saw one flat frame inside the splash, and nothing of the screen in
+  // it: the splash had been lifted before any plate had mounted, because nothing was pending yet.
+  it('stays up before any plate has mounted at all, because nothing pending is not the same as drawn', async () => {
+    mockPlates = false;
+    await render(<RootLayout />);
+    await setGate(home);
+    expect(hideSplash).not.toHaveBeenCalled();
+    await shown();
+    expect(hideSplash).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays up after the plate has settled its ticket, until it is the photograph on show', async () => {
+    await render(<RootLayout />);
+    await setGate(home);
+    await act(async () => mockSettlePlate?.());
+    expect(hideSplash).not.toHaveBeenCalled();
+    await shown();
     expect(hideSplash).toHaveBeenCalledTimes(1);
   });
 
@@ -344,10 +382,20 @@ describe('the splash waits for the first photograph', () => {
     expect(hideSplash).toHaveBeenCalledTimes(1);
   });
 
-  it('lifts at once when there is no plate to wait for', async () => {
+  it('lifts anyway if no plate ever mounts', async () => {
     mockPlates = false;
     await render(<RootLayout />);
     await setGate(home);
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(PLATE_WAIT_MS);
+    });
+    expect(hideSplash).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not wait for a photograph when the gate stopped the launch: there is no screen to draw one', async () => {
+    mockPlates = false;
+    await render(<RootLayout />);
+    await setGate({ status: { kind: 'key_lost', reason: 'missing' } });
     expect(hideSplash).toHaveBeenCalled();
   });
 });
@@ -711,5 +759,91 @@ describe('the privacy cover and ECHO’s own windows', () => {
     await send('background');
     expect(cover()).toBeTruthy();
     expect(screen.queryByTestId(NAVIGATOR)).toBeNull();
+  });
+});
+
+// The system's file picker is another Activity: opening it takes the app out of the active state, as
+// well as the window's focus, and nothing of ECHO's own is in the recents thumbnail while it is on top.
+// The walk (v10) saw the cover held for 3.6 s after the picker closed, over a restore that was reading
+// the file it had been given. The cover is not raised for the picker at all, so there is none to lift,
+// and what lifts it when the picker is done does not wait on any event or on a busy thread.
+describe('the privacy cover and the system file picker', () => {
+  const ready = { status: { kind: 'ready', resume: '/' } as const };
+
+  beforeEach(async () => {
+    Object.defineProperty(AppState, 'currentState', { value: 'active', configurable: true });
+    await render(<RootLayout />);
+    await setGate(ready);
+  });
+
+  it('is not raised when the picker takes the window’s focus', async () => {
+    const closePicker = openSystemPicker();
+    await windowEvent('blur');
+    expect(cover()).toBeNull();
+    expect(screen.getByTestId(NAVIGATOR)).toBeTruthy();
+    closePicker();
+  });
+
+  it('is not raised when the picker takes the app out of the active state', async () => {
+    const closePicker = openSystemPicker();
+    await windowEvent('blur');
+    await send('background');
+    expect(cover()).toBeNull();
+    expect(screen.getByTestId(NAVIGATOR)).toBeTruthy();
+    await send('active');
+    closePicker();
+  });
+
+  it('lifts a cover that was raised on the way in the moment the picker is done, before the system has said the app is active again', async () => {
+    // The activity result reaches JavaScript ahead of the resume, so the app still reads as away.
+    await send('background');
+    expect(cover()).toBeTruthy();
+    const closePicker = openSystemPicker();
+    await act(async () => closePicker());
+    expect(cover()).toBeNull();
+    expect(screen.getByTestId(NAVIGATOR)).toBeTruthy();
+  });
+
+  it('is raised again for the app switcher once the picker has closed', async () => {
+    const closePicker = openSystemPicker();
+    await windowEvent('blur');
+    await act(async () => closePicker());
+    await send('active');
+    await send('background');
+    expect(cover()).toBeTruthy();
+    expect(screen.queryByTestId(NAVIGATOR)).toBeNull();
+  });
+});
+
+// Android reports a window gaining focus before it has said the app is active, on a cold launch, where
+// AppState has not yet answered. A focus is never a reason to hide the page; only a blur and a change
+// away from active are.
+describe('the privacy cover during a launch', () => {
+  const ready = { status: { kind: 'ready', resume: '/' } as const };
+
+  it('is not raised by a focus that comes before the app has said it is active', async () => {
+    Object.defineProperty(AppState, 'currentState', { value: 'background', configurable: true });
+    await render(<RootLayout />);
+    await setGate(ready);
+    await windowEvent('focus');
+    expect(cover()).toBeNull();
+    expect(screen.getByTestId(NAVIGATOR)).toBeTruthy();
+  });
+
+  it('is not raised by a blur while the app has not yet said it is active either', async () => {
+    Object.defineProperty(AppState, 'currentState', { value: 'background', configurable: true });
+    await render(<RootLayout />);
+    await setGate(ready);
+    await windowEvent('blur');
+    expect(cover()).toBeNull();
+    expect(screen.getByTestId(NAVIGATOR)).toBeTruthy();
+  });
+
+  it('still covers on a blur once the app is active: that is the app switcher opening', async () => {
+    Object.defineProperty(AppState, 'currentState', { value: 'active', configurable: true });
+    await render(<RootLayout />);
+    await setGate(ready);
+    await windowEvent('blur');
+    expect(cover()).toBeTruthy();
   });
 });

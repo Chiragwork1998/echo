@@ -1,7 +1,7 @@
 import { act, screen } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 
-import { backgroundColours, backgroundSources } from '@/design/generated/backgrounds';
+import { backgroundSources } from '@/design/generated/backgrounds';
 import { usePreferences } from '@/state/preferences';
 import { render } from '@/testing/render';
 
@@ -24,7 +24,7 @@ beforeEach(async () => {
 });
 
 describe('the plate backing, beneath the whole navigator', () => {
-  it('is a flat colour only until the first plate has been drawn, and then it is a photograph', async () => {
+  it('is clear until the first plate has been drawn, and then it is a photograph', async () => {
     await render(<PlateBacking />);
     expect(photographs()).toHaveLength(0);
     await act(async () => noteShownPlate('home', 'night', 'home'));
@@ -98,12 +98,13 @@ describe('the plate backing, beneath the whole navigator', () => {
     expect(sources()).toContain(backgroundSources.night.home);
   });
 
-  it('keeps the flat colour that is its base the dominant colour of the plate, never white', async () => {
+  // The walk (v10, runs 4 and 5) caught the old base, the Night plate's dominant colour, alone on the
+  // screen for one frame inside the splash. Whatever is drawn when the splash goes is seen.
+  it('has no colour of its own, so that no flat colour can ever be what is on show', async () => {
     await render(<PlateBacking />);
     const backing = screen.getByTestId('plate-backing', HIDDEN);
-    const { backgroundColor } = StyleSheet.flatten(backing.props.style as object) as {
-      backgroundColor?: string;
-    };
-    expect(Object.values(backgroundColours.night)).toContain(backgroundColor);
+    expect(StyleSheet.flatten(backing.props.style as object)).not.toHaveProperty('backgroundColor');
+    await act(async () => noteShownPlate('a', 'day', 'privacy'));
+    expect(StyleSheet.flatten(backing.props.style as object)).not.toHaveProperty('backgroundColor');
   });
 });

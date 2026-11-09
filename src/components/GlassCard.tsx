@@ -19,6 +19,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 
+import { GlassFill } from '@/design/GlassFill';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 
@@ -110,12 +111,7 @@ export function GlassCard({
         {!reduceTransparency && (
           <GlassBlur radius={strength === 'strong' ? tokens.blur.glassStrong : tokens.blur.glass} />
         )}
-        <View
-          style={[
-            StyleSheet.absoluteFill,
-            { backgroundColor: strong ? colors.surfaceGlassStrong : colors.surfaceGlass },
-          ]}
-        />
+        <GlassFill strong={strong} />
         <OnGlass style={contentStyle} wrap>
           {contentKey === undefined ? children : <Swap contentKey={contentKey}>{children}</Swap>}
         </OnGlass>
