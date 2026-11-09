@@ -126,6 +126,12 @@ export const updateDraft = (id: string, change: (entry: Entry) => EntryContent) 
   });
 export const commitEntry = (id: string, content: EntryContent) =>
   mutate((journal) => journal.commitEntry(id, content), tellCommit);
+/**
+ * A kept entry's words, set out (D-017). Lists, Home and the reader refresh as for any change, and,
+ * like a commit's, the news waits while a book is closing.
+ */
+export const reformatEntry = (id: string, text: string) =>
+  mutate((journal) => journal.reformatEntry(id, text), tellCommit);
 export const discardDraft = (id: string) => mutate((journal) => journal.discardDraft(id));
 /**
  * Clears what a draft that was never written may have left (a recording begun before the first save),

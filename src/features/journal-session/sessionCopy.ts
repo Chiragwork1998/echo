@@ -91,7 +91,7 @@ export const sessionCopy = {
       'OpenAI’s transcription service does not store it, and does not train on it.',
       'ECHO’s own server keeps none of your voice or words.',
       'Your recording and your words are encrypted when saved on this phone.',
-      'If you speak Hindi, or turn on Tidy my words, the text also goes through a second step at OpenAI. OpenAI may keep that text for up to 30 days to check for abuse, then deletes it. It is not used for training.',
+      'Your words then go through a second step at OpenAI that sets them out in paragraphs, keeping every word, and writes any Hindi in Roman script. With Tidy my words it also removes fillers. OpenAI may keep that text for up to 30 days to check for abuse, then deletes it. It is not used for training.',
     ],
     allow: 'Allow',
     keep: 'Keep my voice only',
@@ -101,8 +101,8 @@ export const sessionCopy = {
    * The first time Show words is turned on. Live words stream the voice while it is spoken, and
    * OpenAI's realtime service keeps abuse-monitoring data for up to 30 days, so this is said plainly
    * and hiding words is offered as the way to stop the streaming. Hiding does not avoid the second
-   * step for Hindi and Tidy, and a long take is sent in parts, so the last fact says only what is
-   * true. Needs the owner's approval.
+   * step, which sets every spoken entry out (D-017), and a long take is sent in parts, so the last
+   * fact says only what is true. Needs the owner's approval.
    */
   liveConsent: {
     title: 'Show your words as you speak?',
@@ -112,7 +112,7 @@ export const sessionCopy = {
       'Your voice streams to OpenAI as you speak, sent securely, and comes back as words on the screen.',
       'OpenAI may keep what is sent and received for up to 30 days to check for abuse, then deletes it. It is not used for training.',
       'ECHO’s own server keeps none of your voice or words. Your recording and your words are encrypted when saved on this phone.',
-      'If you speak Hindi, or turn on Tidy my words, the finished text also goes through a second step at OpenAI, kept for up to 30 days in the same way.',
+      'The finished text also goes through a second step at OpenAI that sets it out in paragraphs, keeping every word, and writes any Hindi in Roman script, or tidies it with Tidy my words. It is kept for up to 30 days in the same way.',
       'Hiding words stops the streaming. Your voice is sent after you stop, in parts if the take is long, to a transcription service that does not store it. The second step above still applies.',
     ],
     allow: 'Show words',

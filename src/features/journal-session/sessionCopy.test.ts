@@ -32,9 +32,20 @@ describe('what the voice consent promises', () => {
     expect(live).toMatch(/The second step above still applies\./);
   });
 
+  it('says that every spoken entry goes through the second step to be set out, because it does', () => {
+    // A kept spoken entry is set out in paragraphs at OpenAI under this agreement (D-017), where the
+    // words agreed to under version 2 said the second step was only for Hindi and Tidy my words.
+    const fact = sessionCopy.consent.facts.find((line) => /second step/.test(line)) ?? '';
+    expect(fact).toMatch(/sets them out in paragraphs, keeping every word/);
+    expect(fact).toMatch(/30 days/);
+    expect(fact).not.toMatch(/^If you speak Hindi/);
+    expect(sessionCopy.liveConsent.facts.join(' ')).toMatch(/sets it out in paragraphs/);
+  });
+
   it('is under the policy version that was current when these words were agreed to', () => {
-    // No real person has agreed to any version yet, so the words above were corrected in place. The
-    // day someone has, a change to any of them raises this (state/preferences.ts).
-    expect(VOICE_POLICY_VERSION).toBe(2);
+    // The owner agreed to version 2 on his own phone (D-016), so these words could no longer be
+    // corrected in place: setting spoken entries out raised it to 3, and everyone who agreed to 2 is
+    // asked again before their next upload (state/preferences.ts).
+    expect(VOICE_POLICY_VERSION).toBe(3);
   });
 });

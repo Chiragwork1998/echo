@@ -46,7 +46,7 @@ export const youCopy = {
     'Off: recordings stay on this phone and are never sent. On: your voice goes to OpenAI to become text, sent securely and not stored by OpenAI’s transcription service. Turning it on shows exactly what happens first.',
   tidyWords: 'Tidy my words',
   tidyWordsDetail:
-    'Off: your journal keeps your exact words, including ums and changes of mind. On: the text also goes through a second step at OpenAI that removes fillers and tidies it, which OpenAI may keep for up to 30 days to check for abuse.',
+    'Off: your journal keeps your exact words, including ums and changes of mind. On: the second step at OpenAI also removes fillers and tidies the text, which OpenAI may keep for up to 30 days to check for abuse.',
   /** The privacy choices' longer explanations wait behind this, in place of a wall of text. */
   aboutThis: 'About this',
   aboutThisHint: 'Shows what each choice does with your voice and words',

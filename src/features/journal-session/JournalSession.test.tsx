@@ -13,6 +13,7 @@ import {
   useVoiceRecorder,
   type Journal,
 } from '@/features/journal';
+import { queueFormat } from '@/services/formatQueue';
 import {
   getMicrophonePermission,
   openAppSettings,
@@ -60,6 +61,10 @@ jest.mock('@/services/permissions', () => ({
   getMicrophonePermission: jest.fn(),
   requestMicrophonePermission: jest.fn(),
   openAppSettings: jest.fn(),
+}));
+jest.mock('@/services/formatQueue', () => ({
+  ...jest.requireActual('@/services/formatQueue'),
+  queueFormat: jest.fn(),
 }));
 
 /** These tests are of the session itself, on the surfaces it had before the book. */
@@ -321,6 +326,28 @@ describe('JournalSession Reflect', () => {
     commitFails = false;
     await fireEvent.press(screen.getByRole('button', { name: sessionCopy.errors.retry }));
     await waitFor(() => expect(router.navigate).toHaveBeenCalledWith('/onboarding/completion'));
+  });
+
+  // D-017: set out in the background, by a queue that outlives the session, and never waited on.
+  it('hands the kept entry over to be set out once it is committed, and never a failed one', async () => {
+    const input = await open();
+    await write(input);
+    commitFails = true;
+    await fireEvent.press(reflect());
+    await screen.findByText(sessionCopy.errors.commit);
+    expect(queueFormat).not.toHaveBeenCalled();
+
+    commitFails = false;
+    await fireEvent.press(screen.getByRole('button', { name: sessionCopy.errors.retry }));
+    await waitFor(() => expect(router.navigate).toHaveBeenCalledWith('/onboarding/completion'));
+    expect(queueFormat).toHaveBeenCalledTimes(1);
+    expect(jest.mocked(queueFormat).mock.calls[0]?.[0]).toMatchObject({
+      status: 'committed',
+      body: BODY,
+    });
+    expect(jest.mocked(queueFormat).mock.invocationCallOrder[0]).toBeLessThan(
+      jest.mocked(router.navigate).mock.invocationCallOrder[0]!,
+    );
   });
 });
 

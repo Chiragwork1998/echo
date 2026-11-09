@@ -122,23 +122,30 @@ export const patternsCopy = {
     tryAgain: 'Try again',
     done: 'Done',
   },
+  /**
+   * The one reading agreement (D-017). Asked here before a reading, and on Completion from the saved
+   * card, never while someone journals; the same facts in both places. Spoken entries are set out
+   * under the voice agreement, which says so, so this speaks of what is written.
+   */
   consent: {
     title: 'Before ECHO reads your entries',
-    lead: 'Pattern cards are made by sending your entries to be read. Separate from voice, this is asked once, here.',
+    lead: 'One agreement, separate from voice, covers three things: today’s echo after each entry you keep, setting out what you write in paragraphs with every word kept, and pattern cards when you ask.',
     sends: (count: number) =>
       count >= PATTERNS_SEND_LIMIT
         ? `ECHO will send your latest ${PATTERNS_SEND_LIMIT} entries.`
         : count === 1
           ? 'ECHO will send your 1 entry.'
           : `ECHO will send your ${count} entries.`,
+    /** On Completion, where the entry just kept is the first that would be read. */
+    sendsKept: 'ECHO will send the entry you’ve just kept, and each one after it.',
     limit: `At most ${PATTERNS_SEND_LIMIT} entries are sent, the newest first, and the first ${PATTERNS_ENTRY_CHARS.toLocaleString('en')} characters of each.`,
     facts: [
       'Your entries are sent to OpenAI, over a secure connection, to be read.',
       'OpenAI does not use them to train its models.',
       'OpenAI may keep them for up to 30 days to check for abuse, then deletes them.',
       'ECHO’s own server keeps none of your voice or words.',
-      'The cards are kept on this phone, encrypted.',
-      'You can withdraw this at any time, here in Patterns.',
+      'What comes back is kept on this phone, encrypted.',
+      'You can withdraw this at any time, in Patterns.',
     ],
     agree: 'I agree, read my entries',
     notNow: 'Not now',
@@ -146,7 +153,8 @@ export const patternsCopy = {
   choices: {
     title: 'Your choices',
     withdraw: 'Stop sending my entries',
-    withdrawDetail: 'ECHO will ask again before it reads. Cards already made stay on this phone.',
+    withdrawDetail:
+      'Today’s echo, setting out what you write, and pattern cards all stop. ECHO will ask again before it reads. What it has made stays on this phone.',
     withdrawn: 'Agreement withdrawn. ECHO will ask again before reading.',
     deleteCards: 'Delete these cards',
     deleteDetail: 'Removes them from this phone.',

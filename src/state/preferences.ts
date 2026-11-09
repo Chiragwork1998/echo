@@ -23,8 +23,24 @@ const WELCOMED_KEY = 'homeWelcomed';
  *
  * 2: exact words by default (D-008), a second OpenAI step only for Hindi or Tidy my words, and live
  * words as a separate, plainly stated choice.
+ * 3: a spoken entry is set out in paragraphs at OpenAI once it is kept (D-017), so every spoken
+ * entry's words go through the second step, not only Hindi and Tidy my words.
  */
-export const VOICE_POLICY_VERSION = 2;
+export const VOICE_POLICY_VERSION = 3;
+
+/**
+ * The version of the one agreement under which ECHO's server reads entries: pattern cards, today's
+ * echo, and setting out what a person writes (D-017). `patternsConsent` holds the version agreed to.
+ * Change what is read or why, and raise this: each person is asked again the next time it is needed,
+ * and never in the middle of journaling.
+ *
+ * patterns-1: pattern cards alone.
+ */
+export const READING_CONSENT_VERSION = 'reading-2';
+
+/** Whether ECHO may send entries to be read, under the words the person agreed to. */
+export const readingAgreed = (consent: string | null): boolean =>
+  consent === READING_CONSENT_VERSION;
 
 export type VoiceChoice = 'allowed' | 'voice_only';
 /**
@@ -70,9 +86,9 @@ type Preferences = {
   theme: ThemePreference;
   setTheme: (theme: ThemePreference) => void;
   /**
-   * The version of the Pattern Cards consent the person agreed to, or null. Sending entries to be
-   * read is separate from voice, and is asked before the first reading. It says that a person
-   * agreed, never what they wrote. A new version of the wording asks again.
+   * The version of the reading agreement the person agreed to, or null (READING_CONSENT_VERSION).
+   * Sending entries to be read is separate from voice, and is asked before it is first needed. It
+   * says that a person agreed, never what they wrote. A new version of the wording asks again.
    */
   patternsConsent: string | null;
   setPatternsConsent: (version: string | null) => void;
@@ -199,6 +215,9 @@ export function voiceStatus(consent: VoiceConsent | null): VoiceStatus {
 
 export const useVoiceStatus = (): VoiceStatus =>
   usePreferences((state) => voiceStatus(state.voiceConsent));
+
+export const useReadingAgreed = (): boolean =>
+  usePreferences((state) => readingAgreed(state.patternsConsent));
 
 /**
  * Whether a take may be streamed while it is spoken: the person allowed their voice to be sent, and

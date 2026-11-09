@@ -62,6 +62,17 @@ export function cutAtWord(text: string, limit: number): string {
   return `${words.replace(/[\s,;:.!?\-–—]+$/u, '')}…`;
 }
 
+/**
+ * An entry's words as paragraphs, for reading back: split at each blank line, as setting out leaves
+ * them (D-017). A single line break stays inside its paragraph. Runs on decrypted text in memory only.
+ */
+export const paragraphsOf = (body: string): string[] =>
+  body
+    .replace(/\r\n?/g, '\n')
+    .split(/\n[^\S\n]*\n/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+
 function firstLine(body: string): string {
   const line =
     body

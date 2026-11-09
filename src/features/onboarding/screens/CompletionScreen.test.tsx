@@ -11,8 +11,13 @@ import { netAfterBegin } from '@/features/book/animationEnd';
 import { HomeTabBar, HomeTabBarProvider } from '@/features/home/tabs/HomeTabBar';
 import { completionText } from '@/features/onboarding/completion/text';
 import { createMemoryJournal, setJournal, type Entry, type Journal } from '@/features/journal';
+import { notifyJournalChanged } from '@/features/journal/api';
+import { patternsCopy } from '@/features/patterns/patternsCopy';
+import { supportCopy } from '@/features/patterns/supportResources';
+import { queueFormat } from '@/services/formatQueue';
 import { requestReflection } from '@/services/reflection';
 import { completeOnboarding, initialOnboarding, useOnboarding } from '@/state/onboarding';
+import { READING_CONSENT_VERSION, usePreferences } from '@/state/preferences';
 import { animationClock } from '@/testing/reanimatedMock';
 import { render } from '@/testing/render';
 
@@ -45,6 +50,10 @@ jest.mock('@/services/reflection', () => {
     jest.requireActual<typeof import('@/services/reflection')>('@/services/reflection');
   return { ...actual, requestReflection: jest.fn(actual.requestReflection) };
 });
+jest.mock('@/services/formatQueue', () => ({
+  ...jest.requireActual('@/services/formatQueue'),
+  queueFormat: jest.fn(),
+}));
 jest.mock('@/state/onboarding', () => {
   const actual = jest.requireActual<typeof import('@/state/onboarding')>('@/state/onboarding');
   return { ...actual, completeOnboarding: jest.fn(actual.completeOnboarding) };
@@ -431,6 +440,158 @@ describe('Completion when the entry cannot be read', () => {
       await fireEvent.press(screen.getByRole('button', { name: completionText.retry }));
     });
     expect(await screen.findByText('Saved privately · 12 minutes')).toBeTruthy();
+  });
+});
+
+// Today's echo, the reading agreement it waits on, and the entry read back in the card (D-017).
+describe('Completion and today’s echo', () => {
+  const echo = 'You’re carrying more uncertainty than failure.';
+  const hearItBack = () => screen.getByRole('button', { name: completionText.hearItBack });
+  const readItBack = () => screen.getByRole('button', { name: completionText.readItBack });
+
+  beforeEach(() => {
+    usePreferences.setState({ patternsConsent: null });
+  });
+
+  it('offers the agreement quietly on the saved card, and asks nothing until it is opened', async () => {
+    jest.mocked(requestReflection).mockResolvedValue({ status: 'unagreed' });
+    await render(<CompletionScreen />);
+    await screen.findByText('Saved privately · 12 minutes');
+    expect(await screen.findByRole('button', { name: completionText.hearItBack })).toBeTruthy();
+    expect(screen.queryByText(patternsCopy.consent.title)).toBeNull();
+    expect(screen.queryByText(completionText.error)).toBeNull();
+    expect(cta()).toBeEnabled();
+  });
+
+  it('opens the agreement on a sheet with the same facts as Patterns, and Not now leaves the saved card', async () => {
+    jest.mocked(requestReflection).mockResolvedValue({ status: 'unagreed' });
+    await render(<CompletionScreen />);
+    await fireEvent.press(await screen.findByRole('button', { name: completionText.hearItBack }));
+    expect(await screen.findByText(patternsCopy.consent.title)).toBeTruthy();
+    expect(screen.getByText(patternsCopy.consent.lead)).toBeTruthy();
+    expect(screen.getByText(patternsCopy.consent.sendsKept)).toBeTruthy();
+    for (const fact of patternsCopy.consent.facts) expect(screen.getByText(fact)).toBeTruthy();
+
+    await fireEvent.press(screen.getByRole('button', { name: patternsCopy.consent.notNow }));
+    await waitFor(() => expect(screen.queryByText(patternsCopy.consent.title)).toBeNull());
+    expect(usePreferences.getState().patternsConsent).toBeNull();
+    expect(requestReflection).toHaveBeenCalledTimes(1);
+    expect(hearItBack()).toBeTruthy();
+    expect(screen.getByText('Saved privately · 12 minutes')).toBeTruthy();
+  });
+
+  it('asks for today’s echo at once on agreeing, and shows it in the card', async () => {
+    jest
+      .mocked(requestReflection)
+      .mockResolvedValueOnce({ status: 'unagreed' })
+      .mockResolvedValueOnce({ status: 'complete', text: echo });
+    await render(<CompletionScreen />);
+    await fireEvent.press(await screen.findByRole('button', { name: completionText.hearItBack }));
+    await fireEvent.press(await screen.findByRole('button', { name: patternsCopy.consent.agree }));
+    expect(usePreferences.getState().patternsConsent).toBe(READING_CONSENT_VERSION);
+    expect(await screen.findByText(echo)).toBeTruthy();
+    expect(requestReflection).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole('button', { name: completionText.hearItBack })).toBeNull();
+    expect(cta()).toBeEnabled();
+    // What was written is set out now that the agreement covers it, in the background.
+    expect(queueFormat).toHaveBeenCalledWith(
+      expect.objectContaining({ id: ENTRY_ID, mode: 'text' }),
+    );
+  });
+
+  it('asks nothing more of a spoken entry on agreeing: it was set out under the voice agreement', async () => {
+    install({ entry: { mode: 'voice' } });
+    jest
+      .mocked(requestReflection)
+      .mockResolvedValueOnce({ status: 'unagreed' })
+      .mockResolvedValueOnce({ status: 'complete', text: echo });
+    await render(<CompletionScreen />);
+    await fireEvent.press(await screen.findByRole('button', { name: completionText.hearItBack }));
+    await fireEvent.press(await screen.findByRole('button', { name: patternsCopy.consent.agree }));
+    expect(await screen.findByText(echo)).toBeTruthy();
+    expect(queueFormat).not.toHaveBeenCalled();
+  });
+
+  it('meets an entry that asks for care with a gentle line and a way to someone, and no reflection', async () => {
+    jest.mocked(requestReflection).mockResolvedValue({ status: 'support' });
+    await render(<CompletionScreen />);
+    expect(await screen.findByText(completionText.support)).toBeTruthy();
+    expect(screen.queryByText(completionText.error)).toBeNull();
+    expect(screen.queryByRole('button', { name: completionText.hearItBack })).toBeNull();
+
+    await fireEvent.press(screen.getByRole('button', { name: completionText.talkToSomeone }));
+    expect(await screen.findByText(supportCopy.openTitle)).toBeTruthy();
+    expect(screen.getByText(supportCopy.emergency)).toBeTruthy();
+    await fireEvent.press(screen.getByRole('button', { name: supportCopy.close }));
+    await waitFor(() => expect(screen.queryByText(supportCopy.openTitle)).toBeNull());
+    expect(cta()).toBeEnabled();
+  });
+
+  it('never holds Enter your space for today’s echo', async () => {
+    jest.mocked(requestReflection).mockImplementation(never);
+    await render(<CompletionScreen />);
+    await fireEvent.press(cta());
+    await waitFor(() => expect(useOnboarding.getState().completedAt).toBeDefined());
+  });
+
+  it('reads the entry back in the card, a paragraph at a time, and closes again', async () => {
+    install({ entry: { body: 'The first thing I noticed.\n\nThen the second, later on.' } });
+    await render(<CompletionScreen />);
+    await screen.findByText('Saved privately · 12 minutes');
+    expect(screen.queryByText('The first thing I noticed.')).toBeNull();
+
+    await fireEvent.press(readItBack());
+    expect(await screen.findByText('The first thing I noticed.')).toBeTruthy();
+    expect(screen.getByText('Then the second, later on.')).toBeTruthy();
+    const close = screen.getByRole('button', { name: completionText.close });
+    expect(close.props.accessibilityState).toMatchObject({ expanded: true });
+
+    await fireEvent.press(close);
+    await waitFor(() => expect(screen.queryByText('The first thing I noticed.')).toBeNull());
+    expect(readItBack().props.accessibilityState).toMatchObject({ expanded: false });
+  });
+
+  it('keeps today’s echo above the words it read back', async () => {
+    install({ entry: { body: 'Words that were kept tonight.' }, reflection: echo });
+    await render(<CompletionScreen />);
+    await screen.findByText(echo);
+    await fireEvent.press(readItBack());
+    await screen.findByText('Words that were kept tonight.');
+    // Every piece of text drawn, in the order it is drawn.
+    const drawn: string[] = [];
+    const walk = (node: Node | string) => {
+      if (node === null) return;
+      if (typeof node === 'string') return void drawn.push(node);
+      if (Array.isArray(node)) return node.forEach(walk);
+      node.children?.forEach(walk);
+    };
+    walk(screen.toJSON());
+    const at = (text: string) => drawn.findIndex((piece) => piece.includes(text));
+    expect(at('carrying more uncertainty')).toBeGreaterThanOrEqual(0);
+    expect(at('carrying more uncertainty')).toBeLessThan(at('Words that were kept tonight.'));
+  });
+
+  it('shows the words set out in place of the first version once they arrive', async () => {
+    const journal = install({ entry: { body: 'um so it was a long day and i was tired' } });
+    await render(<CompletionScreen />);
+    await screen.findByText('Saved privately · 12 minutes');
+    await fireEvent.press(readItBack());
+    expect(await screen.findByText('um so it was a long day and i was tired')).toBeTruthy();
+
+    // As the queue does, through the journal: the same words, set out.
+    expect(
+      (await journal.reformatEntry(ENTRY_ID, 'Um, so it was a long day.\n\nAnd I was tired.')).ok,
+    ).toBe(true);
+    await act(async () => notifyJournalChanged());
+    expect(await screen.findByText('Um, so it was a long day.')).toBeTruthy();
+    expect(screen.getByText('And I was tired.')).toBeTruthy();
+  });
+
+  it('offers nothing to read back for an entry with no words', async () => {
+    install({ entry: { body: '' } });
+    await render(<CompletionScreen />);
+    await screen.findByText('Saved privately · 12 minutes');
+    expect(screen.queryByRole('button', { name: completionText.readItBack })).toBeNull();
   });
 });
 

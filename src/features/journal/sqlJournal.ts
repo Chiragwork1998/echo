@@ -20,6 +20,7 @@ import {
   type JournalResult,
   type StoredReflection,
 } from './types';
+import { sameWords } from './words';
 
 /** Below this a file holds a container header at most, with no audible content. */
 const MIN_RECOVERABLE_BYTES = 1024;
@@ -428,6 +429,32 @@ export function createSqlJournal(rt: Runtime, clock: Clock = deviceClock): SqlJo
           const entry = await decode(stored);
           await scrubLog();
           return entry;
+        }),
+      ),
+
+    reformatEntry: (id, text) =>
+      attempt('write_failed', () =>
+        serial(async () => {
+          const row = await findRow(id);
+          if (!row?.sealed || row.deleted_at || row.status !== 'committed') {
+            throw new JournalFailure('not_found');
+          }
+          // The body as it is stored now, read inside the queue, so that nothing written since the
+          // text was set out can be replaced by words it never held.
+          const content = await vault.openJson<EntryContent>('entry', row.id, row.sealed);
+          if (!sameWords(content.body, text)) throw new JournalFailure('not_same_words');
+          if (content.body === text) return decode(row);
+          const sealed = await sealVerified(id, { ...content, body: text });
+          await db.run(
+            `UPDATE entries SET sealed = ?, updated_at = ?
+             WHERE id = ? AND status = 'committed' AND deleted_at IS NULL`,
+            [sealed, now(), id],
+          );
+          const stored = await findRow(id);
+          if (!stored) throw new JournalFailure('write_failed');
+          // No scrub of the log: the version this replaces holds the very same words, and an entry
+          // deleted later has its log emptied then.
+          return decode(stored);
         }),
       ),
 

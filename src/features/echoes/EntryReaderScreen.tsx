@@ -3,9 +3,11 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import Svg, { Path, Rect } from 'react-native-svg';
 
 import { EchoText } from '@/components/EchoText';
+import { copy } from '@/content/copy';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
-import type { Entry } from '@/features/journal';
+import { paragraphsOf, useEntryReflection, type Entry } from '@/features/journal';
+import { LIGHT_SANS, LIGHT_SERIF } from '@/features/onboarding/completion/fonts';
 import {
   Loading,
   Notice,
@@ -25,6 +27,11 @@ import { useEntryPlayback, type PlaybackState } from './useEntryPlayback';
 import { useEntryReader, type DeleteState } from './useEntryReader';
 
 const PLAY = 44;
+// Today's echo, in the voice Completion's card gave it: its name in light Cormorant, its words in
+// light Inter, a step larger here on the page, above the person's own words (D-017).
+const ECHO_TITLE = { fontFamily: LIGHT_SERIF, fontSize: 18.4, lineHeight: 24 } as const;
+const ECHO_WORDS = { fontFamily: LIGHT_SANS, fontSize: 15, lineHeight: 22, opacity: 0.82 } as const;
+const ECHO_RULE = { height: 0.6, opacity: 0.3 } as const;
 
 /** "Morning · 6 min · Mood: Steady": what kind of echo, how long, and how the person arrived. */
 function facts(entry: Entry): string {
@@ -112,13 +119,37 @@ function Recording({ entry }: { entry: Entry }) {
   );
 }
 
-/** The person's words, as a page: the question they answered, then what they said, in their size. */
-function Words({ entry }: { entry: Entry }) {
+/** The echo kept with an entry, as Completion's card showed it, set apart from the words below it. */
+function Echo({ text }: { text: string }) {
+  const { colors } = useTheme();
+  return (
+    <View
+      style={styles.echo}
+      accessible
+      accessibilityLabel={`${copy.completion.cardTitle}. ${text}`}
+    >
+      <EchoText variant="bodyL" style={ECHO_TITLE} maxFontSizeMultiplier={1.5}>
+        {copy.completion.cardTitle}
+      </EchoText>
+      <EchoText variant="bodyM" style={ECHO_WORDS} maxFontSizeMultiplier={1.6}>
+        {text}
+      </EchoText>
+      <View style={[styles.echoRule, ECHO_RULE, { backgroundColor: colors.textPrimary }]} />
+    </View>
+  );
+}
+
+/**
+ * The person's words, as a page: its echo if one was kept, the question they answered, then what
+ * they said, in their size, a paragraph at a time as setting out left them.
+ */
+function Words({ entry, echo }: { entry: Entry; echo: string | null }) {
   const words = entry.body.trim();
   if (!words && entry.audio) return null;
   return (
     <Surface strength="strong" radius={tokens.radius.large}>
       <View style={styles.page}>
+        {echo ? <Echo text={echo} /> : null}
         {entry.promptText ? (
           <EchoText
             variant="bodyL"
@@ -130,9 +161,13 @@ function Words({ entry }: { entry: Entry }) {
           </EchoText>
         ) : null}
         {words ? (
-          <EchoText variant="bodyL" style={ownWords} maxFontSizeMultiplier={1.6}>
-            {entry.body}
-          </EchoText>
+          <View style={styles.paragraphs}>
+            {paragraphsOf(entry.body).map((paragraph, index) => (
+              <EchoText key={index} variant="bodyL" style={ownWords} maxFontSizeMultiplier={1.6}>
+                {paragraph}
+              </EchoText>
+            ))}
+          </View>
         ) : (
           <EchoText variant="bodyM" color="textSecondary" style={detail}>
             {echoesCopy.noWords}
@@ -194,6 +229,9 @@ function PageSkeleton() {
 /** Reads one echo, plays its recording if it has one, and deletes it behind a confirmation. */
 export function EntryReaderScreen({ id }: { id: string | null }) {
   const { view, retry, deleteState, confirmDelete, back } = useEntryReader(id);
+  // Read from this phone, never asked for. The page waits for it with the words, so that it is not
+  // seen to arrive above them and push them down.
+  const echo = useEntryReflection(id);
 
   // One page throughout: the skeleton stands where the words will be, and they arrive in its place.
   let title: string = echoesCopy.readerTitle;
@@ -202,7 +240,7 @@ export function EntryReaderScreen({ id }: { id: string | null }) {
   if (view.kind === 'entry') {
     ({ title, subtitle } = heading(view.entry));
     content = [
-      <Words key="words" entry={view.entry} />,
+      <Words key="words" entry={view.entry} echo={echo.data} />,
       <Recording key="recording" entry={view.entry} />,
       <DeleteAction key="delete" state={deleteState} onPress={confirmDelete} />,
     ];
@@ -221,7 +259,7 @@ export function EntryReaderScreen({ id }: { id: string | null }) {
   return (
     <TabPage title={title} subtitle={subtitle} tabBar={false} onBack={back}>
       <Resolve
-        ready={view.kind !== 'loading'}
+        ready={view.kind !== 'loading' && echo.status !== 'loading'}
         skeleton={<PageSkeleton />}
         each
         atOnce
@@ -243,6 +281,9 @@ const styles = StyleSheet.create({
     paddingBottom: tokens.space[32],
   },
   prompt: { fontSize: 20, lineHeight: 26 },
+  echo: { gap: tokens.space[8] },
+  echoRule: { marginTop: tokens.space[8] },
+  paragraphs: { gap: tokens.space[16] },
   skeleton: { gap: tokens.space[16], paddingTop: tokens.space[32] },
   recording: {
     flexDirection: 'row',

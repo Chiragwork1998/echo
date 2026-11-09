@@ -1,4 +1,4 @@
-import type { PropsWithChildren, ReactNode } from 'react';
+import { useState, type PropsWithChildren, type ReactNode } from 'react';
 import { ScrollView, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 
@@ -48,6 +48,12 @@ type Props = {
   failed: boolean;
   onEnter: () => void;
   onRetry: () => void;
+  /** Hear it back, on the saved card: opens the reading agreement. */
+  onAsk?: () => void;
+  /** Talk to someone, in place of a reflection. */
+  onSupport?: () => void;
+  /** The entry just kept, when it has words that Read it back can open. */
+  entryId?: string | null;
   /**
    * How far the interface has gone, 0 to 1, over the photograph, which stays: onboarding lets its words,
    * card and button go before it hands over to Home. Without it the interface is simply there.
@@ -79,9 +85,16 @@ export function CompletionLayout({
   failed,
   onEnter,
   onRetry,
+  onAsk,
+  onSupport,
+  entryId = null,
   leaving,
 }: Props) {
   const { accessibleLayout, landscape } = useLayout();
+  const flowing = accessibleLayout || landscape;
+  // The height of the card's slot, less the space it keeps above the CTA: what the card may grow to
+  // when the entry is read back in it, before the slot would have to scroll.
+  const [room, setRoom] = useState(0);
   // Each part goes as one with the others; the photograph, which the shell draws, is not among them.
   const part = (node: ReactNode, style?: StyleProp<ViewStyle>) =>
     leaving ? (
@@ -96,10 +109,15 @@ export function CompletionLayout({
       <ReflectionCard
         state={view.state}
         text={view.text}
+        ask={view.ask}
         saved={saved}
         savedVisible={savedVisible}
         onRetry={onRetry}
         onContinue={onEnter}
+        onAsk={onAsk}
+        onSupport={onSupport}
+        entryId={entryId}
+        room={flowing ? null : room}
         startAt={MARK_AFTER[mode]}
       />
     </CardArrival>
@@ -108,7 +126,7 @@ export function CompletionLayout({
   const content = (
     <>
       <CompletionHeading title={copy.completion.title} subtitle={copy.completion.subtitle} />
-      {accessibleLayout || landscape ? (
+      {flowing ? (
         // The shell scrolls the whole screen here, so the card simply follows the heading.
         <View style={styles.flowing}>{card}</View>
       ) : (
@@ -118,6 +136,9 @@ export function CompletionLayout({
           contentContainerStyle={styles.slotContent}
           showsVerticalScrollIndicator={false}
           alwaysBounceVertical={false}
+          onLayout={(event) =>
+            setRoom(Math.max(0, event.nativeEvent.layout.height - CARD_ABOVE_CTA))
+          }
         >
           {card}
         </ScrollView>

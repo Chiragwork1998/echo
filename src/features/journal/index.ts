@@ -14,10 +14,11 @@ export {
   saveDraft,
   searchEntries,
 } from './api';
-export { canReflect, minutesLeft } from './content';
+export { canReflect, minutesLeft, paragraphsOf } from './content';
 export {
   useEntries,
   useEntry,
+  useEntryReflection,
   useEntrySearch,
   useHomeSummary,
   useLatestEntry,

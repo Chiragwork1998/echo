@@ -16,6 +16,7 @@ import {
   openAppSettings,
   requestMicrophonePermission,
 } from '@/services/permissions';
+import { queueFormat } from '@/services/formatQueue';
 import { useRequirePlus } from '@/services/plus';
 import { UNAVAILABLE_CODES } from '@/services/transcription';
 import { useOnboarding } from '@/state/onboarding';
@@ -449,6 +450,9 @@ export function useSessionController({ variant, initialMode, draftId, become }: 
       // Only once the entry is durable. A failure leaves the draft whole, and Reflect ready to retry.
       // A morning entry rehearses on the way to Completion. The book shuts first, if there is one.
       if (result.ok) {
+        // Set out in the background, by a queue that outlives this session, under the agreement that
+        // covers it (D-017). Nothing here waits on it, and it waits for the book to have shut.
+        queueFormat(result.value);
         await closed(leaving.current);
         go(daily ? routeAfterReflect(result.value) : target.next);
       } else if (result.error.code === 'not_draft') go(target.next);

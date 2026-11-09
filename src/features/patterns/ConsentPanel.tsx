@@ -84,16 +84,30 @@ export function ConsentWords({ count }: { count: number }) {
         </EchoText>
       </View>
       <Rule inset={0} />
-      <View style={styles.facts}>
-        {consent.facts.map((fact) => (
-          <View key={fact} style={styles.fact} accessible accessibilityLabel={fact}>
-            <View style={[styles.dot, { backgroundColor: colors.accentWarm }]} />
-            <EchoText variant="bodyM" style={[detail, styles.factText]} maxFontSizeMultiplier={1.6}>
-              {keepTogether(fact)}
-            </EchoText>
-          </View>
-        ))}
-      </View>
+      <ConsentFacts mark={colors.accentWarm} />
+    </View>
+  );
+}
+
+/**
+ * The agreement's facts, a short list with small marks: on the glass in Patterns, and on a sheet's
+ * cloth on Completion, where `ink` is the sheet's. The same facts wherever it is asked.
+ */
+export function ConsentFacts({ mark, ink }: { mark: string; ink?: string }) {
+  return (
+    <View style={styles.facts}>
+      {patternsCopy.consent.facts.map((fact) => (
+        <View key={fact} style={styles.fact} accessible accessibilityLabel={fact}>
+          <View style={[styles.dot, { backgroundColor: mark }]} />
+          <EchoText
+            variant="bodyM"
+            style={[detail, styles.factText, ink ? { color: ink } : null]}
+            maxFontSizeMultiplier={1.6}
+          >
+            {keepTogether(fact)}
+          </EchoText>
+        </View>
+      ))}
     </View>
   );
 }

@@ -2,6 +2,7 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react-
 import { router } from 'expo-router';
 import { Dimensions, StyleSheet } from 'react-native';
 
+import { copy } from '@/content/copy';
 import { tokens } from '@/design/tokens';
 import { createMemoryJournal, openEntryAudio, setJournal, type Entry } from '@/features/journal';
 import { usePreferences } from '@/state/preferences';
@@ -95,6 +96,49 @@ describe('EntryReaderScreen', () => {
     seed({ ...base, promptId: 'become' });
     await render(<EntryReaderScreen id="one" />);
     expect(await screen.findByText(/Morning · 6 min/)).toBeTruthy();
+  });
+
+  // D-017: an echo set out reads as paragraphs, and today's echo, once kept, is read again here.
+  it('sets out the words a paragraph at a time', async () => {
+    seed({ ...base, body: 'The first thing.\n\nThen the second,\nand a line of it.' });
+    await render(<EntryReaderScreen id="one" />);
+    expect(await screen.findByText('The first thing.')).toBeTruthy();
+    expect(screen.getByText('Then the second,\nand a line of it.')).toBeTruthy();
+  });
+
+  it('shows today’s echo, as it was kept, above the words, and asks for nothing', async () => {
+    const echo = 'You’re holding more than the day asked of you.';
+    setJournal(
+      createMemoryJournal({
+        entries: [{ ...base, promptText: 'What is asking for your attention?' }],
+        reflections: { one: { status: 'complete', text: echo } },
+      }),
+    );
+    const fetchSpy = jest.spyOn(globalThis, 'fetch');
+    await render(<EntryReaderScreen id="one" />);
+    expect(await screen.findByText(echo)).toBeTruthy();
+    expect(screen.getByText(copy.completion.cardTitle)).toBeTruthy();
+    // Above the question and the words.
+    const drawn: string[] = [];
+    const walk = (node: unknown): void => {
+      if (!node) return;
+      if (typeof node === 'string') return void drawn.push(node);
+      if (Array.isArray(node)) return node.forEach(walk);
+      walk((node as { children?: unknown }).children);
+    };
+    walk(screen.toJSON());
+    const at = (text: string) => drawn.findIndex((piece) => piece.includes(text));
+    expect(at(echo)).toBeLessThan(at('What is asking for your attention?'));
+    expect(at(echo)).toBeLessThan(at(base.body));
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+  });
+
+  it('shows no echo where none was kept', async () => {
+    seed(base);
+    await render(<EntryReaderScreen id="one" />);
+    await screen.findByText(base.body);
+    expect(screen.queryByText(copy.completion.cardTitle)).toBeNull();
   });
 
   it.each(['night', 'day'] as const)(

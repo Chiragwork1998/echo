@@ -9,6 +9,7 @@ import {
   type Journal,
   type StoredReflection,
 } from './types';
+import { sameWords } from './words';
 
 export type MemorySeed = { entries?: Entry[]; reflections?: Record<string, StoredReflection> };
 
@@ -65,6 +66,15 @@ export function createMemoryJournal(seed: MemorySeed = {}, clock: Clock = device
           localDay: clock.localDay(moment),
         }),
       );
+    },
+    async reformatEntry(id, text) {
+      const existing = entries.get(id);
+      if (existing?.status !== 'committed') return failure('not_found');
+      if (!sameWords(existing.body, text)) return failure('not_same_words');
+      if (existing.body === text) return success(existing);
+      const entry: Entry = { ...existing, body: text, updatedAt: clock.now().getTime() };
+      entries.set(id, entry);
+      return success(entry);
     },
     async discardDraft(id) {
       if (entries.get(id)?.status === 'committed') return failure('not_draft');
