@@ -5,6 +5,7 @@ import { Dimensions } from 'react-native';
 import { copy } from '@/content/copy';
 import { goldenCopy } from '@/content/goldenCopy';
 import { cue } from '@/design/haptics';
+import { ThemeProvider } from '@/design/theme';
 import {
   createMemoryJournal,
   setJournal,
@@ -22,9 +23,10 @@ import { useStoneMemory } from '../today/stoneMemory';
 import { HomeScreen } from './HomeScreen';
 
 jest.mock('@/design/haptics');
+let mockPath = '/home';
 jest.mock('expo-router', () => ({
   router: { navigate: jest.fn(), push: jest.fn() },
-  usePathname: () => '/home',
+  usePathname: () => mockPath,
 }));
 jest.mock(
   'react-native-safe-area-context',
@@ -112,6 +114,7 @@ const summary = (patch: Partial<HomeSummary>): HomeSummary => ({
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockPath = '/home';
   useStoneMemory.getState().reset();
   mockedSummary.mockImplementation(actualSummary);
   usePreferences.setState({ theme: 'night' });
@@ -309,6 +312,38 @@ describe('Home, Night', () => {
     await render(<HomeScreen />);
     await waitFor(() => expect(screen.getByText('I keep returning to…')).toBeTruthy());
     expect(screen.getByText('I keep returning to…').props.numberOfLines).toBe(3);
+  });
+});
+
+describe('Home beneath another screen', () => {
+  // On Android the session, Rehearse and Completion are presented over Home, which stays up beneath them,
+  // and Completion gives Home its interface back while it is still on show.
+  it('is reached by neither a touch nor TalkBack while Completion covers it', async () => {
+    mockPath = '/home/complete';
+    await render(<HomeScreen />);
+    const begin = `${goldenCopy.nightBegin}. ${goldenCopy.nightBeginArc}`;
+    expect(screen.queryByRole('button', { name: begin })).toBeNull();
+    const hidden = screen.getByRole('button', { name: begin, includeHiddenElements: true });
+    // The layer that holds the interface lets no touch through to it.
+    let node: typeof hidden | null = hidden;
+    let blocked = false;
+    while (node) {
+      if (node.props.pointerEvents === 'none') blocked = true;
+      node = node.parent;
+    }
+    expect(blocked).toBe(true);
+  });
+
+  it('is itself again once it is the screen on show', async () => {
+    mockPath = '/home/complete';
+    const view = await render(<HomeScreen />);
+    mockPath = '/home';
+    await view.rerender(
+      <ThemeProvider crossfade={false}>
+        <HomeScreen />
+      </ThemeProvider>,
+    );
+    expect(button(`${goldenCopy.nightBegin}. ${goldenCopy.nightBeginArc}`)).toBeTruthy();
   });
 });
 

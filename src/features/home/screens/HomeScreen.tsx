@@ -1,3 +1,4 @@
+import { usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
@@ -7,6 +8,7 @@ import { useLayout } from '@/design/layout';
 import { useTheme } from '@/design/theme';
 import { useThemeSwap } from '@/design/useThemeSwap';
 import { useHomeSummary } from '@/features/journal';
+import { HOME_PATH } from '@/state/routing';
 
 import { useHomeDissolve, useHomeVeil, useWhileHere } from '../dissolve';
 import { useTabBarSpace } from '../tabs/HomeTabBar';
@@ -43,6 +45,12 @@ export function HomeScreen() {
   const dip = useAnimatedStyle(() => ({ opacity: swap.get() }));
   const dissolved = phase !== 'idle';
   const here = useWhileHere();
+  // On Android the session, Rehearse and Completion are presented over Home, which stays up beneath
+  // them (src/features/home/sessionRoute.ts), and Completion gives Home its interface back while it is
+  // still on show. Beneath another screen, Home is reached by neither a touch nor TalkBack. Read from
+  // the path each time, not from where Home mounted.
+  const covered = usePathname() !== HOME_PATH;
+  const hidden = dissolved || covered;
 
   return (
     <View style={styles.root}>
@@ -53,9 +61,9 @@ export function HomeScreen() {
           copy of its own would cover the loop. */}
       <Animated.View
         style={[styles.fill, veil]}
-        pointerEvents={dissolved ? 'none' : 'box-none'}
-        accessibilityElementsHidden={dissolved}
-        importantForAccessibility={dissolved ? 'no-hide-descendants' : 'auto'}
+        pointerEvents={hidden ? 'none' : 'box-none'}
+        accessibilityElementsHidden={hidden}
+        importantForAccessibility={hidden ? 'no-hide-descendants' : 'auto'}
       >
         <Animated.View testID="home-swap" style={[styles.fill, dip]}>
           {night && <NightFloor />}
