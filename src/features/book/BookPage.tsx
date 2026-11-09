@@ -66,6 +66,8 @@ type Props = {
   inscribing?: Inscribing | null;
   onStamped?: () => void;
   onOpened?: () => void;
+  /** The book has drawn its first frame (./BookStage): what was kept on screen until then may go. */
+  onDrawn?: () => void;
   /** The closing: the cover has landed, and the book has begun to sink (as the UI thread takes it up). */
   onLanded?: () => void;
   onSinkBegun?: () => void;
@@ -110,6 +112,7 @@ export function BookPage(props: Props) {
     inscribing = null,
     onStamped,
     onOpened,
+    onDrawn,
     onLanded,
     onSinkBegun,
     children,
@@ -141,6 +144,7 @@ export function BookPage(props: Props) {
         inscribing={inscribing}
         onStamped={onStamped}
         onOpened={onOpened}
+        onDrawn={onDrawn}
         onLanded={onLanded}
         onSinkBegun={onSinkBegun}
       >

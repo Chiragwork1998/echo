@@ -94,6 +94,18 @@ afterEach(() => {
 });
 
 const tick = (ms: number) => act(() => void jest.advanceTimersByTime(ms));
+/**
+ * The book has been laid out and the UI thread has run its first frame. On a device the book says so itself, and
+ * the shelf (which is kept until then) goes; under jest nothing lays anything out, so a test that wants the shelf
+ * to go says it.
+ */
+const drawBook = async () => {
+  await fireEvent(screen.getByTestId('book-stage', { includeHiddenElements: true }), 'layout', {
+    nativeEvent: { layout: { x: 0, y: 0, width: 355, height: 416 } },
+  });
+  await tick(60);
+};
+const shelf = () => screen.queryByTestId('book-shelf', { includeHiddenElements: true });
 const volume = (id: string) => {
   const index = VOLUMES.findIndex((v) => v.id === id);
   const title = VOLUMES[index]!.title;
@@ -113,6 +125,8 @@ describe('First Echo at the shelf', () => {
   it('opens the chosen book on a page that keeps the heading, and remembers the volume', async () => {
     await render(<JournalSession variant="onboarding" />);
     await fireEvent.press(volume('tides'));
+    await tick(400);
+    await drawBook();
     await tick(400);
     // The shelf is gone, and the page carries the question as its heading.
     expect(screen.queryAllByRole('button', { name: /, volume \d of 8$/ })).toHaveLength(0);
@@ -139,19 +153,51 @@ describe('First Echo at the shelf', () => {
     await waitFor(() => expect(router.navigate).toHaveBeenCalledTimes(1));
   });
 
-  it('brings the book as the shelf leaves, and keeps the shelf until its own fade has ended', async () => {
+  it('brings the book as the shelf leaves, and keeps the shelf until the book has drawn', async () => {
     mockReduced = false;
     await render(<JournalSession variant="onboarding" />);
     // The shelf rolls to the person's volume, and a touch on the centred one chooses it.
     await tick(3300);
     await fireEvent.press(volume('your-echo'));
     await tick(CHOOSE_AT_MS + 20);
-    // The book is drawing, and the shelf is still there with it: no frame of neither.
+    // The book is mounted, and the shelf is still there with it: no frame of neither.
     expect(screen.queryByTestId('book-stage', { includeHiddenElements: true })).toBeTruthy();
-    expect(screen.queryByTestId('book-shelf', { includeHiddenElements: true })).toBeTruthy();
+    expect(shelf()).toBeTruthy();
+    await drawBook();
     await tick(400);
     expect(screen.queryByTestId('book-stage', { includeHiddenElements: true })).toBeTruthy();
-    expect(screen.queryByTestId('book-shelf', { includeHiddenElements: true })).toBeNull();
+    expect(shelf()).toBeNull();
+  });
+
+  it('keeps the shelf on screen at every frame until the book has drawn its first frame, however long that takes', async () => {
+    mockReduced = false;
+    await render(<JournalSession variant="onboarding" />);
+    await tick(3300);
+    await fireEvent.press(volume('your-echo'));
+    // The walked emulator took half a second to draw the book, and 0.12 s the next time, while the shelf's own
+    // fade (320 ms, on the UI thread) ended: the screen was empty and navy. Here it takes four seconds.
+    for (let waited = 0; waited < 4000; waited += 16) {
+      await tick(16);
+      expect(shelf()).toBeTruthy();
+    }
+    await drawBook();
+    await tick(400);
+    expect(shelf()).toBeNull();
+    expect(screen.queryByTestId('book-stage', { includeHiddenElements: true })).toBeTruthy();
+  });
+
+  it('keeps it under Reduce Motion too: the book is asked for at once, and the shelf is not taken from under it', async () => {
+    await render(<JournalSession variant="onboarding" />);
+    await fireEvent.press(volume('your-echo'));
+    await tick(400);
+    expect(screen.queryByTestId('book-stage', { includeHiddenElements: true })).toBeTruthy();
+    for (let waited = 0; waited < 2000; waited += 16) {
+      await tick(16);
+      expect(shelf()).toBeTruthy();
+    }
+    await drawBook();
+    await tick(400);
+    expect(shelf()).toBeNull();
   });
 
   it('skips the shelf when a draft is being continued', async () => {

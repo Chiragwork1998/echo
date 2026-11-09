@@ -12,7 +12,11 @@ export type ClosingState = {
   hurry: boolean;
   /** The cover is down and the book rests. */
   contact: boolean;
-  /** The book is sinking from sight. */
+  /**
+   * The book is sinking from sight, as JS says it. The book's own landing begins the sink on the UI thread, after
+   * its rest, without waiting for this (./BookStage): this is for a closed book that was asked something, which
+   * sinks when it is answered, and for a UI thread that did not say its cover was down.
+   */
   sinking: boolean;
   /** Reduce Motion: no leaf, no cover and no sink. The book fades where it is. */
   reduced: boolean;
@@ -51,8 +55,13 @@ const fresh = (): Moment => ({ reached: false, wake: null });
  * sunk: a screen takes a quarter of a second to most of a second to mount, and asked for after the book
  * had gone, the sky was bare for as long as that took. Asked for as the cover lands (after a question on
  * it is answered, if there is one) it is arriving as the book rests and sinks, and sinks over its
- * entrance. The order of the book is kept: the cover lands, that is felt, and then the book sinks.
- * Reduce Motion has no cover and no sink to wait for, and keeps its own short times.
+ * entrance. The order of the book is kept: the cover lands, that is felt, and then the book sinks. The sink is
+ * begun by the cover's own landing, on the UI thread, after the rest (./BookStage): JS is busy mounting the next
+ * screen by then, and a sink that waited for a JS timer sat at rest for 0.4 to 1 s where the ritual means 40 to
+ * 80 ms. The state below, after `gap`, is what a closed book that was asked something sinks on, and the fallback.
+ * Reduce Motion has no cover to wait for: the book fades where it is, and the next screen is asked for as that
+ * fade begins (the UI thread's word, as for the hurried book), so that it arrives over the fading book and not
+ * after it has gone.
  */
 export function useBookClosing(ritual: Ritual, reduced: boolean) {
   const [closing, setClosing] = useState<ClosingState | null>(null);
@@ -152,7 +161,11 @@ export function useBookClosing(ritual: Ritual, reduced: boolean) {
         });
         void (async () => {
           if (fadesNow) {
-            await wait(CLOSE_REDUCED_MS);
+            // The fade is what the book is doing from the first moment. The next screen is asked for as the UI
+            // thread begins it, so that it arrives over the fading book: asked for when the fade had ended, it
+            // came after the book had gone, and the sky was bare for as long as it took to mount (0.73 s on the
+            // walked emulator).
+            await until(moments.current.sinkBegun, CLOSE_REDUCED_MS + UI_HANG_MS);
             if (!live()) return;
             cue('commit');
             return resolve();
@@ -178,7 +191,8 @@ export function useBookClosing(ritual: Ritual, reduced: boolean) {
           if (!live()) return;
           state({ sinking: true });
           if (still) {
-            await wait(CLOSE_REDUCED_MS);
+            // The answer is given and the book fades: the next screen is asked for as the fade begins.
+            await until(moments.current.sinkBegun, CLOSE_REDUCED_MS + UI_HANG_MS);
             if (!live()) return;
             resolve();
           }

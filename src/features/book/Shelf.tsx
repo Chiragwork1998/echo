@@ -13,6 +13,7 @@ import Animated, {
   withSpring,
   withTiming,
   type SharedValue,
+  type WithTimingConfig,
 } from 'react-native-reanimated';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 
@@ -27,6 +28,7 @@ import { useUiBegun, watchAnimation, type Watch } from './animationEnd';
 import { bookCopy } from './bookCopy';
 import { BookCover } from './CoverArt';
 import { Ribbon } from './Ribbon';
+import { UI_HANG_MS } from './ritual';
 import { BOOK_W, STEP, VOLUMES, centred, volumeIndex, type Volume } from './volumes';
 
 // The original shelf: eight volumes roll past over 3.2 s and settle, each growing and turning to face
@@ -44,6 +46,16 @@ const OUT_MS = 320;
  * studio colour between the two (190 ms on the walked emulator).
  */
 export const CHOOSE_AT_MS = 100;
+/**
+ * The shelf's exit is kept in two parts when the book it is making way for has not yet drawn. The first goes
+ * part of the way, at once, so that the choice is answered; the shelf then stays, dimmer, until the book has
+ * drawn its first frame (`holding` goes false), and only then goes the rest of the way, as the book comes.
+ * Faded to nothing on its own clock, the shelf was gone before JS had mounted the book: the walked emulator
+ * showed an empty navy frame, half a second of it, and 120 ms the next time.
+ */
+export const SHELF_HELD = 0.55;
+const HOLD_MS = 160;
+export const SHELF_FINISH_MS = 200;
 /** The ribbon on a shelf volume: the stage's ribbon at 4 pt wide, its tail tucked into the shut book. */
 const RIBBON_W = 4;
 
@@ -54,6 +66,12 @@ type Props = {
   onChoose: (index: number) => void;
   /** The shelf has finished leaving: when its own fade has ended, and nothing of it is drawn. */
   onLeft?: () => void;
+  /**
+   * The book that a chosen volume makes way for has not yet drawn its first frame. The shelf is kept, part of
+   * the way gone, until this is false, so that the screen is never without both. Read when a volume is chosen
+   * and after: false when there is nothing to wait for.
+   */
+  holding?: boolean;
   /** Where the shelf rests moves, so the backdrop can follow. */
   offset: SharedValue<number>;
 };
@@ -115,7 +133,7 @@ function Scene({
  * The shelf. Swipe to roll along it; tap the centred volume to choose it. Every volume is also a
  * button with its name, so a screen reader or a keyboard chooses without a gesture.
  */
-export function Shelf({ initial, onChoose, onLeft, offset }: Props) {
+export function Shelf({ initial, onChoose, onLeft, offset, holding = false }: Props) {
   const { width } = useWindowDimensions();
   const reduced = useReduceMotion();
   const screenReader = useScreenReader();
@@ -126,10 +144,24 @@ export function Shelf({ initial, onChoose, onLeft, offset }: Props) {
   const [at, setAt] = useState(initial);
   const drag = useRef({ start: 0 });
   const leaving = useRef(false);
+  // A volume is chosen: the shelf takes no more touches, so that a shelf kept for a book does not stand between
+  // a finger and the page.
+  const [chosen, setChosen] = useState(false);
   const chooseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const leftWatch = useRef<Watch | null>(null);
   const begun = useUiBegun();
   const here = useRef(true);
+  const holdingNow = useRef(holding);
+  // What lets the shelf go the rest of the way: set while it is kept for a book, and run when the book has
+  // drawn (or, for a book that never does, a very long time after).
+  const release = useRef<(() => void) | null>(null);
+  const holdNet = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestLeft = useRef(onLeft);
+  useEffect(() => {
+    latestLeft.current = onLeft;
+    holdingNow.current = holding;
+    if (!holding) release.current?.();
+  });
 
   // A volume chosen and then left (Back within the exit) must not arrive on the screen that is going.
   // A separate effect, so that the roll's early return under Reduce Motion cannot skip it.
@@ -137,7 +169,9 @@ export function Shelf({ initial, onChoose, onLeft, offset }: Props) {
     here.current = true;
     return () => {
       here.current = false;
+      release.current = null;
       if (chooseTimer.current) clearTimeout(chooseTimer.current);
+      if (holdNet.current) clearTimeout(holdNet.current);
       leftWatch.current?.cancel();
     };
   }, []);
@@ -185,39 +219,57 @@ export function Shelf({ initial, onChoose, onLeft, offset }: Props) {
   const choose = (index: number) => {
     if (leaving.current) return;
     leaving.current = true;
+    setChosen(true);
     setAt(index);
     const left = () => {
-      if (here.current) onLeft?.();
+      if (here.current) latestLeft.current?.();
+    };
+    // The shelf's last fade, from where it is to nothing: it has left when that fade has ended, which a phone
+    // that is behind the clock reaches late (the UI thread of the walked emulator began it 1.8 to 2.1 s after it
+    // was asked). The net for a fade that is lost is set from the fade's first frame on the UI thread, never
+    // from the tap.
+    const finish = (duration: number, easing: WithTimingConfig['easing']) => {
+      leftWatch.current?.cancel();
+      const watch = watchAnimation(duration, left);
+      leftWatch.current = watch;
+      const { ended } = watch;
+      const faded = () => {
+        'worklet';
+        runOnJS(ended)();
+      };
+      out.set(withTiming(1, { duration, easing, reduceMotion: ReduceMotion.Never }, faded));
+      begun(watch.began);
+    };
+    // Kept while the book has not drawn: it goes the rest of the way when the book says so, and, for a book
+    // that never does, a very long time after.
+    const keep = (duration: number, easing: WithTimingConfig['easing']) => {
+      const go = () => {
+        release.current = null;
+        if (holdNet.current) clearTimeout(holdNet.current);
+        finish(duration, easing);
+      };
+      release.current = go;
+      holdNet.current = setTimeout(go, UI_HANG_MS);
     };
     if (reduced) {
-      out.set(1);
       onChoose(index);
+      if (holdingNow.current) return keep(tokens.motion.fast, Easing.out(Easing.quad));
+      out.set(1);
       left();
       return;
     }
-    // The shelf has left when its own fade has ended, which a phone that is behind the clock reaches
-    // late (the UI thread of the walked emulator began it 1.8 to 2.1 s after it was asked); and the book is
-    // asked for well before that, so that there is never a frame of neither. The net for a fade that is
-    // lost is set from the fade's first frame on the UI thread, never from the tap.
-    const watch = watchAnimation(OUT_MS, left);
-    leftWatch.current = watch;
-    const { ended } = watch;
-    const faded = () => {
-      'worklet';
-      runOnJS(ended)();
-    };
-    out.set(
-      withTiming(
-        1,
-        {
-          duration: OUT_MS,
-          easing: Easing.in(Easing.cubic),
+    if (holdingNow.current) {
+      out.set(
+        withTiming(SHELF_HELD, {
+          duration: HOLD_MS,
+          easing: Easing.out(Easing.quad),
           reduceMotion: ReduceMotion.Never,
-        },
-        faded,
-      ),
-    );
-    begun(watch.began);
+        }),
+      );
+      keep(SHELF_FINISH_MS, Easing.inOut(Easing.quad));
+    } else {
+      finish(OUT_MS, Easing.in(Easing.cubic));
+    }
     chooseTimer.current = setTimeout(() => onChoose(index), CHOOSE_AT_MS);
   };
 
@@ -261,6 +313,7 @@ export function Shelf({ initial, onChoose, onLeft, offset }: Props) {
   return (
     <Animated.View
       testID="shelf-stage"
+      pointerEvents={chosen ? 'none' : 'auto'}
       style={[styles.stage, stage]}
       // The books, the rail and the plank overlap, and the shelf leaves with an opacity: faded one by
       // one on Android they would show through each other. This fades the shelf as one picture.
