@@ -24,6 +24,7 @@ import { keepTogether } from '@/features/tab-pages/keepTogether';
 import { detail, runIn } from '@/features/tab-pages/textStyles';
 
 import { BookName } from './BookName';
+import { runningCode, updateLabel } from '@/services/appUpdate';
 import { APP_VERSION, openPage, openSupport, SUPPORT_EMAIL } from './support';
 import { SupportSheet } from './SupportSheet';
 import { useDeleteAll, useExport, type ExportState } from './useDataActions';
@@ -305,6 +306,15 @@ function About() {
       {youCopy.version(APP_VERSION)}
     </EchoText>
   ) : null;
+  // Which code is running: as installed, or an update that came over the air, and when it was made.
+  const [running] = useState(runningCode);
+  const when = running.kind === 'update' ? updateLabel(running.createdAt) : null;
+  const update =
+    running.kind === 'installed'
+      ? youCopy.updateInstalled
+      : when
+        ? youCopy.updateFrom(when)
+        : youCopy.updateArrived;
   return (
     <Group>
       <Heading>{youCopy.about}</Heading>
@@ -319,6 +329,15 @@ function About() {
           ) : (
             version
           )}
+          <EchoText
+            testID="you-update"
+            variant="bodyM"
+            color="textSecondary"
+            style={detail}
+            maxFontSizeMultiplier={1.6}
+          >
+            {update}
+          </EchoText>
           <EchoText
             variant="bodyM"
             color="textSecondary"

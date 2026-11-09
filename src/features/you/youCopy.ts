@@ -93,6 +93,10 @@ export const youCopy = {
 
   about: 'About',
   version: (version: string) => `Version ${version}`,
+  /** Under the version: the code in use, so that an update can be seen to have arrived. */
+  updateInstalled: 'Update: as installed',
+  updateFrom: (when: string) => `Update of ${when}`,
+  updateArrived: 'Update: arrived',
   statement: 'ECHO is wellness software. It is not therapy, diagnosis, or emergency care.',
   /** Said plainly, as the brief asks (docs/PRODUCT_V1.md, Breathe). */
   // One source for the disclosure OpenAI's usage policies ask for: the Breathe library's own line.

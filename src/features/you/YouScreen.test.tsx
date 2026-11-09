@@ -34,6 +34,11 @@ import { SUPPORT_EMAIL } from './support';
 import { YouScreen } from './YouScreen';
 import { youCopy } from './youCopy';
 
+const mockUpdates: { isEmbeddedLaunch: boolean; createdAt: Date | null } = {
+  isEmbeddedLaunch: true,
+  createdAt: null,
+};
+jest.mock('expo-updates', () => mockUpdates);
 jest.mock('expo-router', () => ({
   router: { navigate: jest.fn(), push: jest.fn() },
   usePathname: () => '/home/you',
@@ -99,6 +104,22 @@ describe('You: theme', () => {
     await fireEvent.press(screen.getByRole('radio', { name: youCopy.day }));
     expect(cue).toHaveBeenCalledTimes(1);
     expect(cue).toHaveBeenCalledWith('tick');
+  });
+});
+
+describe('You: About', () => {
+  it('says the code is as installed when the launch was the built-in one', async () => {
+    mockUpdates.isEmbeddedLaunch = true;
+    mockUpdates.createdAt = null;
+    await render(<YouScreen />);
+    expect(screen.getByTestId('you-update')).toHaveTextContent(youCopy.updateInstalled);
+  });
+
+  it('says when the update in use was made, so one can be seen to have arrived', async () => {
+    mockUpdates.isEmbeddedLaunch = false;
+    mockUpdates.createdAt = new Date(2026, 10, 9, 14, 5);
+    await render(<YouScreen />);
+    expect(screen.getByTestId('you-update')).toHaveTextContent('Update of 9 Nov, 2:05 pm');
   });
 });
 
