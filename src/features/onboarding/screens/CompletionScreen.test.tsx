@@ -187,6 +187,9 @@ describe('Completion in onboarding', () => {
     await render(<CompletionScreen />);
     await fireEvent.press(cta());
     await fireEvent.press(cta());
+    // Once its interface has let go.
+    await waitFor(() => expect(completeOnboarding).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, tokens.motion.standard));
     expect(completeOnboarding).toHaveBeenCalledTimes(1);
   });
 
@@ -597,5 +600,123 @@ describe('Completion leaving for Home', () => {
     await screen.unmount();
     await advance(FADE_MS + 500);
     expect(router.dismissTo).not.toHaveBeenCalled();
+  });
+});
+
+// The welcome (the walk, v11): Enter your space cut from the whole of Completion to its photograph with
+// nothing on it, and then to Home. Completion now lets its words, card and button go first, over its
+// photograph, and completes onboarding (which moves the root layout to Home) only once they have gone:
+// the frame between it and Home is the plate backing, which is that same photograph.
+describe('Completion in onboarding, handing over to Home', () => {
+  const FADE_MS = tokens.motion.standard;
+  const FRAME_MS = 16;
+  const advance = (ms: number) => act(async () => void (await jest.advanceTimersByTimeAsync(ms)));
+  type Json = { props: Record<string, unknown>; children?: (Json | string)[] | null };
+  /** How much is drawn of the interface (each part of it), and of the photograph beneath it. */
+  const drawn = async () => {
+    await screen.rerender(
+      <ThemeProvider crossfade={false}>
+        <CompletionScreen />
+      </ThemeProvider>,
+    );
+    const parts = screen
+      .getAllByTestId('completion-going', { includeHiddenElements: true })
+      .map((part) => StyleSheet.flatten(part.props.style).opacity as number);
+    // The photograph: everything above the plate's own layer, multiplied.
+    let photograph = 0;
+    const walk = (node: unknown, above: number): void => {
+      if (!node || typeof node !== 'object') return;
+      if (Array.isArray(node)) return node.forEach((child) => walk(child, above));
+      const { props, children } = node as Json;
+      const own = (StyleSheet.flatten(props.style as never) as { opacity?: number } | undefined)
+        ?.opacity;
+      const here = above * (own ?? 1);
+      if (props.testID === 'drift') photograph = here;
+      walk(children, here);
+    };
+    walk(screen.toJSON(), 1);
+    return { parts, photograph };
+  };
+
+  beforeEach(() => {
+    // The fade is walked, a frame at a time, so that how much of it is drawn can be seen.
+    animationClock.stepped = true;
+  });
+
+  it('lets the words, the card and the button go over the photograph, and only then completes onboarding', async () => {
+    await render(<CompletionScreen />);
+    await advance(1000);
+    const before = await drawn();
+    expect(before.parts).toHaveLength(3);
+    expect(before.parts.every((opacity) => opacity === 1)).toBe(true);
+    await fireEvent.press(cta());
+    await advance(FADE_MS / 2);
+    const half = await drawn();
+    for (const opacity of half.parts) {
+      expect(opacity).toBeGreaterThan(0.1);
+      expect(opacity).toBeLessThan(0.9);
+    }
+    expect(half.photograph).toBe(1);
+    expect(completeOnboarding).not.toHaveBeenCalled();
+    await advance(FADE_MS / 2 + FRAME_MS * 3);
+    const after = await drawn();
+    expect(after.parts.every((opacity) => opacity === 0)).toBe(true);
+    // The photograph stays, whole: it is what is seen until Home's comes up over it.
+    expect(after.photograph).toBe(1);
+    expect(completeOnboarding).toHaveBeenCalledTimes(1);
+  });
+
+  it('completes nothing if it is left while its interface goes', async () => {
+    await render(<CompletionScreen />);
+    await advance(1000);
+    await fireEvent.press(cta());
+    await advance(FADE_MS / 2);
+    await screen.unmount();
+    await advance(FADE_MS * 3);
+    expect(completeOnboarding).not.toHaveBeenCalled();
+  });
+
+  it('waits for the fade to have really ended, however late the UI thread begins it', async () => {
+    await render(<CompletionScreen />);
+    await advance(1000);
+    animationClock.lag = 1200;
+    await fireEvent.press(cta());
+    await advance(FADE_MS + 1000);
+    expect(completeOnboarding).not.toHaveBeenCalled();
+    await advance(400);
+    expect(completeOnboarding).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets go in 180 ms under Reduce Motion', async () => {
+    jest.mocked(AccessibilityInfo.isReduceMotionEnabled).mockResolvedValue(true);
+    await render(<CompletionScreen />);
+    await advance(1000);
+    await fireEvent.press(cta());
+    await advance(tokens.motion.fast - FRAME_MS * 2);
+    expect(completeOnboarding).not.toHaveBeenCalled();
+    await advance(FRAME_MS * 4);
+    expect(completeOnboarding).toHaveBeenCalledTimes(1);
+  });
+
+  it('brings its interface back, with the button free, when finishing fails', async () => {
+    jest.mocked(completeOnboarding).mockResolvedValueOnce(false);
+    await render(<CompletionScreen />);
+    await advance(1000);
+    await fireEvent.press(cta());
+    await advance(FADE_MS + FRAME_MS * 3);
+    expect(completeOnboarding).toHaveBeenCalledTimes(1);
+    await advance(FADE_MS + FRAME_MS * 3);
+    const back = await drawn();
+    expect(back.parts.every((opacity) => opacity === 1)).toBe(true);
+    expect(screen.getByText(completionText.enterFailed)).toBeTruthy();
+    expect(cta()).toBeEnabled();
+  });
+
+  it('leaves the daily screen as it was: no part of it goes on its own', async () => {
+    await render(<DailyCompletionScreen />);
+    await advance(1000);
+    expect(
+      screen.queryAllByTestId('completion-going', { includeHiddenElements: true }),
+    ).toHaveLength(0);
   });
 });

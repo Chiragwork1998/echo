@@ -79,7 +79,9 @@ export function readWelcomeCandidate(): boolean {
  *
  * The moment to play: never while Home is dissolved or covered or the app is away; once Home is whole
  * again after a session, and a beat more, so that the person sees the open outline first; and in the
- * welcome, 900 ms after Home's first look, while the river wakes.
+ * welcome, 900 ms after Home's first look, while the river wakes. Home's first look is when its interface
+ * is first there to be seen: as it appears, or, as the welcome begins veiled (app/home/_layout.tsx), as
+ * its interface begins to rise, which is whole again by then.
  *
  * The one haptic of the arrival, and the line a screen reader is told, are made here, in time with
  * the cairn. A second echo the same day makes neither: the count changing is not a stone.
@@ -134,6 +136,12 @@ export function useStoneArrival(summary: HomeSummary): { summary: HomeSummary; s
   useEffect(() => {
     dissolveRef.current = dissolve;
   }, [dissolve]);
+  // When Home's first look was: the first moment its interface is not dissolved. Set before the wait
+  // below reads it.
+  const lookedAt = useRef<number | null>(null);
+  useEffect(() => {
+    if (lookedAt.current === null && dissolve === 'idle') lookedAt.current = Date.now();
+  }, [dissolve]);
 
   // Waiting to play.
   useEffect(() => {
@@ -141,7 +149,7 @@ export function useStoneArrival(summary: HomeSummary): { summary: HomeSummary; s
     if (dissolve !== 'idle' || !here || !foreground) return;
     const wait =
       pending.kind === 'first'
-        ? Math.max(0, WELCOME_ARRIVAL_AT_MS - (Date.now() - mountedAt))
+        ? Math.max(0, WELCOME_ARRIVAL_AT_MS - (Date.now() - (lookedAt.current ?? mountedAt)))
         : (reduced ? REDUCED_FADE_MS : ARRIVAL_AFTER_IDLE_MS) + HOLD_MS;
     const timer = setTimeout(() => {
       turn.current += 1;

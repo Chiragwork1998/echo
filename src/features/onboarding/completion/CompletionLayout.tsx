@@ -1,4 +1,6 @@
-import { ScrollView, StyleSheet, View } from 'react-native';
+import type { PropsWithChildren, ReactNode } from 'react';
+import { ScrollView, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 
 import { EchoText } from '@/components/EchoText';
 import { PrimaryCTA } from '@/components/PrimaryCTA';
@@ -46,7 +48,26 @@ type Props = {
   failed: boolean;
   onEnter: () => void;
   onRetry: () => void;
+  /**
+   * How far the interface has gone, 0 to 1, over the photograph, which stays: onboarding lets its words,
+   * card and button go before it hands over to Home. Without it the interface is simply there.
+   */
+  leaving?: SharedValue<number>;
 };
+
+/** A part of the interface, as much of it as has not gone. */
+function Going({
+  gone,
+  style,
+  children,
+}: PropsWithChildren<{ gone: SharedValue<number>; style?: StyleProp<ViewStyle> }>) {
+  const fade = useAnimatedStyle(() => ({ opacity: 1 - gone.get() }));
+  return (
+    <Animated.View testID="completion-going" pointerEvents="box-none" style={[style, fade]}>
+      {children}
+    </Animated.View>
+  );
+}
 
 /** The one composition, drawn the same for onboarding and for a daily session. */
 export function CompletionLayout({
@@ -58,8 +79,18 @@ export function CompletionLayout({
   failed,
   onEnter,
   onRetry,
+  leaving,
 }: Props) {
   const { accessibleLayout, landscape } = useLayout();
+  // Each part goes as one with the others; the photograph, which the shell draws, is not among them.
+  const part = (node: ReactNode, style?: StyleProp<ViewStyle>) =>
+    leaving ? (
+      <Going gone={leaving} style={style}>
+        {node}
+      </Going>
+    ) : (
+      node
+    );
   const card = (
     <CardArrival>
       <ReflectionCard
@@ -74,27 +105,8 @@ export function CompletionLayout({
     </CardArrival>
   );
 
-  return (
-    <ScreenShell
-      screen="completion"
-      header={<CompletionHeader step={mode === 'onboarding' ? STEP : undefined} />}
-      footer={
-        <View style={styles.footer}>
-          {failed && (
-            <EchoText
-              variant="bodyM"
-              color="textSecondary"
-              align="center"
-              accessibilityRole="alert"
-              style={styles.failed}
-            >
-              {completionText.enterFailed}
-            </EchoText>
-          )}
-          <PrimaryCTA label={copy.completion.cta} arrow loading={entering} onPress={onEnter} />
-        </View>
-      }
-    >
+  const content = (
+    <>
       <CompletionHeading title={copy.completion.title} subtitle={copy.completion.subtitle} />
       {accessibleLayout || landscape ? (
         // The shell scrolls the whole screen here, so the card simply follows the heading.
@@ -110,11 +122,38 @@ export function CompletionLayout({
           {card}
         </ScrollView>
       )}
+    </>
+  );
+
+  return (
+    <ScreenShell
+      screen="completion"
+      header={part(<CompletionHeader step={mode === 'onboarding' ? STEP : undefined} />)}
+      footer={part(
+        <View style={styles.footer}>
+          {failed && (
+            <EchoText
+              variant="bodyM"
+              color="textSecondary"
+              align="center"
+              accessibilityRole="alert"
+              style={styles.failed}
+            >
+              {completionText.enterFailed}
+            </EchoText>
+          )}
+          <PrimaryCTA label={copy.completion.cta} arrow loading={entering} onPress={onEnter} />
+        </View>,
+      )}
+    >
+      {/* Filling the shell's content as the content itself did, so that nothing moves. */}
+      {part(content, styles.content)}
     </ScreenShell>
   );
 }
 
 const styles = StyleSheet.create({
+  content: { flex: 1 },
   slot: { flex: 1, marginTop: CARD_BELOW_HEADING },
   slotContent: { flexGrow: 1, justifyContent: 'flex-end', paddingBottom: CARD_ABOVE_CTA },
   flowing: { marginTop: CARD_BELOW_HEADING, marginBottom: CARD_ABOVE_CTA },

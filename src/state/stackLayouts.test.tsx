@@ -2,6 +2,9 @@ import { render as baseRender } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
 import { Platform } from 'react-native';
 
+import { useOnboarding } from '@/state/onboarding';
+import { usePreferences } from '@/state/preferences';
+
 import HomeLayout from '../../app/home/_layout';
 import OnboardingLayout from '../../app/onboarding/_layout';
 
@@ -33,7 +36,21 @@ jest.mock('expo-router', () => {
     usePathname: () => '/home',
   };
 });
-jest.mock('@/components/EchoBackground', () => ({ EchoBackground: () => null }));
+let mockComesUp: boolean | undefined;
+let mockVeiled: boolean | undefined;
+jest.mock('@/components/EchoBackground', () => ({
+  EchoBackground: ({ comesUp }: { comesUp?: boolean }) => {
+    mockComesUp = comesUp;
+    return null;
+  },
+}));
+jest.mock('@/features/home/dissolve', () => ({
+  ...jest.requireActual('@/features/home/dissolve'),
+  HomeDissolveProvider: ({ children, veiled }: { children: ReactNode; veiled?: boolean }) => {
+    mockVeiled = veiled;
+    return children;
+  },
+}));
 jest.mock('@/features/home/tabs/HomeTabBar', () => ({
   HomeTabBar: () => null,
   HomeTabBarProvider: ({ children }: { children: ReactNode }) => children,
@@ -43,6 +60,8 @@ jest.mock('@/features/home/NightHomeLoop', () => ({ NightHomeLoop: () => null })
 beforeEach(() => {
   mockStackOptions = undefined;
   mockScreens.clear();
+  mockComesUp = undefined;
+  mockVeiled = undefined;
 });
 
 const CLEAR = 'transparent';
@@ -124,5 +143,30 @@ describe('Home stays up beneath the session, Rehearse and Completion on Android'
       expect(mockScreens.get(name)).not.toHaveProperty('presentation');
     }
     expect(mockScreens.get('breathe')?.animation).toBe('none');
+  });
+});
+
+// The welcome: Completion's interface has let go over its photograph; Home's photograph comes up over that
+// one, and Home's interface rises once Home is ready (the walk, v11, saw a bare frame and then a cut).
+describe('Home’s first look after onboarding', () => {
+  afterEach(() => {
+    usePreferences.setState({ homeWelcomed: true });
+    useOnboarding.setState({ completedAt: undefined });
+  });
+
+  it('brings Home’s photograph up over Completion’s, and begins with Home’s interface veiled', async () => {
+    usePreferences.setState({ homeWelcomed: false });
+    useOnboarding.setState({ completedAt: Date.now() });
+    await baseRender(<HomeLayout />);
+    expect(mockComesUp).toBe(true);
+    expect(mockVeiled).toBe(true);
+  });
+
+  it('leaves every other Home as it was', async () => {
+    usePreferences.setState({ homeWelcomed: true });
+    useOnboarding.setState({ completedAt: Date.now() });
+    await baseRender(<HomeLayout />);
+    expect(mockComesUp).toBe(false);
+    expect(mockVeiled).toBe(false);
   });
 });

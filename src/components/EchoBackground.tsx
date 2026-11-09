@@ -71,7 +71,8 @@ function Plate({
  *   screen that has just been reached therefore holds up the plate that was last on show, beneath its
  *   own, until its own has been drawn, and then brings its own up over it. A screen never shows a flat
  *   colour where its photograph should be. A plate that was to hand at once simply replaces the old
- *   one, as it always did, and a screen that wears the same plate holds nothing up (see platePaint).
+ *   one, as it always did, unless it is told to come up (`comesUp`), and a screen that wears the same
+ *   plate holds nothing up (see platePaint).
  *   That is the copy a plate holds up for itself, inside the picture the glass blurs. Beneath all of
  *   it, and beneath the whole navigator, the plate backing draws the plate that was last on show, and
  *   this draws no colour of its own: so wherever the held copy is not drawn either, which is whenever
@@ -83,9 +84,23 @@ function Plate({
  * lies over the still, in the same fading group, so it fades with the plate it is part of and the
  * still beneath is the poster until the loop's first frame. At rest only one plate is mounted.
  */
-export function EchoBackground({ screen, overlay }: { screen: ScreenId; overlay?: ReactNode }) {
+export function EchoBackground({
+  screen,
+  overlay,
+  comesUp = false,
+}: {
+  screen: ScreenId;
+  overlay?: ReactNode;
+  /**
+   * Its own plate always comes up over the one it holds, by the arrival's fade, even when it is to hand
+   * at once. Read once, as the plate first appears. For Home's first look after onboarding, which follows
+   * Completion's photograph, and must not cut from it to Home's.
+   */
+  comesUp?: boolean;
+}) {
   const { target } = useTheme();
   const reduced = useReduceMotion();
+  const [alwaysComesUp] = useState(comesUp);
 
   const own = plateStep(screen);
   const flow = usePlateFlow((state) => state.step);
@@ -171,8 +186,8 @@ export function EchoBackground({ screen, overlay }: { screen: ScreenId; overlay?
     [owner, screen],
   );
 
-  // Drawn. Over a held plate it comes up softly if it was late, and at once if it was not, and it is
-  // the plate on show once it has come up.
+  // Drawn. Over a held plate it comes up softly if it was late, or if it is told to, and at once if not,
+  // and it is the plate on show once it has come up.
   const shown = useCallback(
     (theme: ThemeName) => {
       awaited();
@@ -181,7 +196,7 @@ export function EchoBackground({ screen, overlay }: { screen: ScreenId; overlay?
         present(theme);
         return;
       }
-      if (Date.now() - madeAt > PLATE_LATE_MS) {
+      if (alwaysComesUp || Date.now() - madeAt > PLATE_LATE_MS) {
         arrival.set(
           withTiming(1, { duration: veilMs, easing: GLIDE, reduceMotion: ReduceMotion.Never }),
         );
@@ -196,7 +211,7 @@ export function EchoBackground({ screen, overlay }: { screen: ScreenId; overlay?
       letGo();
       present(theme);
     },
-    [arrival, awaited, letGo, madeAt, present, veilMs],
+    [alwaysComesUp, arrival, awaited, letGo, madeAt, present, veilMs],
   );
   // Nothing is held for a photograph that cannot be drawn: what is beneath is not its own, and is let go.
   const failed = useCallback(() => {

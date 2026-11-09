@@ -1,12 +1,15 @@
 import { usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useCallback, useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useLayout } from '@/design/layout';
+import { useBackingPlate } from '@/design/platePaint';
 import { useTheme } from '@/design/theme';
 import { useThemeSwap } from '@/design/useThemeSwap';
+import { useUiBegun } from '@/features/book/animationEnd';
 import { useHomeSummary } from '@/features/journal';
 import { HOME_PATH } from '@/state/routing';
 
@@ -20,6 +23,28 @@ import { useStoneArrival } from '../today/useStoneArrival';
 const HEADER_OFFSET_FROM_SAFE_TOP = -5;
 // Night's content ends 18 pt above its bar. Day's list runs lower in the golden, so it sits closer.
 const ABOVE_TAB_BAR = { night: 18, day: 8 } as const;
+
+/**
+ * Says when a Home that began veiled is ready to be seen (app/home/_layout.tsx, the first look after
+ * onboarding): it has drawn its first frame, its first read has answered, so that its card is whole when
+ * it is seen (CardSlot), and its own photograph has come up, so that its interface never rises over
+ * Completion's. Mounted only while Home is veiled, so the plate on show is listened to only then.
+ */
+function WhenReady({
+  drawn,
+  answered,
+  onReady,
+}: {
+  drawn: boolean;
+  answered: boolean;
+  onReady: () => void;
+}) {
+  const photographUp = useBackingPlate()?.screen === 'home';
+  useEffect(() => {
+    if (drawn && answered && photographUp) onReady();
+  }, [answered, drawn, onReady, photographUp]);
+  return null;
+}
 
 /**
  * Home. Night and Day are two compositions, both intentional (docs/SPEC_CONFLICTS.md, C-09). The
@@ -37,8 +62,14 @@ export function HomeScreen() {
   const night = name === 'night';
   // Pressing Begin dissolves everything but the photograph, which is drawn outside the veil and
   // never moves. The floor shade is part of the dissolve: the session's plate has none.
-  const { phase } = useHomeDissolve();
+  const { phase, unveil } = useHomeDissolve();
   const veil = useHomeVeil();
+  // A Home that begins veiled has drawn its first frame once the UI thread has run a frame after it was
+  // laid out.
+  const veiled = phase === 'veiled';
+  const [drawn, setDrawn] = useState(false);
+  const uiBegun = useUiBegun();
+  const laidOut = useCallback(() => uiBegun(() => setDrawn(true)), [uiBegun]);
   // Night and Day are two compositions: when the theme changes the one in view fades out, the other
   // takes its place while nothing is showing, and comes in over the new sky.
   const swap = useThemeSwap();
@@ -53,7 +84,14 @@ export function HomeScreen() {
   const hidden = dissolved || covered;
 
   return (
-    <View style={styles.root}>
+    <View
+      testID="home-screen"
+      style={styles.root}
+      onLayout={veiled && !drawn ? laidOut : undefined}
+    >
+      {veiled && (
+        <WhenReady drawn={drawn} answered={summary.status !== 'loading'} onReady={unveil} />
+      )}
       {/* Gone with the rest of the chrome, and back with it. Nothing else here touches it. */}
       <StatusBar hidden={phase === 'gone' && here ? true : undefined} animated />
       {/* No photograph here. This screen is transparent over the one app/home/_layout.tsx draws
