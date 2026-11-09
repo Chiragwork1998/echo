@@ -36,7 +36,9 @@ afterEach(() => jest.restoreAllMocks());
 
 /** The stone's own layer, as it is drawn now. */
 const bodyStyle = () =>
-  StyleSheet.flatten(screen.getByTestId('home-stone-body').props.style) as {
+  StyleSheet.flatten(
+    screen.getByTestId('home-stone-body', { includeHiddenElements: true }).props.style,
+  ) as {
     opacity: number;
     transform: { translateY: number; scale: number }[];
   };
@@ -88,5 +90,28 @@ describe('the halo', () => {
     expect(stopped).not.toHaveBeenCalled();
     await act(async () => reduceMotionChanged.forEach((listener) => listener(true)));
     expect(stopped).toHaveBeenCalledTimes(1);
+  });
+});
+
+// TalkBack stopped on the stone's drawing as a stop of its own, a container with no name, before the
+// stone's button (the walk, v11). The button says all of it.
+describe('the stone for a screen reader', () => {
+  it('is its button alone: the drawing beneath it is not a stop, and nothing it says is lost', async () => {
+    await render(
+      <LimestoneStone
+        title="Begin"
+        arcCaption="Your seven minutes"
+        accessibilityLabel="Begin. Your seven minutes"
+        onPress={jest.fn()}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'Begin. Your seven minutes' })).toBeTruthy();
+    // The word drawn on the stone is still drawn, but not met on its own.
+    expect(screen.queryByText('Begin')).toBeNull();
+    expect(screen.getByText('Begin', { includeHiddenElements: true })).toBeTruthy();
+    expect(
+      screen.getByTestId('home-stone-body', { includeHiddenElements: true }).props
+        .importantForAccessibility,
+    ).toBe('no-hide-descendants');
   });
 });

@@ -34,7 +34,10 @@ jest.mock('expo-router', () => {
   };
 });
 jest.mock('@/components/EchoBackground', () => ({ EchoBackground: () => null }));
-jest.mock('@/features/home/tabs/HomeTabBar', () => ({ HomeTabBar: () => null }));
+jest.mock('@/features/home/tabs/HomeTabBar', () => ({
+  HomeTabBar: () => null,
+  HomeTabBarProvider: ({ children }: { children: ReactNode }) => children,
+}));
 jest.mock('@/features/home/NightHomeLoop', () => ({ NightHomeLoop: () => null }));
 
 beforeEach(() => {
@@ -100,18 +103,26 @@ describe('Home stays up beneath the session, Rehearse and Completion on Android'
     expect(mockScreens.get('complete')?.contentStyle).toEqual({ backgroundColor: CLEAR });
   });
 
-  it('leaves Breathe as it was: it is not drawn over Home', async () => {
+  // A session begun from Breathe was presented over Breathe's plain screen, which had taken Home down:
+  // after it, Enter your space showed the bare plate for 130 to 150 ms while Home was built again (the
+  // walk, v11). Breathe is presented over Home as well, and keeps its own cut in and out.
+  it('presents Breathe over Home too, with its own coming and going still a cut', async () => {
     jest.replaceProperty(Platform, 'OS', 'android');
     await baseRender(<HomeLayout />);
-    expect(mockScreens.get('breathe')).not.toHaveProperty('presentation');
-    expect(mockScreens.get('breathe')?.animation).toBe('none');
+    expect(mockScreens.get('breathe')).toMatchObject({
+      presentation: 'transparentModal',
+      animation: 'none',
+      gestureEnabled: false,
+      contentStyle: { backgroundColor: CLEAR },
+    });
   });
 
   it('changes nothing on iOS, whose navigation controller keeps the screens beneath', async () => {
     jest.replaceProperty(Platform, 'OS', 'ios');
     await baseRender(<HomeLayout />);
-    for (const name of OVER_HOME) {
+    for (const name of [...OVER_HOME, 'breathe']) {
       expect(mockScreens.get(name)).not.toHaveProperty('presentation');
     }
+    expect(mockScreens.get('breathe')?.animation).toBe('none');
   });
 });

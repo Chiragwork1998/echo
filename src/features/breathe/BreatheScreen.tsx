@@ -1,9 +1,10 @@
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, usePathname } from 'expo-router';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { BackHandler, ScrollView, StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
   ReduceMotion,
+  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -16,6 +17,7 @@ import { holdTheme } from '@/design/themeHold';
 import { tokens } from '@/design/tokens';
 import { useReduceMotion } from '@/design/useReduceMotion';
 import { useMorning } from '@/features/become/morning';
+import { useUiBegun, watchAnimation, type Watch } from '@/features/book/animationEnd';
 import { useHomeDissolve } from '@/features/home/dissolve';
 import { Wash } from '@/features/journal-session/Wash';
 import { deviceClock } from '@/features/journal/localDay';
@@ -37,9 +39,13 @@ import { compile, DEFAULT_PACE, oneMoreMinute, type Timeline } from './timeline'
 import type { Practice } from './types';
 
 const HOME_PATH = '/home';
+const BREATHE_PATH = '/home/breathe';
 const SESSION_PATH = '/home/session';
 const STAGE_MS = 600;
 const FOOTER_ABOVE_SAFE_BOTTOM = 18;
+
+/** Home itself, or one of the screens of its stack. */
+const inHomeStack = (path: string) => path === HOME_PATH || path.startsWith(`${HOME_PATH}/`);
 
 type Stage =
   | { kind: 'feelings' }
@@ -113,6 +119,44 @@ export function BreatheScreen() {
   // The hold follows focus, so it never outlives the screen's turn at the front of the stack.
   useFocusEffect(useCallback(() => holdTheme(), []));
 
+  // On Android the session is presented over this screen, which stays up beneath it with whatever it
+  // last drew (src/features/home/sessionRoute.ts): the walk (v11) saw the ways on stand under the session
+  // for the whole of it, beneath its own Back and Write. While another screen is on show this one is
+  // reached by neither a touch nor TalkBack, and beneath another screen of Home's stack it draws nothing.
+  // The paywall is drawn over the whole of that stack, plate and all, and it is left as it is under it, so
+  // that nothing is bare while the paywall comes and goes. Read from the path each time, as Home reads it.
+  const pathname = usePathname();
+  const onShow = pathname === BREATHE_PATH;
+  const beneath = !onShow && inHomeStack(pathname);
+  // Begin your echo lets this screen go before the session comes, as Begin on Home lets Home go: from the
+  // press it takes no touch, and the session is opened once the screen has faded away.
+  const [handingOver, setHandingOver] = useState(false);
+  const [wasBeneath, setWasBeneath] = useState(beneath);
+  if (beneath && !wasBeneath) setWasBeneath(true);
+  // The screen on show again after another screen was over it is itself again. Only on show: a paywall
+  // the session opens over it is not that, and it stays out of sight beneath both.
+  if (onShow && wasBeneath) {
+    setWasBeneath(false);
+    setHandingOver(false);
+  }
+  const shown = useSharedValue(beneath ? 0 : 1);
+  useEffect(() => {
+    // A hand-over fades the screen by its own animation, and it is never brought back over its own fade.
+    if (handingOver) return;
+    shown.set(beneath ? 0 : 1);
+  }, [beneath, handingOver, shown]);
+  const screenStyle = useAnimatedStyle(() => ({ opacity: shown.get() }));
+  const handOver = useRef<Watch | null>(null);
+  const uiBegun = useUiBegun();
+  const here = useRef(true);
+  useEffect(() => {
+    here.current = true;
+    return () => {
+      here.current = false;
+      handOver.current?.cancel();
+    };
+  }, []);
+
   const [start] = useState(qaStart);
   const actualPlus = usePlus();
   const plus = start.plus ?? actualPlus;
@@ -185,16 +229,42 @@ export function BreatheScreen() {
     setStage({ kind: 'after', practice: stage.practice, timeline: stage.timeline, support });
   };
 
-  const echo = async () => {
+  // Begin your echo. The screen fades away over the plate, over the time the stages take to go (it is
+  // a screen let go of, as Before is let go of for the practice), and the session is opened when that
+  // fade has ended on the UI thread, never by a clock: a slow phone begins it late. The session then
+  // rises over the bare plate, and this screen, beneath it, draws nothing.
+  const echo = () => {
+    if (handingOver) return;
+    setHandingOver(true);
     // The journal records in the mode it expects, whatever Breathe set.
-    await restoreJournalAudio();
+    const restored = restoreJournalAudio();
     const params: Record<string, string> = { mode: 'voice' };
     if (morning) params.prompt = 'become';
-    router.push({ pathname: SESSION_PATH, params } as never);
+    const duration = reduced ? tokens.motion.fast : tokens.motion.standard;
+    const watch = watchAnimation(duration, () => {
+      void restored.then(() => {
+        if (here.current) router.push({ pathname: SESSION_PATH, params } as never);
+      });
+    });
+    handOver.current?.cancel();
+    handOver.current = watch;
+    const { ended } = watch;
+    const gone = () => {
+      'worklet';
+      runOnJS(ended)();
+    };
+    shown.set(
+      withTiming(
+        0,
+        { duration, easing: Easing.inOut(Easing.quad), reduceMotion: ReduceMotion.Never },
+        gone,
+      ),
+    );
+    uiBegun(watch.began);
   };
 
   const back = useCallback(() => {
-    if (beginning) return;
+    if (beginning || handingOver) return;
     switch (stage.kind) {
       case 'feelings':
         return leave();
@@ -212,23 +282,52 @@ export function BreatheScreen() {
       case 'during':
         return; // The practice's own End handles it.
     }
-  }, [beginning, leave, stage]);
+  }, [beginning, handingOver, leave, stage]);
 
+  // Back is this screen's while it is on show. Beneath the session it is the session's: this screen's
+  // listener stays registered under the session's, which is asked first (the last one registered is),
+  // and if it is asked while another screen is on show it passes Back on. It is registered once for
+  // each stretch outside a practice, not again with each change of stage or route, so that nothing puts
+  // it back above the listener of a screen that came after it.
+  const latest = useRef({ back, onShow });
   useEffect(() => {
-    if (stage.kind === 'during') return;
+    latest.current = { back, onShow };
+  });
+  const practising = stage.kind === 'during';
+  useEffect(() => {
+    if (practising) return;
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      back();
+      if (!latest.current.onShow) return false;
+      latest.current.back();
       return true;
     });
     return () => subscription.remove();
-  }, [back, stage.kind]);
+  }, [practising]);
 
   const top = Math.max(insets.top - 5, 8);
   const column = { width, paddingHorizontal: gutter, alignSelf: 'center' as const };
 
+  // The screen itself. It is touched and heard only while it is the one on show and is not handing
+  // over; how much of it is drawn is `shown`. Beneath another screen of Home's stack it holds nothing at
+  // all, so that no view of it is left in the window under that screen (the walk's dump listed the ways
+  // on, clickable, under the session). Where it had got to is kept here, and is drawn again should it be
+  // on show once more.
+  const away = !onShow || handingOver;
+  const wrap = (body: ReactNode) => (
+    <Animated.View
+      testID="breathe-screen"
+      style={[styles.fill, screenStyle]}
+      pointerEvents={away ? 'none' : 'auto'}
+      accessibilityElementsHidden={away}
+      importantForAccessibility={away ? 'no-hide-descendants' : 'auto'}
+    >
+      {beneath ? null : body}
+    </Animated.View>
+  );
+
   const content = stage.kind;
   if (stage.kind === 'during') {
-    return (
+    return wrap(
       <PracticeView
         key={stage.run}
         timeline={stage.timeline}
@@ -238,11 +337,11 @@ export function BreatheScreen() {
         first={first}
         onEnd={ended}
         eased
-      />
+      />,
     );
   }
 
-  return (
+  return wrap(
     <View style={styles.fill}>
       <Settle key={content} leaving={beginning}>
         {(stage.kind === 'feelings' || stage.kind === 'before') && (
@@ -309,7 +408,7 @@ export function BreatheScreen() {
             <AfterActions
               support={stage.support}
               onCloseSupport={() => setStage({ ...stage, support: false })}
-              onEcho={() => void echo()}
+              onEcho={echo}
               onMore={() =>
                 setStage({
                   kind: 'during',
@@ -324,7 +423,7 @@ export function BreatheScreen() {
           </View>
         )}
       </Settle>
-    </View>
+    </View>,
   );
 }
 

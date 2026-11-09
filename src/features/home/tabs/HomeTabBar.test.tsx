@@ -1,7 +1,7 @@
 import { act, fireEvent, screen, within } from '@testing-library/react-native';
 import { router, usePathname } from 'expo-router';
 import type { ReactElement } from 'react';
-import { Dimensions, StyleSheet } from 'react-native';
+import { Dimensions, Pressable, StyleSheet } from 'react-native';
 
 import { copy } from '@/content/copy';
 import { EASE } from '@/design/ease';
@@ -9,10 +9,16 @@ import { cue } from '@/design/haptics';
 import { ThemeProvider } from '@/design/theme';
 import { useReduceMotion } from '@/design/useReduceMotion';
 import { usePreferences } from '@/state/preferences';
-import { reanimatedMock } from '@/testing/reanimatedMock';
+import { animationClock, reanimatedMock } from '@/testing/reanimatedMock';
 import { render } from '@/testing/render';
 
-import { HomeTabBar, TAB_BAR_HEIGHT, tabPaths } from './HomeTabBar';
+import {
+  HomeTabBar,
+  HomeTabBarProvider,
+  TAB_BAR_HEIGHT,
+  tabPaths,
+  useRevealTabBar,
+} from './HomeTabBar';
 
 jest.mock('@/design/haptics');
 jest.mock('@/design/useReduceMotion', () => ({ useReduceMotion: jest.fn(() => false) }));
@@ -292,5 +298,107 @@ describe('the bar coming and going', () => {
       0,
       expect.objectContaining({ duration: 180, easing: EASE, reduceMotion: 'never' }),
     );
+  });
+});
+
+// The screens over Home are drawn in the stack beneath the bar, which is drawn above it. While one of
+// them is up, the bar is not drawn, touched or heard.
+describe('the bar over the screens that cover Home', () => {
+  it.each(['/home/session', '/home/breathe', '/home/rehearse', '/home/complete', '/home/entry'])(
+    'is not drawn at all on %s',
+    async (path) => {
+      at(path);
+      await render(<HomeTabBar />);
+      expect(drawn('home-dock').opacity).toBe(0);
+      expect(screen.queryAllByRole('tab')).toHaveLength(0);
+    },
+  );
+});
+
+// Completion leaves by a fade of its own before the route goes back to Home. The walk (v11) saw the bar,
+// which came with the route, over its card in two Enter your space of six, and 0.7 s late after a Back.
+describe('a screen that brings the bar in as it goes', () => {
+  const FADE_MS = 320;
+  function Leaving() {
+    const reveal = useRevealTabBar();
+    return <Pressable testID="leave" onPress={() => reveal(FADE_MS)} />;
+  }
+  const ui = () => (
+    <HomeTabBarProvider>
+      <Leaving />
+      <HomeTabBar />
+    </HomeTabBarProvider>
+  );
+  const advance = (ms: number) =>
+    act(async () => {
+      await jest.advanceTimersByTimeAsync(ms);
+    });
+  /** Draws the bar again, and says how much of it is drawn. */
+  const shown = async (view: Awaited<ReturnType<typeof render>>) => {
+    await view.rerender(wrap(ui()));
+    return drawn('home-dock').opacity;
+  };
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    // The fades are walked, a frame at a time, so that how much is drawn can be seen.
+    animationClock.stepped = true;
+  });
+  afterEach(() => {
+    animationClock.reset();
+    jest.useRealTimers();
+  });
+
+  it('brings it in once the fade has had its time, over the bar’s own 180 ms', async () => {
+    at('/home/complete');
+    const view = await render(ui());
+    await fireEvent.press(screen.getByTestId('leave'));
+    await advance(FADE_MS - 20);
+    expect(await shown(view)).toBe(0);
+    await advance(20 + 90);
+    const coming = await shown(view);
+    expect(coming).toBeGreaterThan(0);
+    expect(coming).toBeLessThan(1);
+    await advance(200);
+    expect(await shown(view)).toBe(1);
+    // Seen, over Home, but not yet touched or heard: that follows Home's route, when the screen is popped.
+    expect(screen.queryAllByRole('tab')).toHaveLength(0);
+    at('/home');
+    expect(await shown(view)).toBe(1);
+    expect(screen.getAllByRole('tab')).toHaveLength(4);
+  });
+
+  it('is taken away again by the route that comes, if it is not a tab’s', async () => {
+    at('/home/complete');
+    const view = await render(ui());
+    await fireEvent.press(screen.getByTestId('leave'));
+    await advance(FADE_MS + 300);
+    expect(await shown(view)).toBe(1);
+    at('/home/entry');
+    await shown(view);
+    await advance(300);
+    expect(await shown(view)).toBe(0);
+    expect(screen.queryAllByRole('tab')).toHaveLength(0);
+  });
+
+  it('is nothing to a bar drawn without the provider', async () => {
+    at('/home/complete');
+    const view = await render(
+      <>
+        <Leaving />
+        <HomeTabBar />
+      </>,
+    );
+    await fireEvent.press(screen.getByTestId('leave'));
+    await advance(FADE_MS + 300);
+    await view.rerender(
+      wrap(
+        <>
+          <Leaving />
+          <HomeTabBar />
+        </>,
+      ),
+    );
+    expect(drawn('home-dock').opacity).toBe(0);
   });
 });

@@ -1,13 +1,22 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { router } from 'expo-router';
-import { StyleSheet, Text } from 'react-native';
+import { BackHandler, Pressable, StyleSheet, Text } from 'react-native';
 import * as Reanimated from 'react-native-reanimated';
 
+import { ThemeProvider } from '@/design/theme';
 import { useThemeHeld } from '@/design/themeHold';
+import { tokens } from '@/design/tokens';
+import {
+  DISSOLVE_MS,
+  HomeDissolveProvider,
+  useHomeDissolve,
+  useSessionEntry,
+} from '@/features/home/dissolve';
 import { fingerAway, fingerDown } from '@/testing/pressed';
 
 import { DEFAULT_PRACTICE, usePreferences } from '@/state/preferences';
 import { useRequirePlus, usePlus } from '@/services/plus';
+import { animationClock } from '@/testing/reanimatedMock';
 import { render } from '@/testing/render';
 
 import { freeAtAll } from './access';
@@ -32,6 +41,7 @@ const mockAudio = {
 };
 let mockMorning = false;
 let mockReduced = false;
+let mockPath = '/home/breathe';
 
 jest.mock('@/services/nativeModules', () => ({ loadAudio: () => mockAudio }));
 jest.mock('@/design/haptics');
@@ -44,7 +54,7 @@ jest.mock('expo-router', () => {
   const { useEffect } = jest.requireActual('react');
   return {
     router: { push: jest.fn(), navigate: jest.fn(), dismissTo: jest.fn(), replace: jest.fn() },
-    usePathname: () => '/home/breathe',
+    usePathname: () => mockPath,
     useFocusEffect: (effect: () => void | (() => void)) => useEffect(effect, [effect]),
   };
 });
@@ -72,8 +82,10 @@ function as(plus: boolean) {
 beforeEach(() => {
   jest.useFakeTimers();
   jest.clearAllMocks();
+  animationClock.reset();
   mockMorning = false;
   mockReduced = false;
+  mockPath = '/home/breathe';
   usePreferences.setState({ practice: { ...DEFAULT_PRACTICE, begun: 1 } });
   as(false);
 });
@@ -457,5 +469,237 @@ describe('Begin', () => {
     await view.unmount();
     await act(async () => void jest.advanceTimersByTime(500));
     expect(practice()).toBeNull();
+  });
+});
+
+// On Android the daily session is presented over Breathe, which stays up beneath it. The walk (v11)
+// opened the session from the ways on after a practice: Begin your echo, One more minute and Done stood
+// under the session for the whole of it, dimmed beneath its own Back, Write and Show words.
+describe('Begin your echo, and the session over Breathe', () => {
+  const FADE_MS = tokens.motion.standard;
+  const echo = () => screen.getByRole('button', { name: breatheCopy.actions.echo });
+  const layer = () => screen.getByTestId('breathe-screen', { includeHiddenElements: true });
+  const advance = (ms: number) =>
+    act(async () => {
+      await jest.advanceTimersByTimeAsync(ms);
+    });
+  /** Draws the screen again, as the path now says, and says how much of it is drawn. */
+  const drawn = async (view: Awaited<ReturnType<typeof render>>) => {
+    await view.rerender(
+      <ThemeProvider crossfade={false}>
+        <BreatheScreen />
+      </ThemeProvider>,
+    );
+    return StyleSheet.flatten(layer().props.style).opacity as number;
+  };
+
+  /** Settle, breathed through, and the ways on after it. */
+  async function toTheWaysOn() {
+    const view = await render(<BreatheScreen />);
+    await fireEvent.press(row('settle'));
+    await fireEvent.press(screen.getByRole('button', { name: breatheCopy.begin }));
+    await act(async () => void jest.advanceTimersByTime(400));
+    for (let i = 0; i < 40; i += 1) await act(async () => void jest.advanceTimersByTime(10_000));
+    await fireEvent.press(screen.getByTestId('feeling-check-calmer'));
+    // From here the fades are walked a frame at a time, so that how much is drawn can be seen.
+    animationClock.stepped = true;
+    return view;
+  }
+
+  /** The system's Back: the listener registered last is asked first, and the first to say yes has it. */
+  function backButton() {
+    const listeners: (() => boolean)[] = [];
+    jest.spyOn(BackHandler, 'addEventListener').mockImplementation((_event, handler) => {
+      const listener = handler as () => boolean;
+      listeners.push(listener);
+      return {
+        remove: () => {
+          const at = listeners.indexOf(listener);
+          if (at >= 0) listeners.splice(at, 1);
+        },
+      };
+    });
+    const press = () => {
+      for (let i = listeners.length - 1; i >= 0; i -= 1) if (listeners[i]!()) return true;
+      return false;
+    };
+    return { listeners, press };
+  }
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it('lets the ways on fade away first, takes no touch while they go, and opens the session once they have gone', async () => {
+    const view = await toTheWaysOn();
+    expect(await drawn(view)).toBe(1);
+    await fireEvent.press(echo());
+    expect(layer().props.pointerEvents).toBe('none');
+    await advance(FADE_MS / 2);
+    // Half way: the screen is half there, going. It is not cut.
+    const half = await drawn(view);
+    expect(half).toBeGreaterThan(0.1);
+    expect(half).toBeLessThan(0.9);
+    expect(router.push).not.toHaveBeenCalled();
+    await advance(FADE_MS / 2 + 3 * 16);
+    expect(await drawn(view)).toBe(0);
+    expect(router.push).toHaveBeenCalledTimes(1);
+    expect(router.push).toHaveBeenCalledWith({
+      pathname: '/home/session',
+      params: { mode: 'voice' },
+    });
+  });
+
+  it('opens the session only when the fade has really ended, however late the UI thread begins it', async () => {
+    await toTheWaysOn();
+    animationClock.lag = 1200;
+    await fireEvent.press(echo());
+    await advance(FADE_MS + 1000);
+    expect(router.push).not.toHaveBeenCalled();
+    await advance(400);
+    expect(router.push).toHaveBeenCalledTimes(1);
+  });
+
+  it('draws nothing beneath the session, and is reached by neither a touch nor TalkBack, for the whole of it', async () => {
+    const view = await toTheWaysOn();
+    await fireEvent.press(echo());
+    await advance(FADE_MS + 100);
+    mockPath = '/home/session';
+    expect(await drawn(view)).toBe(0);
+    expect(layer().props.pointerEvents).toBe('none');
+    // Nothing of it is left under the session, not even hidden: no view a dump of the window could list.
+    for (const name of Object.values(breatheCopy.actions)) {
+      expect(screen.queryByRole('button', { name, includeHiddenElements: true })).toBeNull();
+    }
+    for (const path of ['/home/rehearse', '/home/complete']) {
+      mockPath = path;
+      await advance(30_000);
+      expect(await drawn(view)).toBe(0);
+      expect(layer().props.pointerEvents).toBe('none');
+    }
+  });
+
+  it('stays out of sight beneath the session while a paywall the session opens comes and goes', async () => {
+    const view = await toTheWaysOn();
+    await fireEvent.press(echo());
+    await advance(FADE_MS + 100);
+    for (const path of ['/home/session', '/plus', '/home/session']) {
+      mockPath = path;
+      await drawn(view);
+      expect(await drawn(view)).toBe(0);
+      expect(layer().props.pointerEvents).toBe('none');
+    }
+  });
+
+  it('leaves Back to the session: its own listener stays beneath the session’s, and passes Back on', async () => {
+    const back = backButton();
+    const view = await toTheWaysOn();
+    await fireEvent.press(echo());
+    await advance(FADE_MS + 100);
+    const breathe = [...back.listeners];
+    expect(breathe).toHaveLength(1);
+    // The session comes, and registers its own.
+    mockPath = '/home/session';
+    await drawn(view);
+    const session = jest.fn(() => true);
+    back.listeners.push(session);
+    // Nothing Breathe does beneath it puts its listener back above the session's.
+    await advance(5000);
+    await drawn(view);
+    expect(back.listeners).toEqual([...breathe, session]);
+    expect(back.press()).toBe(true);
+    expect(session).toHaveBeenCalledTimes(1);
+    // Asked while the session is on show, Breathe's own passes Back on, and goes nowhere.
+    expect(breathe[0]!()).toBe(false);
+    expect(router.dismissTo).not.toHaveBeenCalled();
+  });
+
+  it('hears nothing of Back while it fades for the session', async () => {
+    const back = backButton();
+    await toTheWaysOn();
+    await fireEvent.press(echo());
+    await act(async () => void back.press());
+    await advance(FADE_MS + 100);
+    expect(router.dismissTo).not.toHaveBeenCalled();
+    expect(router.push).toHaveBeenCalledTimes(1);
+  });
+
+  it('under Reduce Motion lets go in 180 ms', async () => {
+    mockReduced = true;
+    await toTheWaysOn();
+    await fireEvent.press(echo());
+    await advance(tokens.motion.fast - 2 * 16);
+    expect(router.push).not.toHaveBeenCalled();
+    await advance(4 * 16);
+    expect(router.push).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens nothing if it is left while it fades', async () => {
+    const view = await toTheWaysOn();
+    await fireEvent.press(echo());
+    await view.unmount();
+    await advance(FADE_MS + 500);
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
+  it('is left drawn under the paywall, which covers the whole of Home, but takes no touch there', async () => {
+    const view = await render(<BreatheScreen />);
+    mockPath = '/plus';
+    expect(await drawn(view)).toBe(1);
+    expect(layer().props.pointerEvents).toBe('none');
+    mockPath = '/home/breathe';
+    expect(await drawn(view)).toBe(1);
+    expect(layer().props.pointerEvents).toBe('auto');
+  });
+
+  it('is itself again should it be the screen on show once more', async () => {
+    const view = await toTheWaysOn();
+    await fireEvent.press(echo());
+    await advance(FADE_MS + 100);
+    mockPath = '/home/session';
+    await drawn(view);
+    mockPath = '/home/breathe';
+    await drawn(view);
+    // A draw later, as the screen has put itself back.
+    expect(await drawn(view)).toBe(1);
+    expect(layer().props.pointerEvents).toBe('auto');
+    expect(echo()).toBeTruthy();
+  });
+});
+
+describe('Home beneath Breathe', () => {
+  function Home() {
+    const { phase } = useHomeDissolve();
+    const { breathe } = useSessionEntry();
+    return (
+      <>
+        <Text testID="phase">{phase}</Text>
+        <Pressable testID="breathe-first" onPress={breathe} />
+      </>
+    );
+  }
+  const stack = (breathing: boolean) => (
+    <HomeDissolveProvider>
+      <Home />
+      {breathing && <BreatheScreen />}
+    </HomeDissolveProvider>
+  );
+  /** The same tree as `render` draws, so that Home and its dissolve are the same ones throughout. */
+  const again = (breathing: boolean) => (
+    <ThemeProvider crossfade={false}>{stack(breathing)}</ThemeProvider>
+  );
+  const phase = () => screen.getByTestId('phase').props.children;
+  const advance = (ms: number) => act(async () => void jest.advanceTimersByTime(ms));
+
+  it('stays dissolved while Breathe is open, and comes back when Breathe goes', async () => {
+    const view = await render(stack(false));
+    await fireEvent.press(screen.getByTestId('breathe-first'));
+    await advance(DISSOLVE_MS);
+    expect(router.push).toHaveBeenCalledWith('/home/breathe');
+    await view.rerender(again(true));
+    // Long past the moment a Home whose session never came would give itself back.
+    await advance(10_000);
+    expect(phase()).toBe('gone');
+    await view.rerender(again(false));
+    await advance(100);
+    expect(phase()).toBe('idle');
   });
 });

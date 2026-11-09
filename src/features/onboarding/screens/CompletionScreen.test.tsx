@@ -5,19 +5,25 @@ import * as Reanimated from 'react-native-reanimated';
 
 import { copy } from '@/content/copy';
 import { cue, cuedWithin } from '@/design/haptics';
+import { ThemeProvider } from '@/design/theme';
 import { tokens } from '@/design/tokens';
+import { netAfterBegin } from '@/features/book/animationEnd';
+import { HomeTabBar, HomeTabBarProvider } from '@/features/home/tabs/HomeTabBar';
 import { completionText } from '@/features/onboarding/completion/text';
 import { createMemoryJournal, setJournal, type Entry, type Journal } from '@/features/journal';
 import { requestReflection } from '@/services/reflection';
 import { completeOnboarding, initialOnboarding, useOnboarding } from '@/state/onboarding';
+import { animationClock } from '@/testing/reanimatedMock';
 import { render } from '@/testing/render';
 
 import { CompletionScreen, DailyCompletionScreen } from './CompletionScreen';
 
 jest.mock('@/design/haptics');
+let mockPath = '/home/complete';
 jest.mock('expo-router', () => ({
   router: { navigate: jest.fn(), replace: jest.fn(), dismissTo: jest.fn() },
   Stack: { Screen: jest.fn(() => null) },
+  usePathname: () => mockPath,
   // Runs the effect once on mount, as a focused screen would.
   useFocusEffect: (effect: () => void | (() => void)) => {
     const { useEffect } = jest.requireActual<typeof import('react')>('react');
@@ -25,9 +31,14 @@ jest.mock('expo-router', () => ({
   },
 }));
 // Home's own dissolve, which this screen only asks to give Home back (see src/features/home/dissolve).
+// Home is whole beneath the card, as it is once the card has given it back, for the tab bar beside it.
 const mockReturnHome = jest.fn();
 jest.mock('@/features/home/dissolve', () => ({
-  useHomeDissolve: () => ({ returnHome: mockReturnHome }),
+  useHomeDissolve: () => ({
+    returnHome: mockReturnHome,
+    phase: 'idle',
+    progress: { value: 0, get: () => 0, set: () => undefined },
+  }),
 }));
 jest.mock('@/services/reflection', () => {
   const actual =
@@ -101,6 +112,8 @@ function backgrounds(): string[] {
 beforeEach(() => {
   jest.clearAllMocks();
   jest.restoreAllMocks();
+  animationClock.reset();
+  mockPath = '/home/complete';
   jest.mocked(requestReflection).mockImplementation(actualReflection);
   jest.mocked(completeOnboarding).mockImplementation(actualComplete);
   jest.mocked(AccessibilityInfo.isReduceMotionEnabled).mockResolvedValue(false);
@@ -309,7 +322,7 @@ describe('Completion after a daily session', () => {
   it('returns to Home by popping to it, and does not touch onboarding', async () => {
     await render(<DailyCompletionScreen />);
     await fireEvent.press(cta());
-    expect(router.dismissTo).toHaveBeenCalledWith('/home');
+    await waitFor(() => expect(router.dismissTo).toHaveBeenCalledWith('/home'));
     expect(router.replace).not.toHaveBeenCalled();
     expect(completeOnboarding).not.toHaveBeenCalled();
   });
@@ -326,7 +339,7 @@ describe('Completion after a daily session', () => {
       handled = handlers[0]!();
     });
     expect(handled).toBe(true);
-    expect(router.dismissTo).toHaveBeenCalledWith('/home');
+    await waitFor(() => expect(router.dismissTo).toHaveBeenCalledWith('/home'));
   });
 
   it('turns off the swipe-back gesture', async () => {
@@ -441,6 +454,7 @@ describe('Home’s interface comes back with its photograph', () => {
     await render(<DailyCompletionScreen />);
     await fireEvent.press(cta());
     expect(mockReturnHome).toHaveBeenCalledTimes(1);
+    await act(async () => void (await jest.advanceTimersByTimeAsync(tokens.motion.standard + 50)));
     expect(jest.mocked(router.dismissTo).mock.invocationCallOrder[0]).toBeGreaterThan(
       mockReturnHome.mock.invocationCallOrder[0]!,
     );
@@ -457,5 +471,142 @@ describe('Home’s interface comes back with its photograph', () => {
     await render(<CompletionScreen />);
     await act(async () => void (await jest.advanceTimersByTimeAsync(tokens.motion.screen * 2)));
     expect(mockReturnHome).not.toHaveBeenCalled();
+  });
+});
+
+// The walk (v11): Enter your space popped Completion with a route that changed before the card had
+// left the screen. The stack's fade was not seen (the card went in a frame or two), and the tab bar,
+// drawn above the stack, came with the route: over the card in two samples of six, and 0.7 s late after
+// a Back. The card now leaves by its own fade, over a Home already whole beneath it, the bar comes as the
+// fade ends, and the screen is popped once the fade has ended.
+describe('Completion leaving for Home', () => {
+  const FADE_MS = tokens.motion.standard;
+  const FRAME_MS = 16;
+  const advance = (ms: number) => act(async () => void (await jest.advanceTimersByTimeAsync(ms)));
+  const ui = () => (
+    <HomeTabBarProvider>
+      <DailyCompletionScreen />
+      <HomeTabBar />
+    </HomeTabBarProvider>
+  );
+  type Shown = { card: number; bar: number };
+  /** Draws the screen again, and says how much of the card and of the tab bar is drawn. */
+  const drawn = async (): Promise<Shown> => {
+    await screen.rerender(<ThemeProvider crossfade={false}>{ui()}</ThemeProvider>);
+    const opacity = (id: string) =>
+      StyleSheet.flatten(screen.getByTestId(id, { includeHiddenElements: true }).props.style)
+        .opacity as number;
+    return { card: opacity('completion-exit'), bar: opacity('home-dock') };
+  };
+  const tabs = () => screen.queryAllByRole('tab');
+  const back = () => {
+    const handlers: (() => boolean)[] = [];
+    jest.spyOn(BackHandler, 'addEventListener').mockImplementation((_event, handler) => {
+      handlers.push(handler as () => boolean);
+      return { remove: jest.fn() };
+    });
+    return handlers;
+  };
+
+  beforeEach(() => {
+    // The fades are walked, a frame at a time, so that how much of each is drawn can be seen.
+    animationClock.stepped = true;
+  });
+
+  it.each(['Enter your space', 'the system back button'])(
+    'on %s, fades the card away, and pops the screen only once it has gone',
+    async (way) => {
+      const handlers = back();
+      await render(ui());
+      await advance(1000);
+      if (way === 'Enter your space') await fireEvent.press(cta());
+      else await act(async () => void handlers.at(-1)?.());
+      expect(mockReturnHome).toHaveBeenCalled();
+      await advance(FRAME_MS * 3);
+      expect(router.dismissTo).not.toHaveBeenCalled();
+      await advance(FADE_MS / 2 - FRAME_MS * 3);
+      // Half way: the card is half there, going. It does not vanish in a frame.
+      const half = (await drawn()).card;
+      expect(half).toBeGreaterThan(0.1);
+      expect(half).toBeLessThan(0.9);
+      expect(router.dismissTo).not.toHaveBeenCalled();
+      await advance(FADE_MS / 2 + FRAME_MS * 3);
+      expect((await drawn()).card).toBe(0);
+      expect(router.dismissTo).toHaveBeenCalledTimes(1);
+      expect(router.dismissTo).toHaveBeenCalledWith('/home');
+    },
+  );
+
+  it('takes no touch while it goes, and a second press or Back does nothing more', async () => {
+    const handlers = back();
+    await render(ui());
+    await advance(1000);
+    await fireEvent.press(cta());
+    expect(screen.getByTestId('completion-exit').props.pointerEvents).toBe('none');
+    await act(async () => void handlers.at(-1)?.());
+    await advance(FADE_MS + 200);
+    expect(router.dismissTo).toHaveBeenCalledTimes(1);
+  });
+
+  it('brings the tab bar in as the card’s fade ends, and never draws it over the card', async () => {
+    await render(ui());
+    await advance(1000);
+    expect((await drawn()).bar).toBe(0);
+    expect(tabs()).toHaveLength(0);
+    await fireEvent.press(cta());
+    for (let at = 0; at < FADE_MS; at += FRAME_MS * 2) {
+      const now = await drawn();
+      if (now.card > 0) expect(now.bar).toBe(0);
+      await advance(FRAME_MS * 2);
+    }
+    await advance(FRAME_MS * 2);
+    expect((await drawn()).card).toBe(0);
+    await advance(tokens.motion.fast / 2);
+    // Coming, over Home, while the route still says Completion: it is drawn, but not yet touched or heard.
+    const coming = (await drawn()).bar;
+    expect(coming).toBeGreaterThan(0);
+    expect(coming).toBeLessThan(1);
+    expect(tabs()).toHaveLength(0);
+    // The pop: Home is the route, and the bar, already there, is Home's again.
+    mockPath = '/home';
+    await advance(tokens.motion.fast);
+    expect((await drawn()).bar).toBe(1);
+    expect(tabs()).toHaveLength(4);
+  });
+
+  it('pops only when the fade has really ended, however late the UI thread begins it', async () => {
+    await render(ui());
+    await advance(1000);
+    animationClock.lag = 1200;
+    await fireEvent.press(cta());
+    await advance(1000);
+    // Not begun yet: the card is whole, and the bar, late alike, waits for it.
+    const late = await drawn();
+    expect(late.card).toBe(1);
+    expect(late.bar).toBe(0);
+    await advance(FADE_MS);
+    expect(router.dismissTo).not.toHaveBeenCalled();
+    await advance(400);
+    expect(router.dismissTo).toHaveBeenCalledWith('/home');
+  });
+
+  it('is never held: a fade whose end is never heard is let go of a net after it began', async () => {
+    await render(ui());
+    await advance(1000);
+    animationClock.silent = true;
+    await fireEvent.press(cta());
+    await advance(netAfterBegin(FADE_MS) - 100);
+    expect(router.dismissTo).not.toHaveBeenCalled();
+    await advance(300);
+    expect(router.dismissTo).toHaveBeenCalledWith('/home');
+  });
+
+  it('pops nothing if it is left some other way while it fades', async () => {
+    await render(ui());
+    await advance(1000);
+    await fireEvent.press(cta());
+    await screen.unmount();
+    await advance(FADE_MS + 500);
+    expect(router.dismissTo).not.toHaveBeenCalled();
   });
 });
