@@ -15,6 +15,7 @@ import { EchoBackground } from '@/components/EchoBackground';
 import { EchoText } from '@/components/EchoText';
 import { OneLineLabel } from '@/components/OneLineLabel';
 import { EASE } from '@/design/ease';
+import { PLATE_HELD_OPACITY } from '@/design/platePaint';
 import { holdTheme } from '@/design/themeHold';
 import { tokens } from '@/design/tokens';
 import { usePlateFrame, usePlatePoint } from '@/design/usePlatePoint';
@@ -161,6 +162,23 @@ export function RehearseScreen() {
     router.replace(COMPLETE_PATH as never);
   }, []);
 
+  // Rehearse comes in by a fade of its own, over the session's book as it sinks. The stack's fade was not seen
+  // on the walked emulator: Rehearse appeared within a frame or two, and its copy of the plate cut the book away
+  // before its sink was drawn (walk v11, three morning closings of three). It starts at a hair above nothing, so
+  // that it is drawn, and its photograph put on the GPU, from its first frame (see PLATE_HELD_OPACITY).
+  const arrival = useSharedValue(pinned ? 1 : PLATE_HELD_OPACITY);
+  const arriveMs = reduced || screenReader ? tokens.motion.fast : tokens.motion.standard;
+  useEffect(() => {
+    arrival.set(
+      withTiming(1, {
+        duration: arriveMs,
+        easing: Easing.inOut(Easing.quad),
+        reduceMotion: ReduceMotion.Never,
+      }),
+    );
+  }, [arrival, arriveMs]);
+  const arriving = useAnimatedStyle(() => ({ opacity: arrival.get() }));
+
   // The plate copy that covers the session as this screen fades in, lifted once it has arrived.
   const cover = useSharedValue(1);
   useEffect(() => {
@@ -254,7 +272,7 @@ export function RehearseScreen() {
     stage === 'words' ? phrases[phrase] : stage === 'feel' ? becomeCopy.feel : becomeCopy.go;
 
   return (
-    <View style={styles.root}>
+    <Animated.View testID="rehearse-arrival" style={[styles.root, arriving]}>
       <StatusBar hidden animated />
       <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, coverStyle]}>
         <EchoBackground screen="home" />
@@ -300,7 +318,7 @@ export function RehearseScreen() {
           </OneLineLabel>
         </Pressable>
       </Animated.View>
-    </View>
+    </Animated.View>
   );
 }
 

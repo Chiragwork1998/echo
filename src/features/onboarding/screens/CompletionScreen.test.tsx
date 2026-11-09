@@ -291,6 +291,17 @@ describe('Completion after a daily session', () => {
     expect(screen.queryByText('8/8')).toBeNull();
   });
 
+  // It comes straight over the session's book as it sinks, and the stack's fade was not seen on the walked
+  // emulator: it arrives by a fade of its own (../completion/CompletionArrival). Onboarding's Completion
+  // keeps the onboarding stack's own dissolve.
+  it('arrives by a fade of its own, where onboarding’s keeps the stack’s', async () => {
+    await render(<DailyCompletionScreen />);
+    expect(screen.getByTestId('completion-arrival')).toBeTruthy();
+    await screen.unmount();
+    await render(<CompletionScreen />);
+    expect(screen.queryByTestId('completion-arrival')).toBeNull();
+  });
+
   // The daily session is still in the stack under this screen. `replace('/home')` left it there, so Home
   // came back as the bare photograph: its dissolve is only undone when the session unmounts. Popping to
   // the Home that is already in the stack closes both, and Home returns. Seen on the emulator at the end

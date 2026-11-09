@@ -3,8 +3,11 @@ import { router } from 'expo-router';
 import { AccessibilityInfo, AppState, BackHandler, StyleSheet, Text } from 'react-native';
 import * as Reanimated from 'react-native-reanimated';
 
+import { ThemeProvider } from '@/design/theme';
 import { useThemeHeld } from '@/design/themeHold';
+import { tokens } from '@/design/tokens';
 import { fingerAway, fingerDown } from '@/testing/pressed';
+import { animationClock } from '@/testing/reanimatedMock';
 
 import { JOURNAL_AUDIO_MODE } from '@/features/breathe/audio';
 import { JournalSession } from '@/features/journal-session/JournalSession';
@@ -260,6 +263,54 @@ describe('Rehearse', () => {
     expect(screen.getByText('I will be calm with\nmy team today.')).toBeTruthy();
     const moving = JSON.stringify(screen.getByTestId('rehearse-line').props.style);
     expect(moving).toContain('"translateY":0');
+  });
+});
+
+// The stack's fade was not seen on the walked emulator (v11): Rehearse appeared within a frame or two, and its
+// copy of the plate cut away the book that was still sinking beneath it. It arrives by its own fade.
+describe('Rehearse arriving over the sinking book', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    animationClock.reset();
+    animationClock.stepped = true;
+    jest.spyOn(AccessibilityInfo, 'isScreenReaderEnabled').mockResolvedValue(false);
+  });
+  afterEach(() => {
+    animationClock.reset();
+    jest.restoreAllMocks();
+  });
+  const step = (ms: number) => act(async () => void jest.advanceTimersByTime(ms));
+  const arrival = () =>
+    StyleSheet.flatten(screen.getByTestId('rehearse-arrival').props.style).opacity as number;
+  const shown = async () => {
+    await screen.rerender(
+      <ThemeProvider crossfade={false}>
+        <RehearseScreen />
+      </ThemeProvider>,
+    );
+    return arrival();
+  };
+
+  it('fades in from a hair above nothing, and is whole once its fade is done', async () => {
+    holdRehearsal(WORDS);
+    await render(<RehearseScreen />);
+    // Drawn from its first frame, so that its photograph is on the GPU, and not yet seen.
+    expect(arrival()).toBeGreaterThan(0);
+    expect(arrival()).toBeLessThan(0.05);
+    await step(tokens.motion.standard / 2);
+    const half = await shown();
+    expect(half).toBeGreaterThan(0.2);
+    expect(half).toBeLessThan(0.8);
+    await step(tokens.motion.standard / 2 + 50);
+    expect(await shown()).toBe(1);
+    releaseRehearsal();
+  });
+
+  it('fades in the house’s short time under Reduce Motion', async () => {
+    mockReduced = true;
+    await render(<RehearseScreen />);
+    await step(tokens.motion.fast + 50);
+    expect(await shown()).toBe(1);
   });
 });
 

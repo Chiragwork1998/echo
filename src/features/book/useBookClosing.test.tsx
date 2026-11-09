@@ -2,12 +2,14 @@
 // What each part looks like is judged by eye; here is when it happens, and that it always ends.
 // The closing follows the book's own animations: the cover landing, and the book beginning to sink. A
 // phone that is behind the clock is a landing that comes late, and these say nothing happens before it
-// does. The next screen is asked for as the cover lands, so that it is arriving as the book sinks: asked
-// for after the sink, the sky was bare for as long as the screen takes to mount.
+// does. The next screen is asked for once the UI thread has begun the sink: asked for as the cover landed,
+// it was mounted over a book still at rest, and on the walked emulator it appeared in a frame and cut the
+// book away before its sink was drawn. Asked for after the sink, the sky was bare while it mounted.
 import { act, renderHook } from '@testing-library/react-native';
 
 import { cue } from '@/design/haptics';
 
+import { netAfterBegin } from './animationEnd';
 import {
   CLOSE_REDUCED_MS,
   FULL,
@@ -54,9 +56,9 @@ describe('the book shutting', () => {
     ['in full', FULL],
     ['once practised', SHORT],
   ])(
-    'asks for the next screen as the cover lands, and sinks after its rest, %s',
+    'feels the cover land, and asks for the next screen only once the book has begun to sink, %s',
     async (_, ritual) => {
-      const { begin, went, state, landed } = await closing(ritual);
+      const { begin, went, state, landed, sinkBegun } = await closing(ritual);
       await begin();
       const t = closeTimeline(ritual);
       expect(state()).toMatchObject({ contact: false, sinking: false, hurry: false });
@@ -65,17 +67,30 @@ describe('the book shutting', () => {
       expect(state()).toMatchObject({ contact: false, sinking: false });
       expect(went()).toBe(false);
       await landed();
-      // Down: the next screen is asked for at once and arrives as the book rests and sinks.
-      expect(state()).toMatchObject({ contact: true, sinking: false });
+      // Down: felt at once. The book rests, and the next screen is not mounted over it while it does.
+      expect(state()).toMatchObject({ contact: true });
+      expect(cue).toHaveBeenCalledWith('settle');
+      expect(went()).toBe(false);
+      // However long the rest is, by the clock or by a slow phone, the next screen waits for the sink.
+      await tick(ritual.close.gap + 2000);
+      expect(went()).toBe(false);
+      await sinkBegun();
       expect(went()).toBe(true);
-      await tick(ritual.close.gap - 1);
-      expect(state()).toMatchObject({ sinking: false });
-      await tick(1);
-      expect(state()).toMatchObject({ contact: true, sinking: true });
     },
   );
 
-  it('keeps the order: contact is felt before the next screen is asked for, and the sink comes last', async () => {
+  it('leaves the sink to the book: JS does not ask for one that the landing has begun on the UI thread', async () => {
+    const { begin, state, landed, sinkBegun } = await closing(FULL);
+    await begin();
+    await landed();
+    await tick(FULL.close.gap + 100);
+    await sinkBegun();
+    await tick(FULL.close.sink + 500);
+    // A sink asked for by JS waited on a JS timer, behind whatever JS was doing, and rested 0.4 to 1 s.
+    expect(state()).toMatchObject({ contact: true, sinking: false });
+  });
+
+  it('keeps the order: contact is felt, then the book sinks, then the next screen is asked for', async () => {
     const order: string[] = [];
     jest.mocked(cue).mockImplementation(() => void order.push('contact'));
     const view = await renderHook(() => useBookClosing(FULL, false));
@@ -84,8 +99,9 @@ describe('the book shutting', () => {
     });
     await act(async () => view.result.current.landed());
     await tick(FULL.close.gap);
-    order.push(view.result.current.closing?.sinking ? 'sink' : 'not sinking');
-    expect(order).toEqual(['contact', 'next screen', 'sink']);
+    order.push('sink');
+    await act(async () => view.result.current.sinkBegun());
+    expect(order).toEqual(['contact', 'sink', 'next screen']);
   });
 
   it('is felt once, where the cover lands, and on nothing else', async () => {
@@ -111,9 +127,10 @@ describe('the book shutting', () => {
     expect(cue).toHaveBeenCalledTimes(1);
   });
 
-  it('is not lost if the book says it has landed before it is waited for', async () => {
-    const { begin, landed, state, went } = await closing(FULL);
+  it('is not lost if the book says it has landed, and begun to sink, before either is waited for', async () => {
+    const { begin, landed, sinkBegun, state, went } = await closing(FULL);
     await landed();
+    await sinkBegun();
     await begin();
     await tick(0);
     expect(state()).toMatchObject({ contact: true });
@@ -132,7 +149,7 @@ describe('the book shutting', () => {
   });
 
   it('keeps the closed book still, and the next screen away, until a question on its cover is answered', async () => {
-    const { begin, went, state, landed } = await closing(FULL);
+    const { begin, went, state, landed, sinkBegun } = await closing(FULL);
     let answer!: () => void;
     await begin({
       atContact: () => new Promise<void>((resolve) => (answer = resolve)),
@@ -144,10 +161,44 @@ describe('the book shutting', () => {
     expect(state()).toMatchObject({ contact: true, sinking: false });
     expect(went()).toBe(false);
     await act(async () => answer());
-    // Answered: the next screen is asked for, and the book sinks after its rest, over its arrival.
-    expect(went()).toBe(true);
-    await tick(FULL.close.gap);
+    // Answered: the book is told to sink (it rests first, on the UI thread), and the next screen still waits
+    // for the sink to have begun.
     expect(state()).toMatchObject({ sinking: true });
+    expect(went()).toBe(false);
+    await tick(FULL.close.gap + 500);
+    expect(went()).toBe(false);
+    await sinkBegun();
+    expect(went()).toBe(true);
+  });
+});
+
+describe('a sink that the book does not answer for', () => {
+  it('asks for the sink itself, and the next screen with it, once its net after the rest has gone', async () => {
+    const { begin, state, went, landed } = await closing(FULL);
+    await begin();
+    await landed();
+    // The UI thread landed the cover, so it is alive; its word that the sink has begun is lost.
+    await tick(netAfterBegin(FULL.close.gap) - 1);
+    expect(went()).toBe(false);
+    expect(state()).toMatchObject({ sinking: false });
+    await tick(1);
+    expect(state()).toMatchObject({ sinking: true });
+    expect(went()).toBe(true);
+  });
+
+  it('lets an answered book go a very long time after, if its sink is never begun', async () => {
+    const { begin, went, landed } = await closing(FULL);
+    let answer!: () => void;
+    await begin({
+      atContact: () => new Promise<void>((resolve) => (answer = resolve)),
+      asking: true,
+    });
+    await landed();
+    await act(async () => answer());
+    await tick(FULL.close.gap + UI_HANG_MS - 1);
+    expect(went()).toBe(false);
+    await tick(1);
+    expect(went()).toBe(true);
   });
 });
 
@@ -166,7 +217,9 @@ describe('a closing that the book does not answer', () => {
     await tick(at - closeTimeline(FULL).contactAt - 8000 - 1);
     expect(state()).toMatchObject({ contact: false });
     await tick(1);
-    expect(state()).toMatchObject({ contact: true });
+    // A UI thread that never said the cover was down never began the sink either: JS asks for it, and the
+    // next screen is not held for a word that is not coming.
+    expect(state()).toMatchObject({ contact: true, sinking: true });
     expect(cue).toHaveBeenCalledTimes(1);
     expect(cue).toHaveBeenCalledWith('settle');
     expect(went()).toBe(true);

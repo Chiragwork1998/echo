@@ -3,6 +3,7 @@ import { useCallback, useEffect } from 'react';
 
 import { tokens } from '@/design/tokens';
 import { useHomeDissolve } from '@/features/home/dissolve';
+import { CompletionArrival } from '@/features/onboarding/completion/CompletionArrival';
 import { CompletionView } from '@/features/onboarding/completion/CompletionView';
 import { completeOnboarding } from '@/state/onboarding';
 import { HOME_PATH } from '@/state/routing';
@@ -51,7 +52,9 @@ export function DailyCompletionScreen() {
   return (
     <>
       <Stack.Screen options={{ gestureEnabled: false }} />
-      <CompletionView mode="daily" onEnter={goHome} />
+      <CompletionArrival>
+        <CompletionView mode="daily" onEnter={goHome} />
+      </CompletionArrival>
     </>
   );
 }
