@@ -25,7 +25,7 @@ import { noteShownPlate, resetPlatesForTests } from '@/design/platePaint';
 import { ARRIVAL_AFTER_IDLE_MS, HomeDissolveProvider, VEIL_CAP_MS } from '../dissolve';
 import { homeLabels } from '../today/homeLabels';
 import { useStoneMemory } from '../today/stoneMemory';
-import { HomeScreen } from './HomeScreen';
+import { HomeScreen, PAGE_ARRIVED_MS } from './HomeScreen';
 
 jest.mock('@/design/haptics');
 let mockPath = '/home';
@@ -686,4 +686,82 @@ describe('Home’s first look after onboarding, which begins veiled', () => {
     expect(interfaceDrawn()).toBe(1);
     expect(screen.getByRole('button', { name: BEGIN })).toBeTruthy();
   });
+});
+
+describe('Home under a page', () => {
+  // The tab pages are presented over Home and cover it with a plate of their own. One replacing another
+  // fades out as the next fades in, and Home's interface must not show through between them.
+  const advance = (ms: number) =>
+    act(async () => {
+      await jest.advanceTimersByTimeAsync(ms);
+    });
+  const draw = (view: Awaited<ReturnType<typeof render>>) =>
+    view.rerender(
+      <ThemeProvider crossfade={false}>
+        <HomeScreen />
+      </ThemeProvider>,
+    );
+  const present = () =>
+    (
+      StyleSheet.flatten(
+        screen.getByTestId('home-step-back', { includeHiddenElements: true }).props.style,
+      ) as { opacity?: number }
+    ).opacity ?? 1;
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    animationClock.stepped = true;
+  });
+  afterEach(async () => {
+    await screen.unmount();
+    animationClock.reset();
+    jest.useRealTimers();
+  });
+
+  it('stays whole while a page arrives over it, then steps back', async () => {
+    const view = await render(<HomeScreen />);
+    expect(present()).toBe(1);
+    mockPath = '/home/echoes';
+    await draw(view);
+    await advance(PAGE_ARRIVED_MS - 40);
+    await draw(view);
+    expect(present()).toBe(1);
+    await advance(80);
+    await draw(view);
+    expect(present()).toBe(0);
+  });
+
+  it('steps back at once as one page gives way to another, and is whole at once for Today', async () => {
+    mockPath = '/home/echoes';
+    const view = await render(<HomeScreen />);
+    await advance(PAGE_ARRIVED_MS + 40);
+    mockPath = '/home/patterns';
+    await draw(view);
+    await advance(16);
+    await draw(view);
+    expect(present()).toBe(0);
+    // The Reader, over Echoes, is a page too.
+    mockPath = '/home/entry';
+    await draw(view);
+    await advance(16);
+    await draw(view);
+    expect(present()).toBe(0);
+    mockPath = '/home';
+    await draw(view);
+    await advance(16);
+    await draw(view);
+    expect(present()).toBe(1);
+  });
+
+  it.each(['/home/session', '/home/rehearse', '/home/complete', '/home/breathe'])(
+    'leaves its interface to the dissolve under %s',
+    async (path) => {
+      const view = await render(<HomeScreen />);
+      mockPath = path;
+      await draw(view);
+      await advance(PAGE_ARRIVED_MS * 3);
+      await draw(view);
+      expect(present()).toBe(1);
+    },
+  );
 });

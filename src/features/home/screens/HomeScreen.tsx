@@ -1,11 +1,17 @@
 import { usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
-import Animated, { useAnimatedStyle } from 'react-native-reanimated';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useLayout } from '@/design/layout';
+import { tokens } from '@/design/tokens';
 import { useBackingPlate } from '@/design/platePaint';
 import { useTheme } from '@/design/theme';
 import { useThemeSwap } from '@/design/useThemeSwap';
@@ -14,7 +20,7 @@ import { useHomeSummary } from '@/features/journal';
 import { HOME_PATH } from '@/state/routing';
 
 import { useHomeDissolve, useHomeVeil, useWhileHere } from '../dissolve';
-import { useTabBarSpace } from '../tabs/HomeTabBar';
+import { tabPaths, useTabBarSpace } from '../tabs/HomeTabBar';
 import { DayHome } from '../today/DayHome';
 import { NightFloor, NightHome } from '../today/NightHome';
 import { useStoneArrival } from '../today/useStoneArrival';
@@ -23,6 +29,14 @@ import { useStoneArrival } from '../today/useStoneArrival';
 const HEADER_OFFSET_FROM_SAFE_TOP = -5;
 // Night's content ends 18 pt above its bar. Day's list runs lower in the golden, so it sits closer.
 const ABOVE_TAB_BAR = { night: 18, day: 8 } as const;
+
+/**
+ * The pages that cover Home with a plate of their own: the other tabs, and the Reader above Echoes
+ * (src/features/echoes/EchoesScreen.tsx, ENTRY_PATH).
+ */
+const PAGES: readonly string[] = [...tabPaths.filter((path) => path !== HOME_PATH), '/home/entry'];
+/** A page pushed over Home has faded in by then (the stack's fade is tokens.motion.standard), with a margin. */
+export const PAGE_ARRIVED_MS = tokens.motion.standard + 80;
 
 /**
  * Says when a Home that began veiled is ready to be seen (app/home/_layout.tsx, the first look after
@@ -80,8 +94,25 @@ export function HomeScreen() {
   // them (src/features/home/sessionRoute.ts), and Completion gives Home its interface back while it is
   // still on show. Beneath another screen, Home is reached by neither a touch nor TalkBack. Read from
   // the path each time, not from where Home mounted.
-  const covered = usePathname() !== HOME_PATH;
+  const pathname = usePathname();
+  const covered = pathname !== HOME_PATH;
   const hidden = dissolved || covered;
+  // Under a page, Home's interface steps back, and is there again the moment Today is the path, beneath the
+  // page that is still leaving. The pages are presented over Home on Android and cover it with a plate of
+  // their own, but one tab replacing another fades out as the next fades in: halfway, both are half there,
+  // and Home's interface would show through at a quarter. It steps back once the first page has arrived over
+  // it, and at once when one page gives way to another, under the page that is going.
+  const underPage = PAGES.includes(pathname);
+  const previous = useRef(pathname);
+  const present = useSharedValue(underPage ? 0 : 1);
+  useEffect(() => {
+    const from = previous.current;
+    previous.current = pathname;
+    if (!underPage) present.set(1);
+    else if (PAGES.includes(from)) present.set(0);
+    else present.set(withDelay(PAGE_ARRIVED_MS, withTiming(0, { duration: 0 })));
+  }, [pathname, present, underPage]);
+  const stepBack = useAnimatedStyle(() => ({ opacity: present.get() }));
 
   return (
     <View
@@ -98,35 +129,41 @@ export function HomeScreen() {
           beneath the stack, still or alive (D-009), which is also what the glass below blurs. A
           copy of its own would cover the loop. */}
       <Animated.View
-        style={[styles.fill, veil]}
-        pointerEvents={hidden ? 'none' : 'box-none'}
-        accessibilityElementsHidden={hidden}
-        importantForAccessibility={hidden ? 'no-hide-descendants' : 'auto'}
+        testID="home-step-back"
+        style={[styles.fill, stepBack]}
+        pointerEvents="box-none"
       >
-        <Animated.View testID="home-swap" style={[styles.fill, dip]}>
-          {night && <NightFloor />}
-          {/* Scrolls only when the content is taller than the screen. The tab bar is not inside it. */}
-          <ScrollView
-            testID="home-scroll"
-            style={styles.fill}
-            contentContainerStyle={[
-              styles.scroll,
-              {
-                paddingTop: Math.max(insets.top + HEADER_OFFSET_FROM_SAFE_TOP, 8),
-                paddingBottom: tabBarSpace + ABOVE_TAB_BAR[name],
-              },
-            ]}
-            alwaysBounceVertical={false}
-            showsVerticalScrollIndicator={false}
-          >
-            <View style={[styles.column, { width, paddingHorizontal: gutter }]}>
-              {night ? (
-                <NightHome summary={summary} stones={stones} />
-              ) : (
-                <DayHome summary={summary} stones={stones} />
-              )}
-            </View>
-          </ScrollView>
+        <Animated.View
+          style={[styles.fill, veil]}
+          pointerEvents={hidden ? 'none' : 'box-none'}
+          accessibilityElementsHidden={hidden}
+          importantForAccessibility={hidden ? 'no-hide-descendants' : 'auto'}
+        >
+          <Animated.View testID="home-swap" style={[styles.fill, dip]}>
+            {night && <NightFloor />}
+            {/* Scrolls only when the content is taller than the screen. The tab bar is not inside it. */}
+            <ScrollView
+              testID="home-scroll"
+              style={styles.fill}
+              contentContainerStyle={[
+                styles.scroll,
+                {
+                  paddingTop: Math.max(insets.top + HEADER_OFFSET_FROM_SAFE_TOP, 8),
+                  paddingBottom: tabBarSpace + ABOVE_TAB_BAR[name],
+                },
+              ]}
+              alwaysBounceVertical={false}
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={[styles.column, { width, paddingHorizontal: gutter }]}>
+                {night ? (
+                  <NightHome summary={summary} stones={stones} />
+                ) : (
+                  <DayHome summary={summary} stones={stones} />
+                )}
+              </View>
+            </ScrollView>
+          </Animated.View>
         </Animated.View>
       </Animated.View>
     </View>
