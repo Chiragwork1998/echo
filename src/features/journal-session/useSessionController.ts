@@ -7,6 +7,7 @@ import { cue } from '@/design/haptics';
 import { holdTheme } from '@/design/themeHold';
 import { BECOME_PROMPT_ID, becomeCopy } from '@/features/become/becomeCopy';
 import { routeAfterReflect } from '@/features/become/rehearsal';
+import { useWhileHere } from '@/features/home/dissolve';
 import { useDraft, useVoiceRecorder, type JournalErrorCode } from '@/features/journal';
 import { backPath, nextPath, onboardingSteps } from '@/features/onboarding/flow';
 import { showDialog, type WithdrawDialog } from '@/features/tab-pages/Dialog';
@@ -25,7 +26,7 @@ import type { SessionMode } from './SegmentedMode';
 import type { ConsentKind } from './VoiceConsentSheet';
 import { sessionCopy } from './sessionCopy';
 import type { SpeakView } from './SpeakPanel';
-import { useKeepAwakeWhile } from './useKeepAwake';
+import { useKeepAwakeWhile, useStillJournaling } from './useKeepAwake';
 import { useLiveWords } from './useLiveWords';
 import { useSessionTimer } from './useSessionTimer';
 import {
@@ -244,9 +245,12 @@ export function useSessionController({ variant, initialMode, draftId, become }: 
   const recordingBusy =
     voice.state === 'starting' || voice.state === 'recording' || voice.state === 'saving';
   const hasWork = draft.hasContent || recordingBusy || transcription.active;
-  // The screen stays on for the whole of a take: recording, sealing, and sending the words. A person
-  // who speaks does not touch it, and a phone that slept would end the take (useKeepAwake.ts).
-  useKeepAwakeWhile(recordingBusy || transcription.active);
+  // The screen stays on while the person journals: for the whole of a take (recording, sealing, sending the
+  // words), and while they write or sit with the page, up to a long quiet (useKeepAwake.ts). A phone that slept
+  // mid-sentence would lock the journal on the person writing in it (the owner, 2026-11-09).
+  const { active: journaling, poke: stillHere } = useStillJournaling();
+  const onShow = useWhileHere();
+  useKeepAwakeWhile(onShow && (recordingBusy || transcription.active || journaling));
   const canReflect = ready && draft.canReflect && !recordingBusy;
 
   // First Echo shows only one thing at a time, so the words are brought to the page as they land. The
@@ -277,6 +281,7 @@ export function useSessionController({ variant, initialMode, draftId, become }: 
   }, [failedCode, target, variant]);
 
   const change = (body: string) => {
+    stillHere();
     if (body.length > 0) startTimer();
     setProblem(null);
     transcription.noteBody(body);
@@ -327,7 +332,18 @@ export function useSessionController({ variant, initialMode, draftId, become }: 
     await transcription.holdCurrent();
     const code = await voice.start(live ? { tap: live.tap } : undefined);
     if (code !== null) dropLive();
-    if (code === 'permission_required') setPermission('explain');
+    if (code === 'permission_required') await askForMicrophone();
+  };
+  /**
+   * The first time the person speaks, the system asks for the microphone, and that one question is all they
+   * see: no note of ECHO's comes before it (the owner, 2026-11-09: nothing should stand between a person and
+   * their journal). The take begins the moment it is allowed. Refused, the note says how to allow it later.
+   */
+  const askForMicrophone = async () => {
+    const asked = await requestMicrophonePermission();
+    if (asked.status !== 'granted') return setPermission('denied');
+    const code = await voice.start();
+    if (code === 'permission_required') setPermission('denied');
   };
   /** A recording whose words are not in the draft, and are not on their way either. */
   const unsent =
@@ -409,6 +425,7 @@ export function useSessionController({ variant, initialMode, draftId, become }: 
 
   /** A touch on the open sky while speaking. Returns whether it did anything. */
   const touchSky = (): boolean => {
+    stillHere();
     if (voice.state === 'recording') {
       void stop();
       return true;

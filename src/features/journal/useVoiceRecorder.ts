@@ -6,6 +6,7 @@ import { getMicrophonePermission } from '@/services/permissions';
 import { notifyJournalChanged } from './api';
 import { useRecorderDriver } from './recorderDriver';
 import { getJournal } from './runtime';
+import { liveWords } from './liveWords';
 import { useStreamDriver, type PcmTap } from './streamDriver';
 import type { DraftController } from './useDraft';
 import { failure, success, type EntryAudio, type JournalResult } from './types';
@@ -199,7 +200,7 @@ export function useVoiceRecorder(draft: DraftController): VoiceRecorder {
 
   return {
     available: fileDriver !== null || streamDriver !== null,
-    liveAvailable: streamDriver !== null,
+    liveAvailable: liveWords.enabled && streamDriver !== null,
     state,
     elapsedSeconds,
     error,

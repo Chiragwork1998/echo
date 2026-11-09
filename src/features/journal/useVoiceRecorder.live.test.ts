@@ -14,6 +14,7 @@ import { createSqlJournal } from './sqlJournal';
 import type { JournalResult } from './types';
 import { useDraft } from './useDraft';
 import { useVoiceRecorder } from './useVoiceRecorder';
+import { liveWords } from './liveWords';
 
 // A live take is captured by the stream and written as a WAV, and is sealed and recovered exactly
 // as a recording from the file recorder is. Only one of the two ever owns the microphone.
@@ -165,6 +166,8 @@ const recordings = async () =>
   (await rt.db.first<{ total: number }>('SELECT COUNT(*) AS total FROM recordings'))?.total;
 
 beforeEach(async () => {
+  // The live path is off in 1.0 (./liveWords.ts); these are its tests.
+  liveWords.enabled = true;
   rt = await createTestRuntime();
   fake.cache = join(rt.root, 'cache');
   journal = createSqlJournal(rt);
@@ -178,11 +181,26 @@ beforeEach(async () => {
   installRecorder();
 });
 afterEach(() => {
+  liveWords.enabled = false;
   jest.restoreAllMocks();
   setJournal(null);
   fake.stream = null;
   fake.recorder = null;
   fake.onBuffer = null;
+});
+
+describe('in 1.0, with live words off', () => {
+  it('offers no live take, though the stream is there, and records every take to a file', async () => {
+    liveWords.enabled = false;
+    const stream = installStream();
+    const view = await mount();
+    expect(view.result.current.voice.liveAvailable).toBe(false);
+    await act(async () => {
+      await view.result.current.voice.start();
+    });
+    expect(stream.start).not.toHaveBeenCalled();
+    expect(fake.recorder!.record).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('a live take', () => {

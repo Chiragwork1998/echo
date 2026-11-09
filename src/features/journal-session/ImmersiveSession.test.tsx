@@ -249,17 +249,15 @@ describe('speaking', () => {
     expect(voice.stop).toHaveBeenCalledTimes(2);
   });
 
-  it('explains the microphone in plain words before the system asks', async () => {
+  it('lets the system ask for the microphone at the first touch, with nothing of its own before it', async () => {
     jest.mocked(requestMicrophonePermission).mockResolvedValue({ status: 'granted' } as never);
     (voice.start as jest.Mock).mockResolvedValueOnce('permission_required');
     await open({ initialMode: 'speak' });
     await fireEvent.press(screen.getByTestId('session-scenery'));
-    expect(await screen.findByText(sessionCopy.speak.explain)).toBeTruthy();
-    expect(requestMicrophonePermission).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: sessionCopy.speak.writeInstead })).toBeTruthy();
-    await fireEvent.press(screen.getByRole('button', { name: sessionCopy.speak.allow }));
-    await waitFor(() => expect(requestMicrophonePermission).toHaveBeenCalled());
+    await waitFor(() => expect(requestMicrophonePermission).toHaveBeenCalledTimes(1));
+    // Allowed: the take begins at once.
     await waitFor(() => expect(voice.start).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText(sessionCopy.speak.explain)).toBeNull();
   });
 });
 

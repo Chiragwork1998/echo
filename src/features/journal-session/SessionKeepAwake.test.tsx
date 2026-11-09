@@ -7,6 +7,7 @@ import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { useState } from 'react';
 import { AccessibilityInfo, AppState } from 'react-native';
 
+import { copy } from '@/content/copy';
 import {
   createMemoryJournal,
   setJournal,
@@ -20,7 +21,7 @@ import { render } from '@/testing/render';
 
 import { JournalSession } from './JournalSession';
 import { sessionCopy } from './sessionCopy';
-import { TAKE_KEEP_AWAKE_TAG } from './useKeepAwake';
+import { JOURNAL_IDLE_MS, TAKE_KEEP_AWAKE_TAG } from './useKeepAwake';
 
 // What is holding the screen on, by tag, as expo-keep-awake would count it.
 const mockHeld = new Set<string>();
@@ -143,10 +144,12 @@ const startTake = async () => {
 const stopTake = () =>
   fireEvent.press(screen.getByRole('button', { name: sessionCopy.quiet.stop }));
 
-describe('the screen while a take is in flight', () => {
-  it('is not held in an idle session', async () => {
+describe('the screen while a person journals', () => {
+  it('is held while the page is open, and let go after a long quiet', async () => {
     await open();
     await settle();
+    expect(held()).toBe(true);
+    await act(async () => jest.advanceTimersByTime(JOURNAL_IDLE_MS + 100));
     expect(held()).toBe(false);
   });
 
@@ -168,15 +171,20 @@ describe('the screen while a take is in flight', () => {
     expect(held()).toBe(true);
 
     await act(async () => arrive(said('Something I have been avoiding.')));
+    // The words are in, and the person reads them: the screen stays until a long quiet.
+    await settle();
+    expect(held()).toBe(true);
+    await act(async () => jest.advanceTimersByTime(JOURNAL_IDLE_MS + 100));
     await waitFor(() => expect(held()).toBe(false));
   });
 
-  it('is let go when the attempt fails and the note is up', async () => {
+  it('is let go after a long quiet when the attempt fails and the note is up', async () => {
     send.mockResolvedValueOnce({ ok: false, error: { code: 'offline', retryable: true } });
     await open();
     await startTake();
     await stopTake();
     expect(await screen.findByText(sessionCopy.transcribe.failed.offline)).toBeTruthy();
+    await act(async () => jest.advanceTimersByTime(JOURNAL_IDLE_MS + 100));
     expect(held()).toBe(false);
   });
 
@@ -198,10 +206,17 @@ describe('the screen while a take is in flight', () => {
     expect(held()).toBe(true);
   });
 
-  it('is not held for writing', async () => {
+  it('is held while the person writes, counting the quiet from the last word', async () => {
     await render(<JournalSession variant="daily" plain initialMode="write" />);
     await waitFor(() => expect(scenery().props.accessibilityState.disabled).toBe(false));
     await settle();
+    expect(held()).toBe(true);
+    await act(async () => jest.advanceTimersByTime(JOURNAL_IDLE_MS - 1000));
+    await fireEvent.changeText(screen.getByLabelText(copy.home.prompt), 'Velomir astrenay quolith');
+    await act(async () => jest.advanceTimersByTime(JOURNAL_IDLE_MS - 1000));
+    // Still within the quiet of the last word.
+    expect(held()).toBe(true);
+    await act(async () => jest.advanceTimersByTime(2000));
     expect(held()).toBe(false);
   });
 });

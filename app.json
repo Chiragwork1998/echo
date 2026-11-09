@@ -14,7 +14,7 @@
     },
     "android": {
       "package": "com.thesaturnlabs.echo",
-      "versionCode": 10,
+      "versionCode": 11,
       "adaptiveIcon": {
         "foregroundImage": "./assets/app/adaptive-foreground.png",
         "monochromeImage": "./assets/app/adaptive-monochrome.png",

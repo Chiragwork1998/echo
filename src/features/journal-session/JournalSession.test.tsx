@@ -432,20 +432,20 @@ describe('JournalSession Speak', () => {
     await screen.findByText(copy.firstEcho.title);
   };
 
-  it('explains in the app before the system asks, and keeps Write available', async () => {
-    voice.start = jest.fn(async () => 'permission_required' as const);
-    await speak();
-    await fireEvent.press(screen.getByRole('button', { name: sessionCopy.speak.record }));
-    expect(await screen.findByText(sessionCopy.speak.explain)).toBeTruthy();
-    expect(requestMicrophonePermission).not.toHaveBeenCalled();
-
+  it('lets the system ask at once, with no note of its own first, and begins the take when allowed', async () => {
+    // Not yet allowed the first time; allowed once the system has asked.
+    voice.start = jest
+      .fn()
+      .mockResolvedValueOnce('permission_required')
+      .mockResolvedValue(null) as typeof voice.start;
     jest
       .mocked(requestMicrophonePermission)
       .mockResolvedValue({ status: 'granted', canAskAgain: true });
-    voice.start = jest.fn(async () => null);
-    await fireEvent.press(screen.getByRole('button', { name: sessionCopy.speak.allow }));
+    await speak();
+    await fireEvent.press(screen.getByRole('button', { name: sessionCopy.speak.record }));
+    await waitFor(() => expect(voice.start).toHaveBeenCalledTimes(2));
     expect(requestMicrophonePermission).toHaveBeenCalledTimes(1);
-    expect(voice.start).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(sessionCopy.speak.explain)).toBeNull();
   });
 
   it('offers Settings and Write after a denial', async () => {
@@ -455,7 +455,6 @@ describe('JournalSession Speak', () => {
       .mockResolvedValue({ status: 'denied', canAskAgain: false });
     await speak();
     await fireEvent.press(screen.getByRole('button', { name: sessionCopy.speak.record }));
-    await fireEvent.press(await screen.findByRole('button', { name: sessionCopy.speak.allow }));
     expect(await screen.findByText(sessionCopy.speak.denied)).toBeTruthy();
     await fireEvent.press(screen.getByRole('button', { name: sessionCopy.speak.settings }));
     expect(openAppSettings).toHaveBeenCalledTimes(1);
@@ -473,7 +472,6 @@ describe('JournalSession Speak', () => {
       .mockResolvedValue({ status: 'denied', canAskAgain: false });
     await speak();
     await fireEvent.press(screen.getByRole('button', { name: sessionCopy.speak.record }));
-    await fireEvent.press(await screen.findByRole('button', { name: sessionCopy.speak.allow }));
     expect(await screen.findByText(sessionCopy.speak.denied)).toBeTruthy();
 
     // Still off when the app comes back from somewhere else: the note stays.
