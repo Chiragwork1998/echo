@@ -1,8 +1,7 @@
-// The book shutting, as a session meets it: the entry is kept first, the cover comes down, the book rests
-// and begins to sink, and the next screen is asked for then, to arrive by its own fade over the book as it
-// goes (asked for as the cover landed, it was mounted over a book still at rest and cut it away; asked for
-// after the sink, the sky was bare for as long as the screen takes to mount). How it looks is judged frame
-// by frame; here is what it does and when.
+// The book shutting, as a session meets it: the entry is kept first, the cover comes down, and the next
+// screen is asked for as it lands, to arrive by its own fade over the book as it rests and sinks (asked for
+// once the sink had begun, it came after the book had gone, and the sky was bare between the two for 100 to
+// 220 ms in every closing of walk v12). How it looks is judged frame by frame; here is what it does and when.
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import { useEffect } from 'react';
@@ -132,23 +131,26 @@ const reflect = async () => {
 };
 
 describe('the next screen', () => {
-  it('is not asked for while the shut book rests, only once it has begun to sink', async () => {
+  it('is asked for once, as the cover lands, and only once the landing has been felt', async () => {
     await writeEntry();
+    const order: string[] = [];
+    jest.mocked(cue).mockImplementation(() => void order.push('felt'));
+    jest.mocked(router.navigate).mockImplementation(() => void order.push('next screen'));
     await reflect();
-    const { contactAt, sinkAt } = closeTimeline(FULL);
-    await tick(contactAt + 20);
-    // Down, and felt. The book rests, and the next screen is not mounted over it while it does.
+    const { contactAt } = closeTimeline(FULL);
+    await tick(contactAt - 20);
+    // The cover is still coming down: nothing is felt, and nothing is asked for.
+    expect(order).toEqual([]);
+    await tick(40);
+    // Down, and felt first; the next screen is asked for with it, to fade itself in over the book.
+    expect(order).toEqual(['felt', 'next screen']);
     expect(cue).toHaveBeenCalledWith('settle');
-    expect(router.navigate).not.toHaveBeenCalled();
-    await tick(sinkAt - contactAt - 40);
-    expect(router.navigate).not.toHaveBeenCalled();
-    await tick(60);
     expect(navigated()).toEqual(['/home/complete']);
     await tick(3000);
     expect(router.navigate).toHaveBeenCalledTimes(1);
   });
 
-  it('is asked for with the book on its way out: begun to sink, and not yet gone', async () => {
+  it('is asked for with the book still at rest: as it lands, and before its sink has begun', async () => {
     await writeEntry();
     await reflect();
     let atAsk: number | undefined;
@@ -158,16 +160,17 @@ describe('the next screen', () => {
     const began = Date.now();
     await tick(closeTimeline(FULL).endAt + 200);
     expect(atAsk).toBeDefined();
-    expect(atAsk! - began).toBeGreaterThan(closeTimeline(FULL).sinkAt);
-    expect(atAsk! - began).toBeLessThan(closeTimeline(FULL).sinkAt + FULL.close.sink / 4);
+    expect(atAsk! - began).toBeGreaterThanOrEqual(closeTimeline(FULL).contactAt);
+    // The book rests for its gap, on the UI thread, before it sinks: the screen is asked for within that rest.
+    expect(atAsk! - began).toBeLessThan(closeTimeline(FULL).sinkAt);
   });
 
   it('is asked for sooner once the book has opened five times', async () => {
     usePreferences.setState({ bookOpens: 5 });
     await writeEntry();
     await reflect();
-    const { sinkAt } = closeTimeline(SHORT);
-    await tick(sinkAt - 30);
+    const { contactAt } = closeTimeline(SHORT);
+    await tick(contactAt - 30);
     expect(router.navigate).not.toHaveBeenCalled();
     await tick(60);
     expect(navigated()).toEqual(['/home/complete']);
@@ -230,16 +233,16 @@ describe('the next screen', () => {
       await tick(200);
       expect(cue).toHaveBeenCalledTimes(1);
       expect(cue).toHaveBeenCalledWith('settle');
-      // Down, and the book rests: the next screen waits for its sink, however late the UI thread begins it.
-      expect(router.navigate).not.toHaveBeenCalled();
+      // Down at last, and felt: the next screen is asked for with it, and not a moment before.
+      expect(navigated()).toEqual(['/home/complete']);
     });
 
-    it('asks for the next screen once, as the sink begins, however late that is', async () => {
+    it('asks for the next screen once, as the cover lands, however late that is', async () => {
       await writeEntry();
       animationClock.lag = LATE;
       await reflect();
-      // (The stand-in's lag is for every animation it is given, the sink's own among them.)
-      await tick(closeTimeline(FULL).contactAt + LATE + LATE + FULL.close.gap - 40);
+      // The clock's landing, and its sink, have long gone by: the next screen waits for the book's word.
+      await tick(closeTimeline(FULL).contactAt + LATE - 40);
       expect(router.navigate).not.toHaveBeenCalled();
       await tick(80);
       expect(navigated()).toEqual(['/home/complete']);
@@ -342,14 +345,15 @@ describe('the next screen', () => {
 describe('the journal, while the book shuts', () => {
   // Told the moment the entry was kept, Home beneath the session and every list read and drew themselves again
   // through the leaf, the cover and its landing: the walked emulator felt the landing a quarter of a second
-  // late, and drew one descent in a single frame. They are told as the next screen is asked for.
+  // late, and drew one descent in a single frame. They are told as the next screen is asked for, once the
+  // landing has been felt.
   it('hears of the entry as the next screen is asked for, and not while the book shuts', async () => {
     await writeEntry();
     const before = useJournalRevision.getState().revision;
-    let atAsk: number | undefined;
-    jest.mocked(router.navigate).mockImplementation(() => {
-      atAsk = useJournalRevision.getState().revision;
-    });
+    const order: string[] = [];
+    jest.mocked(cue).mockImplementation(() => void order.push('felt'));
+    const unheard = useJournalRevision.subscribe(() => void order.push('told'));
+    jest.mocked(router.navigate).mockImplementation(() => void order.push('next screen'));
     await reflect();
     // The entry is kept, and safe.
     const latest = await journal.latestEntry();
@@ -358,11 +362,13 @@ describe('the journal, while the book shuts', () => {
       ok: true,
       value: { body: BODY, status: 'committed' },
     });
-    await tick(closeTimeline(FULL).sinkAt - 40);
+    await tick(closeTimeline(FULL).contactAt - 40);
     expect(useJournalRevision.getState().revision).toBe(before);
+    expect(order).toEqual([]);
     await tick(80);
-    expect(atAsk).toBe(before + 1);
     expect(useJournalRevision.getState().revision).toBe(before + 1);
+    expect(order).toEqual(['felt', 'told', 'next screen']);
+    unheard();
   });
 
   it('is told at once when the entry is kept on a page without the book', async () => {
@@ -425,10 +431,16 @@ describe('First Echo', () => {
     await waitFor(() => expect(title().props.editable).toBe(true));
     await fireEvent.changeText(title(), BODY);
     await fireEvent(title(), 'blur');
+    const order: string[] = [];
+    jest.mocked(cue).mockImplementation(() => void order.push('felt'));
+    jest.mocked(router.navigate).mockImplementation(() => void order.push('Completion'));
     await reflect();
-    await tick(closeTimeline(FULL).goAt - 60);
-    expect(router.navigate).not.toHaveBeenCalled();
+    await tick(closeTimeline(FULL).contactAt - 60);
+    expect(order).toEqual([]);
     await tick(120);
+    // Shut and felt, and then Completion is asked for, when the daily book asks for its next screen.
+    expect(order).toEqual(['felt', 'Completion']);
+    expect(cue).toHaveBeenCalledWith('settle');
     expect(router.navigate).toHaveBeenCalledTimes(1);
   });
 });

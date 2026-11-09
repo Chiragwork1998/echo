@@ -231,8 +231,28 @@ describe('Write it', () => {
     await tick(40);
     expect(cue).toHaveBeenCalledWith('fine');
     expect(router.navigate).not.toHaveBeenCalled();
-    // Held 400 ms, then the sink, and the next screen half way through it.
-    await tick(400 + FULL.close.gap + FULL.close.sink / 2 + 50);
+    // Held 400 ms, and then the book is let go, and the next screen is asked for as it is.
+    await tick(400 - 60);
+    expect(router.navigate).not.toHaveBeenCalled();
+    await tick(120);
+    expect(navigated()).toEqual(['/home/complete']);
+  });
+
+  it('asks for the next screen as the book is let go, and does not wait for its sink to begin', async () => {
+    await writeAndReflect();
+    await toContact();
+    await fireEvent.changeText(screen.getByTestId('name-field'), NAME);
+    await fireEvent.press(screen.getByTestId('name-write'));
+    // The stamp has begun. Whatever the UI thread is given from here, the book's rest and its sink among them,
+    // it begins two seconds late.
+    animationClock.lag = 2000;
+    await tick(STAMP_AFTER + stampMs(NAME) + 20);
+    expect(cue).toHaveBeenCalledWith('fine');
+    await tick(400 - 60);
+    expect(router.navigate).not.toHaveBeenCalled();
+    // Let go after the name's hold, and asked for then: the next screen fades itself in over the rest and the
+    // sink whenever they are drawn. Asked for once the sink had begun, it came after the book had gone.
+    await tick(120);
     expect(navigated()).toEqual(['/home/complete']);
   });
 
@@ -254,10 +274,9 @@ describe('Write it', () => {
     expect(cue).toHaveBeenCalledWith('fine');
     expect(cue).toHaveBeenCalledTimes(2);
     expect(router.navigate).not.toHaveBeenCalled();
-    // Held, then the rest and the sink, which the late UI thread also begins late.
+    // Held, and let go, with the next screen asked for as it is: not two seconds later, when the late UI thread
+    // begins the rest and the sink.
     await tick(400 + 100);
-    expect(router.navigate).not.toHaveBeenCalled();
-    await tick(2000 + FULL.close.gap + 100);
     expect(navigated()).toEqual(['/home/complete']);
   });
 
@@ -280,19 +299,32 @@ describe('Not now', () => {
     expect(cue).not.toHaveBeenCalledWith('fine');
   });
 
-  it('lets the book go as the line is as good as gone: it rests, and the next screen comes as it sinks', async () => {
+  it('lets the book go as the line is as good as gone, and asks for the next screen as it does', async () => {
     await writeAndReflect();
     await toContact();
     await fireEvent.press(screen.getByTestId('name-not-now'));
     // The line is taken back over 320 ms, decelerating: it is nearly all gone by half way, and the book
-    // does not wait for its last hair. Then it rests, as a book that was asked nothing does, and the next
-    // screen is asked for once it has begun to sink: asked for as the answer was given, it was mounted over
-    // the book at rest and cut it away (walk v11).
-    await tick(NAME_UNDRAW_MS + FULL.close.gap / 2);
+    // does not wait for its last hair. It is let go then, to rest and sink as a book that was asked nothing
+    // does, and the next screen is asked for as it is, to fade itself in over them. Asked for once the sink
+    // had begun, it came after the book had gone, over 0.4 s of bare sky (walk v12).
+    await tick(NAME_UNDRAW_MS - 60);
     expect(router.navigate).not.toHaveBeenCalled();
-    await tick(FULL.close.gap / 2 + 80);
+    await tick(120);
     expect(navigated()).toEqual(['/home/complete']);
     expect(NAME_UNDRAW_MS).toBeLessThan(200);
+  });
+
+  it('asks for the next screen as the book is let go, and does not wait for its sink to begin', async () => {
+    await writeAndReflect();
+    await toContact();
+    await fireEvent.press(screen.getByTestId('name-not-now'));
+    // The line has begun to go. Whatever the UI thread is given from here, the book's rest and its sink among
+    // them, it begins two seconds late.
+    animationClock.lag = 2000;
+    await tick(NAME_UNDRAW_MS - 60);
+    expect(router.navigate).not.toHaveBeenCalled();
+    await tick(120);
+    expect(navigated()).toEqual(['/home/complete']);
   });
 
   it('waits for the book to be back in its place, the keys gone, before it rests and sinks', async () => {
@@ -335,10 +367,9 @@ describe('Not now', () => {
     expect(router.navigate).not.toHaveBeenCalled();
     await tick(2000 - (NAME_UNDRAW_MS + 1500 + 300) - 1);
     expect(router.navigate).not.toHaveBeenCalled();
-    // The line goes, then the rest and the sink, which the late UI thread also begins late.
+    // The line goes, and the book is let go with the next screen asked for at once: not two seconds later, when
+    // the late UI thread begins the rest and the sink.
     await tick(NAME_UNDRAW_MS + 60);
-    expect(router.navigate).not.toHaveBeenCalled();
-    await tick(2000 + FULL.close.gap + 100);
     expect(navigated()).toEqual(['/home/complete']);
     expect(mockRecord).toMatchObject({ name: null, asked: true });
   });

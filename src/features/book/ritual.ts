@@ -85,19 +85,19 @@ export const UI_HANG_MS = 10_000;
 
 /**
  * When each part of the closing happens, in ms from the moment it begins, taking the cover and the sink
- * as straight lines. The cover is down at `contactAt`; the book rests for `gap`, begins to sink at
- * `sinkAt` and has gone by `endAt`. The next screen is asked for as the sink begins, `goAt`, and arrives
- * by its own fade over the book as it goes. Asked for as the cover landed, it was mounted while the book
- * rested, and on the walked emulator it appeared in a frame and cut the book away before its sink was
- * drawn (4 closings in 8); asked for when the book was half sunk, it came after the book had gone, and the
- * sky was bare between the two. The closing does not run to this clock: it follows the cover landing and
- * the sink beginning (./useBookClosing), and uses these times only for how long each wait may last.
+ * as straight lines. The cover is down at `contactAt`, and the next screen is asked for then, `goAt`: it
+ * arrives by its own fade over the book, which rests for `gap`, begins to sink at `sinkAt` and has gone by
+ * `endAt`. Asked for as the sink began, it came after the book had gone, and the sky was bare between the
+ * two (walk v12); asked for as the cover landed before it faded itself in, it appeared in a frame and cut
+ * the book away before its sink was drawn (walk v11). The closing does not run to this clock: it follows
+ * the cover landing and the sink beginning (./useBookClosing), and uses these times only for how long each
+ * wait may last.
  */
 export function closeTimeline(ritual: Ritual) {
   const { coverAt, cover, gap, sink } = ritual.close;
   const contactAt = coverAt + cover;
   const sinkAt = contactAt + gap;
-  return { contactAt, goAt: sinkAt, sinkAt, endAt: sinkAt + sink };
+  return { contactAt, goAt: contactAt, sinkAt, endAt: sinkAt + sink };
 }
 
 /** How long the quiet things (controls, the light, notices) take to leave as the closing begins. */
