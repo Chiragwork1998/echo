@@ -43,6 +43,7 @@ import { useRhythm } from '@/features/journal';
 import { holdCommitNews } from '@/features/journal/api';
 import { usePreferences } from '@/state/preferences';
 import { useHomeDissolve, useWhileHere } from '@/features/home/dissolve';
+import { useRevealTabBar } from '@/features/home/tabs/HomeTabBar';
 import { usePlateFrame, usePlatePoint } from '@/design/usePlatePoint';
 import { useReduceMotion } from '@/design/useReduceMotion';
 
@@ -72,6 +73,11 @@ const SKY_WASH_BELOW = 70;
 const DOT = 6;
 const SERIF = 'CormorantGaramond_500Medium';
 
+/**
+ * Leaving without Reflect, Home rises over the page's fade and this much more, so that the page is already
+ * gone as Home is whole: the two cross, and there is no dim frame of neither (walk v12).
+ */
+const HOME_RISE_OVER_MS = 100;
 /** The written name is held on the cover this long before the book goes. */
 const NAME_HOLD_MS = 400;
 /**
@@ -408,6 +414,7 @@ export function ImmersiveSession({
   // and 9.7 s, twice, late in a long session.
   const { onDepart } = session;
   const { returnHome } = useHomeDissolve();
+  const revealTabBar = useRevealTabBar();
   const departure = useSharedValue(0);
   const departureBegun = useUiBegun();
   const [departing, setDeparting] = useState(false);
@@ -433,10 +440,21 @@ export function ImmersiveSession({
             ),
           );
           departureBegun(watch.began);
-          returnHome();
+          // Home rises as the page goes, in the page's own time, and its tab bar comes as the page has gone.
+          returnHome({ delay: 0, duration: duration + HOME_RISE_OVER_MS });
+          revealTabBar(duration);
         }),
     );
-  }, [departure, departureBegun, goingAway, onDepart, reduced, returnHome, screenReader]);
+  }, [
+    departure,
+    departureBegun,
+    goingAway,
+    onDepart,
+    reduced,
+    returnHome,
+    revealTabBar,
+    screenReader,
+  ]);
   const gone = useAnimatedStyle(() => ({ opacity: 1 - departure.get() }));
 
   // The quiet things leave as the closing begins, and the notes on the page with them.

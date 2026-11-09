@@ -97,21 +97,23 @@ export function HomeScreen() {
   const pathname = usePathname();
   const covered = pathname !== HOME_PATH;
   const hidden = dissolved || covered;
-  // Under a page, Home's interface steps back, and is there again the moment Today is the path, beneath the
-  // page that is still leaving. The pages are presented over Home on Android and cover it with a plate of
-  // their own, but one tab replacing another fades out as the next fades in: halfway, both are half there,
-  // and Home's interface would show through at a quarter. It steps back once the first page has arrived over
-  // it, and at once when one page gives way to another, under the page that is going.
-  const underPage = PAGES.includes(pathname);
+  // One tab page giving way to another fades out as the next fades in: halfway, both are half there, and Home's
+  // interface beneath them would show through at a quarter. So for the swap Home steps back, beneath the page
+  // that is going (which still covers it), and is whole again once the new page has arrived over it. Under a
+  // page at rest, and the moment Today is chosen, Home is whole: a Home hidden under the page it was going back
+  // to showed a frame of bare photograph, then cut in (walk v12, You to Today).
   const previous = useRef(pathname);
-  const present = useSharedValue(underPage ? 0 : 1);
+  const present = useSharedValue(1);
   useEffect(() => {
     const from = previous.current;
     previous.current = pathname;
-    if (!underPage) present.set(1);
-    else if (PAGES.includes(from)) present.set(0);
-    else present.set(withDelay(PAGE_ARRIVED_MS, withTiming(0, { duration: 0 })));
-  }, [pathname, present, underPage]);
+    if (from !== pathname && PAGES.includes(from) && PAGES.includes(pathname)) {
+      present.set(0);
+      present.set(withDelay(PAGE_ARRIVED_MS, withTiming(1, { duration: 0 })));
+    } else {
+      present.set(1);
+    }
+  }, [pathname, present]);
   const stepBack = useAnimatedStyle(() => ({ opacity: present.get() }));
 
   return (

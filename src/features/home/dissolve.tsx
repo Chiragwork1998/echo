@@ -9,6 +9,7 @@ import {
   useState,
   type PropsWithChildren,
 } from 'react';
+import { BackHandler } from 'react-native';
 import {
   Easing,
   ReduceMotion,
@@ -54,6 +55,13 @@ export type DissolvePhase = 'idle' | 'leaving' | 'gone' | 'veiled';
 
 type Href = string | { pathname: string; params: Record<string, string> };
 
+/**
+ * How Home's interface comes back: after `delay`, over `duration`. The usual return is RETURN_DELAY_MS and
+ * RETURN_MS. A page fading out above Home asks for no delay and its own length, so that Home rises as the
+ * page goes rather than after it (walk v12: a dim beat with neither, every time).
+ */
+export type ReturnPace = { delay?: number; duration?: number };
+
 type Dissolve = {
   /** 0 is Home as designed, 1 is only the mountains. */
   progress: SharedValue<number>;
@@ -68,7 +76,7 @@ type Dissolve = {
    * Home's UI comes back now, ahead of the session closing. Asked for by the card that follows the
    * session, so that Home is whole beneath it, and arrives with its photograph when the card goes.
    */
-  returnHome: () => void;
+  returnHome: (pace?: ReturnPace) => void;
   /** A Home that began veiled is ready to be seen: its interface rises, by the usual return, once. */
   unveil: () => void;
 };
@@ -136,23 +144,26 @@ export function HomeDissolveProvider({
     [clear],
   );
 
-  const bringBack = useCallback(() => {
-    clear();
-    open.current = false;
-    returning.current = true;
-    setPhase('idle');
-    const duration = reducedRef.current ? REDUCED_FADE_MS : RETURN_MS;
-    progress.set(
-      withDelay(
-        reducedRef.current ? 0 : RETURN_DELAY_MS,
-        withTiming(0, {
-          duration,
-          easing: Easing.out(Easing.quad),
-          reduceMotion: ReduceMotion.Never,
-        }),
-      ),
-    );
-  }, [clear, progress, setPhase]);
+  const bringBack = useCallback(
+    (pace?: ReturnPace) => {
+      clear();
+      open.current = false;
+      returning.current = true;
+      setPhase('idle');
+      const duration = reducedRef.current ? REDUCED_FADE_MS : (pace?.duration ?? RETURN_MS);
+      progress.set(
+        withDelay(
+          reducedRef.current ? 0 : (pace?.delay ?? RETURN_DELAY_MS),
+          withTiming(0, {
+            duration,
+            easing: Easing.out(Easing.quad),
+            reduceMotion: ReduceMotion.Never,
+          }),
+        ),
+      );
+    },
+    [clear, progress, setPhase],
+  );
 
   const dissolve = useCallback(
     (href: Href) => {
@@ -196,10 +207,26 @@ export function HomeDissolveProvider({
     }, CLOSE_GRACE_MS);
   }, [bringBack, progress]);
 
-  const returnHome = useCallback(() => {
-    if (returning.current || (phaseRef.current === 'idle' && progress.get() === 0)) return;
-    bringBack();
-  }, [bringBack, progress]);
+  const returnHome = useCallback(
+    (pace?: ReturnPace) => {
+      if (returning.current || (phaseRef.current === 'idle' && progress.get() === 0)) return;
+      bringBack(pace);
+    },
+    [bringBack, progress],
+  );
+
+  // Back while Home is melting, before what it melts into has opened: the person has changed their mind.
+  // Home comes back and nothing opens. Left to the stack, the press closed ECHO to the launcher (walk v12,
+  // a Back 116 ms after Write instead). Once the session or Breathe is open, its own Back answers first.
+  useEffect(() => {
+    if (phase !== 'leaving' && phase !== 'gone') return;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (open.current) return false;
+      bringBack();
+      return true;
+    });
+    return () => subscription.remove();
+  }, [bringBack, phase]);
 
   const unveil = useCallback(() => {
     if (phaseRef.current !== 'veiled') return;

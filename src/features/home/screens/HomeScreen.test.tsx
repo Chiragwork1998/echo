@@ -718,20 +718,17 @@ describe('Home under a page', () => {
     jest.useRealTimers();
   });
 
-  it('stays whole while a page arrives over it, then steps back', async () => {
+  it('stays whole beneath a page that arrives over it, and beneath it at rest', async () => {
     const view = await render(<HomeScreen />);
     expect(present()).toBe(1);
     mockPath = '/home/echoes';
     await draw(view);
-    await advance(PAGE_ARRIVED_MS - 40);
+    await advance(PAGE_ARRIVED_MS * 2);
     await draw(view);
     expect(present()).toBe(1);
-    await advance(80);
-    await draw(view);
-    expect(present()).toBe(0);
   });
 
-  it('steps back at once as one page gives way to another, and is whole at once for Today', async () => {
+  it('steps back while one page gives way to another, and is whole again once the new one has arrived', async () => {
     mockPath = '/home/echoes';
     const view = await render(<HomeScreen />);
     await advance(PAGE_ARRIVED_MS + 40);
@@ -740,12 +737,17 @@ describe('Home under a page', () => {
     await advance(16);
     await draw(view);
     expect(present()).toBe(0);
-    // The Reader, over Echoes, is a page too.
-    mockPath = '/home/entry';
+    await advance(PAGE_ARRIVED_MS);
+    await draw(view);
+    expect(present()).toBe(1);
+  });
+
+  it('is whole the moment Today is chosen, even in the middle of a swap', async () => {
+    mockPath = '/home/echoes';
+    const view = await render(<HomeScreen />);
+    mockPath = '/home/you';
     await draw(view);
     await advance(16);
-    await draw(view);
-    expect(present()).toBe(0);
     mockPath = '/home';
     await draw(view);
     await advance(16);

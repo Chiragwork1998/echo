@@ -1,6 +1,6 @@
 import { act, fireEvent, screen } from '@testing-library/react-native';
 import { router } from 'expo-router';
-import { Pressable, Text } from 'react-native';
+import { BackHandler, Pressable, Text } from 'react-native';
 
 import { render } from '@/testing/render';
 
@@ -36,7 +36,7 @@ function Probe() {
       <Pressable testID="continue" onPress={() => continueDraft('d1')} />
       <Pressable testID="opened" onPress={control.sessionOpened} />
       <Pressable testID="closed" onPress={control.sessionClosed} />
-      <Pressable testID="return" onPress={control.returnHome} />
+      <Pressable testID="return" onPress={() => control.returnHome()} />
       <Pressable testID="unveil" onPress={control.unveil} />
       <Text testID="progress">{String(control.progress.get())}</Text>
       {/* Home partly gone, as it is a moment after the session gives it back. */}
@@ -128,6 +128,54 @@ describe('the dissolve into the daily session', () => {
     await open();
     await fireEvent.press(screen.getByTestId('begin'));
     await tick(DISSOLVE_MS + 2500);
+    expect(phase()).toBe('idle');
+  });
+});
+
+describe('Back while Home is melting', () => {
+  // Without this, a Back pressed just after Begin reached the stack and ECHO closed to the launcher.
+  type Handler = Parameters<typeof BackHandler.addEventListener>[1];
+  const handlers: Handler[] = [];
+  beforeEach(() => {
+    handlers.length = 0;
+    jest.spyOn(BackHandler, 'addEventListener').mockImplementation((_event, handler) => {
+      handlers.push(handler);
+      return { remove: () => void handlers.splice(handlers.indexOf(handler), 1) };
+    });
+  });
+  afterEach(() => jest.restoreAllMocks());
+  const pressBack = () => act(() => void handlers.at(-1)?.({} as never));
+
+  it('brings Home back and opens nothing, before the session has opened', async () => {
+    await open();
+    await fireEvent.press(screen.getByTestId('write'));
+    await tick(DISSOLVE_MS * 0.3);
+    expect(handlers).toHaveLength(1);
+    let answered: ReturnType<Handler> | undefined;
+    await act(() => void (answered = handlers.at(-1)?.({} as never)));
+    expect(answered).toBe(true);
+    expect(phase()).toBe('idle');
+    await tick(DISSOLVE_MS * 2);
+    expect(router.push).not.toHaveBeenCalled();
+    // Nothing is left listening once Home is back.
+    expect(handlers).toHaveLength(0);
+  });
+
+  it('leaves Back to the session once it has opened', async () => {
+    await open();
+    await fireEvent.press(screen.getByTestId('begin'));
+    await tick(DISSOLVE_MS);
+    await fireEvent.press(screen.getByTestId('opened'));
+    let answered: ReturnType<Handler> | undefined;
+    await act(() => void (answered = handlers.at(-1)?.({} as never)));
+    expect(answered).toBe(false);
+    expect(phase()).toBe('gone');
+  });
+
+  it('is not listened for on a Home at rest', async () => {
+    await open();
+    expect(handlers).toHaveLength(0);
+    await pressBack();
     expect(phase()).toBe('idle');
   });
 });
