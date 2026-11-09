@@ -14,7 +14,31 @@ const HEADING_TAG = 42;
 const focus = jest.mocked(AccessibilityInfo.setAccessibilityFocus);
 const screenReader = jest.mocked(AccessibilityInfo.isScreenReaderEnabled);
 
-const nextFrame = () => act(async () => new Promise((done) => setTimeout(done, 20)));
+// Frames are held here and come when the test says, not when a busy machine's clock does. Set on
+// the global directly: a spy restored after one test leaves the next without the property at all.
+const frames = new Map<number, FrameRequestCallback>();
+let lastFrame = 0;
+const realFrames = { request: global.requestAnimationFrame, cancel: global.cancelAnimationFrame };
+beforeAll(() => {
+  global.requestAnimationFrame = (run) => {
+    lastFrame += 1;
+    frames.set(lastFrame, run);
+    return lastFrame;
+  };
+  global.cancelAnimationFrame = (id) => {
+    if (id) frames.delete(id);
+  };
+});
+afterAll(() => {
+  global.requestAnimationFrame = realFrames.request;
+  global.cancelAnimationFrame = realFrames.cancel;
+});
+const nextFrame = () =>
+  act(async () => {
+    const due = [...frames.values()];
+    frames.clear();
+    due.forEach((run) => run(0));
+  });
 const heading = () => screen.getByRole('header', { name: patternsCopy.consent.title });
 const laidOut = () =>
   fireEvent(heading(), 'layout', {
@@ -23,6 +47,7 @@ const laidOut = () =>
 
 beforeEach(() => {
   focus.mockClear();
+  frames.clear();
   // The module the panel reads it from, not a copy of it. Its exports are getters.
   const native = jest.requireActual<{ findNodeHandle: unknown }>('react-native');
   jest.spyOn(native, 'findNodeHandle', 'get').mockReturnValue(() => HEADING_TAG);
@@ -63,6 +88,7 @@ describe('the consent’s heading and a screen reader', () => {
     const view = await render(<ConsentWords count={3} />);
     await nextFrame();
     await laidOut();
+    expect(frames.size).toBe(1);
     await view.unmount();
     await nextFrame();
     expect(focus).not.toHaveBeenCalled();
