@@ -336,9 +336,10 @@ export function useSessionController({ variant, initialMode, draftId, become }: 
     if (code === 'permission_required') await askForMicrophone();
   };
   /**
-   * The first time the person speaks, the system asks for the microphone, and that one question is all they
-   * see: no note of ECHO's comes before it (the owner, 2026-11-09: nothing should stand between a person and
-   * their journal). The take begins the moment it is allowed. Refused, the note says how to allow it later.
+   * The microphone is asked for in onboarding, so a session does not stop to ask (D-018). Someone who refused
+   * there, or who onboarded before it was asked, is asked when they choose to speak: the system's one
+   * question and no note of ECHO's before it (D-016). The take begins the moment it is allowed. Refused, the
+   * note says how to allow it later.
    */
   const askForMicrophone = async () => {
     const asked = await requestMicrophonePermission();

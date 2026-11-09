@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
 
 import { OnboardingHeader } from '@/components/OnboardingHeader';
@@ -40,6 +40,8 @@ type Props<V extends string> = {
   options: readonly Option<V>[];
   value?: V;
   onChange: (value: V) => void;
+  /** Done when the CTA is pressed. The next step waits for it, and comes whatever it gives. */
+  beforeNext?: () => Promise<unknown>;
 };
 
 /**
@@ -58,6 +60,7 @@ export function ThreeChoiceScreen<V extends string>({
   options,
   value,
   onChange,
+  beforeNext,
 }: Props<V>) {
   const { gutter, width: column, sceneryFits } = useLayout();
   const { fontScale } = useWindowDimensions();
@@ -83,6 +86,19 @@ export function ThreeChoiceScreen<V extends string>({
   };
   const back = backPath(screen);
   const next = nextPath(screen);
+  const leaving = useRef(false);
+  const goOn = async () => {
+    if (!next || leaving.current) return;
+    leaving.current = true;
+    try {
+      await beforeNext?.();
+    } catch {
+      // Nothing it does keeps the person from the next step.
+    } finally {
+      leaving.current = false;
+    }
+    router.navigate(next as never);
+  };
   // The scene needs the full portrait photograph, and room for the text at normal size. On a tablet
   // the plate still fills the screen, but the choices would land off the ridge and the path.
   const list = !sceneryFits;
@@ -102,7 +118,7 @@ export function ThreeChoiceScreen<V extends string>({
           arrow={arrow}
           disabled={!value}
           disabledHint={subtitle}
-          onPress={() => next && router.navigate(next as never)}
+          onPress={() => void goOn()}
         />
       }
       plateOverlay={

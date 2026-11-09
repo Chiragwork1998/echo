@@ -1,4 +1,4 @@
-import { fireEvent, screen, within } from '@testing-library/react-native';
+import { act, fireEvent, screen, within } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import { Dimensions, StyleSheet } from 'react-native';
 
@@ -6,12 +6,24 @@ import { copy } from '@/content/copy';
 import { cue } from '@/design/haptics';
 import { HorizonScreen } from '@/features/onboarding/screens/HorizonScreen';
 import { VoiceScreen } from '@/features/onboarding/screens/VoiceScreen';
+import {
+  getMicrophonePermission,
+  requestMicrophonePermission,
+  type PermissionState,
+} from '@/services/permissions';
 import { initialOnboarding, useOnboarding, type OnboardingState } from '@/state/onboarding';
 import { render } from '@/testing/render';
 
 import { breakDetail, HORIZON_SCENE, VOICE_SCENE } from './scenes';
 
 jest.mock('@/design/haptics');
+jest.mock('@/services/permissions', () => ({
+  getMicrophonePermission: jest.fn(),
+  requestMicrophonePermission: jest.fn(),
+}));
+const microphone = jest.mocked(getMicrophonePermission);
+const askSystem = jest.mocked(requestMicrophonePermission);
+const NEVER_ASKED: PermissionState = { status: 'undetermined', canAskAgain: true };
 jest.mock('expo-router', () => ({ router: { navigate: jest.fn(), dismissTo: jest.fn() } }));
 jest.mock(
   'react-native-safe-area-context',
@@ -70,6 +82,8 @@ beforeEach(() => {
     mode: undefined,
   } as Partial<OnboardingState>);
   setWindow(393, 852);
+  microphone.mockResolvedValue({ status: 'granted', canAskAgain: true });
+  askSystem.mockResolvedValue({ status: 'granted', canAskAgain: true });
 });
 
 describe.each(cases)('$name', ({ Screen, text, field, values, step, back, next, paths }) => {
@@ -264,5 +278,68 @@ describe('scenes', () => {
     expect(breakDetail(detail, 3)).toBe('A memory or\nsomething unfinished');
     expect(breakDetail(detail, 3).replace('\n', ' ')).toBe(detail);
     expect(breakDetail(detail)).toBe(detail);
+  });
+});
+
+// The owner, 2026-11-09: "that microphone permission give it in the onboarding only... dont want to be
+// interrupted while journalling" (D-018). The system's own question, on the way out of Voice, and only once.
+describe('the microphone, asked on the way out of Voice', () => {
+  const choose = async (Screen: () => React.JSX.Element, cta: string) => {
+    await render(<Screen />);
+    await fireEvent.press(screen.getAllByRole('radio')[1]!);
+    await fireEvent.press(screen.getByRole('button', { name: cta }));
+  };
+
+  it('is asked by the system when it never has been, and the next step waits for the answer', async () => {
+    microphone.mockResolvedValue(NEVER_ASKED);
+    let answer!: (state: PermissionState) => void;
+    askSystem.mockImplementation(() => new Promise((done) => (answer = done)));
+    await choose(VoiceScreen, copy.voice.cta);
+    expect(askSystem).toHaveBeenCalledTimes(1);
+    expect(router.navigate).not.toHaveBeenCalled();
+    await act(async () => answer({ status: 'granted', canAskAgain: true }));
+    expect(router.navigate).toHaveBeenCalledTimes(1);
+    expect(router.navigate).toHaveBeenCalledWith('/onboarding/rhythm');
+  });
+
+  it('goes on to the next step when the person refuses', async () => {
+    microphone.mockResolvedValue(NEVER_ASKED);
+    askSystem.mockResolvedValue({ status: 'denied', canAskAgain: true });
+    await choose(VoiceScreen, copy.voice.cta);
+    expect(router.navigate).toHaveBeenCalledWith('/onboarding/rhythm');
+  });
+
+  it.each([
+    ['allowed', { status: 'granted', canAskAgain: true }],
+    ['refused', { status: 'denied', canAskAgain: true }],
+    ['refused for good', { status: 'denied', canAskAgain: false }],
+  ] as const)('is not asked again once %s', async (_, state) => {
+    microphone.mockResolvedValue(state);
+    await choose(VoiceScreen, copy.voice.cta);
+    expect(askSystem).not.toHaveBeenCalled();
+    expect(router.navigate).toHaveBeenCalledWith('/onboarding/rhythm');
+  });
+
+  it('asks once, however often the CTA is pressed while the system asks', async () => {
+    microphone.mockResolvedValue(NEVER_ASKED);
+    let answer!: (state: PermissionState) => void;
+    askSystem.mockImplementation(() => new Promise((done) => (answer = done)));
+    await choose(VoiceScreen, copy.voice.cta);
+    await fireEvent.press(screen.getByRole('button', { name: copy.voice.cta }));
+    expect(askSystem).toHaveBeenCalledTimes(1);
+    await act(async () => answer({ status: 'granted', canAskAgain: true }));
+    expect(router.navigate).toHaveBeenCalledTimes(1);
+  });
+
+  it('goes on even when the microphone cannot be asked about', async () => {
+    microphone.mockRejectedValue(new Error('no native module'));
+    await choose(VoiceScreen, copy.voice.cta);
+    expect(router.navigate).toHaveBeenCalledWith('/onboarding/rhythm');
+  });
+
+  it('is not asked about on Horizon', async () => {
+    await choose(HorizonScreen, copy.horizon.cta);
+    expect(microphone).not.toHaveBeenCalled();
+    expect(router.navigate).toHaveBeenCalledWith('/onboarding/voice');
   });
 });
