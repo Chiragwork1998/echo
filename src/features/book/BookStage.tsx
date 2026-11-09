@@ -123,10 +123,15 @@ type Props = {
    */
   onLanded?: () => void;
   /**
-   * The closing: the book has begun to sink, as the UI thread takes the sink up, however late that is.
-   * The next screen is asked for as it does, when a tap has hurried the closing.
+   * The closing: the UI thread has drawn the first frame of the book's sink (or of its fade), however late
+   * that is, and whoever began it. The next screen is asked for then, and not before (./useBookClosing).
    */
   onSinkBegun?: () => void;
+  /**
+   * The page going without its entry being kept (Back), 0 until its fade begins. From the fade's first frame
+   * the opening stops where it is, and nothing more of it is felt or told.
+   */
+  going?: SharedValue<number>;
   /**
    * The page, which is there from the first moment, and is told when the cover has opened and when
    * it has swung far enough off the page for the page's own head to arrive (`headed`).
@@ -169,6 +174,7 @@ export function BookStage({
   onDrawn,
   onLanded,
   onSinkBegun,
+  going,
   children,
 }: Props) {
   const reduced = useReduceMotion();
@@ -202,7 +208,7 @@ export function BookStage({
     reportSinking.current = onSinkBegun;
   });
   const hasLanded = useCallback(() => reportLanded.current?.(), []);
-  const hasSunk = useCallback(() => reportSinking.current?.(), []);
+  const beganSinking = useCallback(() => reportSinking.current?.(), []);
   // Says, from the UI thread's first frame, that what was just set has begun. The nets are set from it.
   const begun = useUiBegun();
 
@@ -244,9 +250,21 @@ export function BookStage({
     () => swungTo(cover.get()),
     (now, before) => {
       const was = before ?? 0;
+      const leaving = going ? going.get() > 0 : false;
       if (now >= 1 && was < 1) runOnJS(latchLeaves)();
-      if (now >= 2 && was < 2 && unseating.get() === 1) runOnJS(feelUnseating)();
+      if (now >= 2 && was < 2 && unseating.get() === 1 && !leaving) runOnJS(feelUnseating)();
       if (now >= 3 && was < 3) runOnJS(setHeaded)(true);
+    },
+  );
+  // Back while the book opens: the page fades out by its own animation (../journal-session), and the opening
+  // stops where it is, from that fade's first frame, on the UI thread. Left to run, the swing went on under
+  // the fade, and its unseating was felt 120 ms into it with nothing lifting (walk v11, S4).
+  useAnimatedReaction(
+    () => (going ? going.get() > 0 : false),
+    (gone, was) => {
+      if (!gone || was) return;
+      unseating.set(0);
+      cancelAnimation(cover);
     },
   );
 
@@ -270,6 +288,8 @@ export function BookStage({
       cover.set(pin.cover ?? 0);
       return;
     }
+    // A page that has begun to go does not begin to open (Back in the stillness, as it ends).
+    if (going && going.get() > 0) return;
     let live = true;
     let latch: ReturnType<typeof setTimeout> | undefined;
     // The opening is over when the cover's own animation says so, and not when a clock does: the hinge,
@@ -292,6 +312,8 @@ export function BookStage({
     const { ended } = watch;
     const landed = () => {
       'worklet';
+      // A swing that the page's going stopped is not an opening: nothing is told of it, and nothing counted.
+      if (going && going.get() > 0) return;
       runOnJS(ended)();
     };
     unseating.set(0);
@@ -347,6 +369,7 @@ export function BookStage({
     unseating,
     latchLeaves,
     begun,
+    going,
   ]);
 
   // The closing: the cover comes back down about the spine, lands softly, and the book sinks as the
@@ -370,9 +393,9 @@ export function BookStage({
       reduceMotion: ReduceMotion.Never,
     });
     const landing = close.coverAt + close.cover;
-    // The cover's own landing, which the closing waits for: that is when it is felt, and when the next
-    // screen is asked for. The UI thread can be a second or two behind the clock, and a timer would call
-    // it down in the air: so the net is set from the descent's first frame, and not before.
+    // The cover's own landing, which the closing waits for: that is when it is felt, and a closed book that
+    // is to be asked something is asked then. The UI thread can be a second or two behind the clock, and a
+    // timer would call it down in the air: so the net is set from the descent's first frame, and not before.
     const watch = watchAnimation(shutHurry ? HURRY_MS : landing, hasLanded);
     const { ended } = watch;
     const down = () => {
@@ -380,11 +403,11 @@ export function BookStage({
       runOnJS(ended)();
     };
     // The book sinks from the landing, on the UI thread, and not when JS has heard of it and has had its turn:
-    // the next screen is asked for at the landing, and JS then spends a quarter of a second to most of a second
-    // mounting it, in which a sink that waited on a JS timer sat resting (0.4 to 1 s on the walked emulator,
-    // where the ritual means 40 to 80 ms). So the descent's own end begins it, after the rest. Not for one that
-    // something cancelled (a tap hurries the book), and not while the closed book is being asked something:
-    // that sinks when it is answered, which only JS knows.
+    // a JS thread busy with anything at all (a list refreshing, a screen mounting) held a sink that waited on a
+    // JS timer at rest for 0.4 to 1 s on the walked emulator, where the ritual means 40 to 80 ms. So the
+    // descent's own end begins it, after the rest, and the next screen is only asked for once it has begun. Not
+    // for a descent that something cancelled (a tap hurries the book), and not while the closed book is being
+    // asked something: that rests and sinks once it is answered, which only JS knows.
     const rest = close.gap;
     const sinkMs = close.sink;
     const landed = (finished?: boolean) => {
@@ -445,29 +468,34 @@ export function BookStage({
   const sinking = closing?.sinking ?? false;
   useEffect(() => {
     if (!sinking || !shutRitual) return;
-    const duration = shutReduced ? CLOSE_REDUCED_MS : shutHurry ? HURRY_MS : shutRitual.close.sink;
-    let live = true;
-    // The sink the cover's landing began, on the UI thread, goes on as it is: begun again from here it would
-    // start over, and take its whole time again. (A hurried closing is a new sink of its own.) It is still told
-    // that the UI thread has taken it up, as it was asked to.
-    if (shutHurry || sinkBegunHere.get() !== 1) {
-      sink.set(
-        withTiming(1, {
-          duration,
-          easing: shutReduced ? Easing.out(Easing.quad) : EASE,
-          reduceMotion: ReduceMotion.Never,
-        }),
-      );
-    }
-    // The closing is told when the UI thread has taken the sink up. A hurried closing asks for the next
-    // screen then, so that it arrives as the book goes: it does not wait for the book to be gone.
-    begun(() => {
-      if (live) hasSunk();
+    const { gap, sink: sinkMs } = shutRitual.close;
+    const timing = (duration: number, easing: WithTimingConfig['easing']) => ({
+      duration,
+      easing,
+      reduceMotion: ReduceMotion.Never,
     });
-    return () => {
-      live = false;
-    };
-  }, [sinking, shutHurry, shutReduced, shutRitual, sink, sinkBegunHere, hasSunk, begun]);
+    if (shutReduced) {
+      sink.set(withTiming(1, timing(CLOSE_REDUCED_MS, Easing.out(Easing.quad))));
+    } else if (shutHurry) {
+      // A hurried closing is a sink of its own, from wherever the book has got to.
+      sink.set(withTiming(1, timing(HURRY_MS, EASE)));
+    } else if (sinkBegunHere.get() !== 1) {
+      // A closed book that was asked something, once it is answered (or one whose landing was never heard):
+      // it rests as a book that was asked nothing does, and the rest is the UI thread's, not a JS timer's.
+      sink.set(withDelay(gap, withTiming(1, timing(sinkMs, EASE))));
+    }
+    // The sink the cover's landing began goes on as it is: begun again from here it would start over, and
+    // take its whole time again.
+  }, [sinking, shutHurry, shutReduced, shutRitual, sink, sinkBegunHere]);
+  // The book has begun to sink: said from the sink's own first frame, on the UI thread, whoever began it and
+  // however late. The next screen is asked for then (./useBookClosing), and so it is never mounted over a
+  // book that is still at rest: the walked emulator showed it in a frame or two, and its plate cut the book.
+  useAnimatedReaction(
+    () => sink.get() > 0,
+    (moving, was) => {
+      if (moving && !was) runOnJS(beganSinking)();
+    },
+  );
 
   const motion = useAnimatedStyle(() => {
     const t = arrive.get();

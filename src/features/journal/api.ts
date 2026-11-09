@@ -44,11 +44,41 @@ async function withJournal<T>(
 
 async function mutate<T>(
   task: (journal: Journal) => Promise<JournalResult<T>>,
+  tell: () => void = notifyJournalChanged,
 ): Promise<JournalResult<T>> {
   const result = await withJournal(task);
-  if (result.ok) notifyJournalChanged();
+  if (result.ok) tell();
   return result;
 }
+
+let commitHolds = 0;
+let commitOwed = false;
+
+/**
+ * Holds the news of an entry being kept until the returned function is called (once is enough; it can be
+ * called again). The book shuts as its entry is kept, and Home, beneath the session, and every list refreshed
+ * at that moment: re-rendered, read again and drawn again, through the leaf, the cover and its landing. On
+ * the walked emulator the landing was felt a quarter of a second late, and a descent was drawn in one frame.
+ * Nothing on screen needs the news before the book has gone: Completion reads the entry as it mounts, and
+ * Home is hidden until after it. Only a commit's news waits; drafts and recordings tell theirs at once.
+ */
+export function holdCommitNews(): () => void {
+  commitHolds += 1;
+  let held = true;
+  return () => {
+    if (!held) return;
+    held = false;
+    commitHolds -= 1;
+    if (commitHolds > 0 || !commitOwed) return;
+    commitOwed = false;
+    notifyJournalChanged();
+  };
+}
+
+const tellCommit = () => {
+  if (commitHolds > 0) commitOwed = true;
+  else notifyJournalChanged();
+};
 
 export const newDraftId = async (): Promise<JournalResult<string>> => {
   try {
@@ -95,7 +125,7 @@ export const updateDraft = (id: string, change: (entry: Entry) => EntryContent) 
     return saved.ok ? { ok: true, value: undefined } : saved;
   });
 export const commitEntry = (id: string, content: EntryContent) =>
-  mutate((journal) => journal.commitEntry(id, content));
+  mutate((journal) => journal.commitEntry(id, content), tellCommit);
 export const discardDraft = (id: string) => mutate((journal) => journal.discardDraft(id));
 /**
  * Clears what a draft that was never written may have left (a recording begun before the first save),

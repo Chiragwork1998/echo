@@ -1,5 +1,6 @@
 import { type ComponentProps, type ComponentRef, type ReactNode, type RefObject } from 'react';
 import { StyleSheet, TextInput, View, useWindowDimensions } from 'react-native';
+import type { SharedValue } from 'react-native-reanimated';
 
 import { useLayout } from '@/design/layout';
 
@@ -68,9 +69,11 @@ type Props = {
   onOpened?: () => void;
   /** The book has drawn its first frame (./BookStage): what was kept on screen until then may go. */
   onDrawn?: () => void;
-  /** The closing: the cover has landed, and the book has begun to sink (as the UI thread takes it up). */
+  /** The closing: the cover has landed, and the UI thread has drawn the first frame of the book's sink. */
   onLanded?: () => void;
   onSinkBegun?: () => void;
+  /** The page going without its entry being kept: the opening stops where it is (./BookStage). */
+  going?: SharedValue<number>;
   inputRef: RefObject<ComponentRef<typeof TextInput> | null>;
   value: string;
   onChangeText: (text: string) => void;
@@ -115,6 +118,7 @@ export function BookPage(props: Props) {
     onDrawn,
     onLanded,
     onSinkBegun,
+    going,
     children,
     ...page
   } = props;
@@ -147,6 +151,7 @@ export function BookPage(props: Props) {
         onDrawn={onDrawn}
         onLanded={onLanded}
         onSinkBegun={onSinkBegun}
+        going={going}
       >
         {(open, headed) => (
           <PaperProvider look={look}>

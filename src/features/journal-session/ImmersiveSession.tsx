@@ -7,6 +7,7 @@ import Animated, {
   ReduceMotion,
   runOnJS,
   useAnimatedKeyboard,
+  useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -40,6 +41,7 @@ import { useBookClosing } from '@/features/book/useBookClosing';
 import { useEasedKeys } from '@/features/book/useEasedKeys';
 import { volumeById, volumeIndex, VOLUMES } from '@/features/book/volumes';
 import { useRhythm } from '@/features/journal';
+import { holdCommitNews } from '@/features/journal/api';
 import { usePreferences } from '@/state/preferences';
 import { useHomeDissolve, useWhileHere } from '@/features/home/dissolve';
 import { usePlateFrame, usePlatePoint } from '@/design/usePlatePoint';
@@ -78,6 +80,14 @@ const NAME_HOLD_MS = 400;
  * book does not wait for the last hair of it, and its sink and the next screen come that much sooner.
  */
 export const NAME_UNDRAW_MS = 160;
+/**
+ * An answered book that is not back in its place by now goes anyway: a keyboard height that is never given
+ * back (the walk found one left behind once, with no keys on screen) must not hold the book. The keys go in
+ * a quarter to half a second, and the book eases after them in a third more.
+ */
+export const BACK_IN_PLACE_NET_MS = 1200;
+/** The keys are down, and the book back in its place, within a point of where they rest. */
+const KEYS_DOWN = 1;
 /** The book keeps this far clear of the question while it is asked. */
 const PROMPT_GAP = 22;
 /** However tall the question grows, the book steps back no further than this. */
@@ -182,7 +192,13 @@ export function ImmersiveSession({
   const volume = volumeById(picked ?? volumePin() ?? remembered ?? undefined);
   // How many echoes the book holds: a count and nothing else, so that a thicker book riffles a few
   // leaves as it opens. It arrives long before the cover starts, a second or more after the screen.
-  const echoes = useRhythm().data?.totalReflections ?? 0;
+  // Once its entry is kept the book holds one more, and lets that leaf in as its cover lands (LeftStack),
+  // though the journal is not told of the entry until the book has shut (see the closing below).
+  const counted = useRhythm().data?.totalReflections ?? 0;
+  const [keptOn, setKeptOn] = useState<number | null>(null);
+  if (keeping && keptOn === null) setKeptOn(counted);
+  if (!keeping && keptOn !== null) setKeptOn(null);
+  const echoes = parting && keptOn !== null ? Math.max(counted, keptOn + 1) : counted;
   const clearOfKeyboard = useBookFrame(insets.top + (onboarding ? HEADER_HEIGHT - 5 : 0));
   // The daily book rests in the middle of the screen. First Echo keeps its place under the header.
   const bookDrop = onboarding
@@ -252,10 +268,28 @@ export function ImmersiveSession({
     }, ms);
     later.current.add(id);
   };
+  // The answered book goes once it is back in its place: the keys it stepped back from have gone, and the book
+  // has eased after them (D-010). After Not now it went as the line was taken back, with the keys still going
+  // and the book still easing, and the next screen was mounted into all of that at once (walk v11:
+  // Completion's photograph jumped from nothing to most of the way in one frame; after Write it, which holds
+  // the name until the keys have long gone, it dissolved). The UI thread says when it is back (see `keys`).
+  const awaitingPlace = useSharedValue(0);
+  const inPlace = useRef<(() => void) | null>(null);
   const answered = () => {
     const release = answer.current;
     answer.current = null;
-    release?.();
+    if (!release) return;
+    let gone = false;
+    const go = () => {
+      if (gone) return;
+      gone = true;
+      inPlace.current = null;
+      awaitingPlace.set(0);
+      release();
+    };
+    inPlace.current = go;
+    after(BACK_IN_PLACE_NET_MS, go);
+    awaitingPlace.set(1);
   };
   const ask = useCallback(
     () =>
@@ -335,17 +369,26 @@ export function ImmersiveSession({
   // Once the entry is kept, the book shuts before the next screen comes (the session asks for it
   // when it is ready to go). The keys go first, so the book settles back to its place as it closes
   // (D-010). The first time, the closed book asks whose it is.
+  //
+  // The journal hears of the entry as the next screen is asked for, and not while the book shuts: told
+  // as it was kept, Home beneath and every list read and drew themselves again through the leaf, the
+  // cover and its landing (holdCommitNews). The book itself counts the entry at once (`echoes`).
   const { onLeave } = session;
   useEffect(() => {
     if (!bookInView || !pageOpen) return;
-    return onLeave(() => {
+    const tell = holdCommitNews();
+    const unregister = onLeave(() => {
       const { loaded, asked } = useBookOwner.getState();
       const question = ownable && loaded && !asked;
       // The closing first: letting the keys go blurs the page, and on web that draws at once.
       const closed = shut(question ? { atContact: ask, asking: true } : undefined);
       Keyboard.dismiss();
-      return closed;
+      return closed.finally(tell);
     });
+    return () => {
+      unregister();
+      tell();
+    };
   }, [ask, bookInView, onLeave, ownable, pageOpen, shut]);
 
   // Leaving without Reflect (Back, then Keep draft or Discard; or Back on an empty page): the page fades out by
@@ -455,6 +498,14 @@ export function ImmersiveSession({
     const scale = Math.min(1, Math.max(LEAST_STEP_BACK, fits));
     return { transform: [{ translateY: -rise }, { scale }] };
   });
+  // The answered book is back in its place once the keys it follows are down (see `answered`).
+  const backInPlace = useCallback(() => inPlace.current?.(), []);
+  useAnimatedReaction(
+    () => awaitingPlace.get() === 1 && keys.get() <= qaKeyboard + KEYS_DOWN,
+    (back, was) => {
+      if (back && !was) runOnJS(backInPlace)();
+    },
+  );
 
   // Recording is a point of light, and Stop is always one glance away in the quiet row. A pause,
   // with a take to show for it, brings the controls too.
@@ -611,6 +662,8 @@ export function ImmersiveSession({
             onStamped={stamped}
             onLanded={coverLanded}
             onSinkBegun={bookSinkBegun}
+            // Back while the book opens: the opening stops where it is as the page fades, and is not felt.
+            going={departure}
             concealed={hidden}
             dimmed={noteDrawn}
             arrival={session.arrival}

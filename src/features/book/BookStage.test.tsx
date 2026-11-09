@@ -9,6 +9,7 @@
 import { act, fireEvent, screen } from '@testing-library/react-native';
 import type { ComponentProps, ReactElement } from 'react';
 import { StyleSheet } from 'react-native';
+import { makeMutable } from 'react-native-reanimated';
 
 import { cue } from '@/design/haptics';
 import { ThemeProvider } from '@/design/theme';
@@ -269,6 +270,65 @@ describe('the unseating of the cover', () => {
     await render(book({ start: true, hurry: true }));
     await tick(FULL.rise + FULL.cover);
     expect(cue).not.toHaveBeenCalled();
+  });
+});
+
+describe('the opening, when the page goes without its entry being kept', () => {
+  // Back while the book opens: the page fades out by its own animation (../journal-session), and `going` is
+  // that fade. From its first frame the opening stops where it is. The walk (v11, S4) felt the unseating tick
+  // 120 ms into the fade, the swing going on beneath it with nothing seen to lift.
+  beforeEach(() => {
+    animationClock.stepped = true;
+  });
+  const angle = () => {
+    const hinge = drawn('book-hinge');
+    const turn = StyleSheet.flatten(hinge!.props.style).transform as { rotateY?: string }[];
+    return turn.find((part) => part.rotateY !== undefined)?.rotateY;
+  };
+
+  it('is not felt once the page has begun to go: no unseating tick outlives the opening', async () => {
+    const going = makeMutable(0);
+    await render(book({ start: true, going }));
+    // All but risen, and the board about to swing: it has not yet left the page (S4 was 0.11 s after the rise).
+    await tick(FULL.rise - 20);
+    expect(cue).not.toHaveBeenCalled();
+    // The page's fade draws its first frame.
+    await act(async () => going.set(0.05));
+    await tick(FULL.cover + 500);
+    expect(cue).not.toHaveBeenCalled();
+  });
+
+  it('stops the cover where it is, and does not tell the page it has opened', async () => {
+    const going = makeMutable(0);
+    const onOpened = jest.fn();
+    await render(book({ start: true, going, onOpened }));
+    await tick(FULL.rise + FULL.cover / 2);
+    await act(async () => going.set(0.05));
+    await redraw({ start: true, going, onOpened });
+    const stopped = angle();
+    await tick(FULL.cover + 2000);
+    await redraw({ start: true, going, onOpened });
+    expect(angle()).toBe(stopped);
+    expect(onOpened).not.toHaveBeenCalled();
+  });
+
+  it('does not begin to open on a page that has already begun to go', async () => {
+    const going = makeMutable(0.3);
+    await render(book({ start: false, going }));
+    await redraw({ start: true, going });
+    await tick(FULL.rise + FULL.cover + 200);
+    await redraw({ start: true, going });
+    expect(cue).not.toHaveBeenCalled();
+    expect(style().opacity).toBe(0);
+  });
+
+  it('still opens, and is felt, on a page that stays', async () => {
+    const going = makeMutable(0);
+    const onOpened = jest.fn();
+    await render(book({ start: true, going, onOpened }));
+    await tick(FULL.rise + FULL.cover + 100);
+    expect(cue).toHaveBeenCalledWith('tick');
+    expect(onOpened).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -762,19 +822,20 @@ describe('the book shutting follows its own animations, not the clock', () => {
     expect(onLanded).toHaveBeenCalledTimes(1);
   });
 
-  it('says the book has begun to sink when the UI thread has begun it, however late that is', async () => {
+  it('says the book has begun to sink from the sink\u2019s own first frame, however late that is', async () => {
     const onSinkBegun = jest.fn();
     await open();
     animationClock.lag = 2000;
+    // A closed book that was asked something, and has been answered: JS tells it to sink, and it rests first.
     await redraw({
       start: true,
-      closing: shutting({ contact: true, sinking: true }),
+      closing: shutting({ asking: true, contact: true, sinking: true }),
       onSinkBegun,
     });
-    await tick(1999);
+    await tick(2000 + FULL.close.gap - 1);
     expect(onSinkBegun).not.toHaveBeenCalled();
-    // The first frame the UI thread draws once it has begun (the stand-in draws one every 16 ms).
-    await tick(2 + 16);
+    // The first frame the UI thread draws once the rest is over (the stand-in draws one every 16 ms).
+    await tick(1 + 2 * 16);
     expect(onSinkBegun).toHaveBeenCalledTimes(1);
     await tick(5000);
     expect(onSinkBegun).toHaveBeenCalledTimes(1);
@@ -793,6 +854,9 @@ describe('the book shutting follows its own animations, not the clock', () => {
       closing: shutting({ ...asking, contact: true, sinking: true }),
       onSinkBegun,
     });
+    // The answered book rests before it sinks, as one that was asked nothing does.
+    await tick(FULL.close.gap - 20);
+    expect(onSinkBegun).not.toHaveBeenCalled();
     await tick(60);
     expect(onSinkBegun).toHaveBeenCalledTimes(1);
     await tick(FULL.close.sink + 300);
@@ -866,10 +930,10 @@ describe('the book shutting follows its own animations, not the clock', () => {
 });
 
 describe('the book sinks from the landing, on the UI thread, whatever JS is doing', () => {
-  // The next screen is asked for as the cover lands (./useBookClosing), and it takes JS a quarter of a second
-  // to most of a second to mount. The sink used to be asked for by JS, a timer after the landing, and so it
-  // waited behind that work: the walked emulator rested the shut book for 0.4 to 1 s, where the ritual means
-  // 40 to 80 ms. The UI thread that lands the cover now begins the sink itself, after the rest.
+  // The sink used to be asked for by JS, a timer after the landing, and so it waited behind whatever JS was
+  // doing (mounting the next screen, above all): the walked emulator rested the shut book for 0.4 to 1 s, where
+  // the ritual means 40 to 80 ms. The UI thread that lands the cover begins the sink itself, after the rest,
+  // and says so from the sink's first frame; the next screen is asked for only then (./useBookClosing).
   beforeEach(() => {
     animationClock.stepped = true;
   });
@@ -906,6 +970,26 @@ describe('the book sinks from the landing, on the UI thread, whatever JS is doin
     const half = await shown(props);
     expect(half).toBeGreaterThan(0);
     expect(half).toBeLessThan(1);
+  });
+
+  it('begins to sink within its rest of the landing with nothing asked of JS, and says so from that frame', async () => {
+    const heard: string[] = [];
+    const onLanded = jest.fn(() => heard.push('landed'));
+    const onSinkBegun = jest.fn(() => heard.push('sinking'));
+    await open();
+    // JS has no turn in all this time: whatever the UI thread hands it arrives five seconds late, and the
+    // closing it was given never changes.
+    animationClock.jsLag = 5000;
+    const props = { start: true, closing: shutting(), onLanded, onSinkBegun };
+    await redraw(props);
+    await tick(landing + gap - 20);
+    expect(await shown(props)).toBe(1);
+    await tick(20 + 2 * 16);
+    expect(await shown(props)).toBeLessThan(1);
+    expect(heard).toEqual([]);
+    // JS hears of both once it is free, in the order they were drawn.
+    await tick(5000);
+    expect(heard).toEqual(['landed', 'sinking']);
   });
 
   it('has sunk from sight when the sink was due, with no word from JS, however late JS is', async () => {
@@ -976,13 +1060,15 @@ describe('the book sinks from the landing, on the UI thread, whatever JS is doin
     await redraw(props);
     await tick(landing + gap + sink + 5000);
     expect(await shown(props)).toBe(1);
-    // The answer is given, JS says the book sinks, and it does.
+    // The answer is given, JS says the book sinks, and it rests for its gap on the UI thread, then sinks.
     const answered = {
       start: true,
       closing: shutting({ asking: true, contact: true, sinking: true }),
     };
     await redraw(answered);
-    await tick(sink + 60);
+    await tick(gap - 20);
+    expect(await shown(answered)).toBe(1);
+    await tick(20 + sink + 60);
     expect(await shown(answered)).toBe(0);
   });
 
@@ -996,7 +1082,7 @@ describe('the book sinks from the landing, on the UI thread, whatever JS is doin
     expect(await shown(props)).toBe(1);
     const told = { start: true, closing: shutting({ contact: true, sinking: true }) };
     await redraw(told);
-    await tick(sink + 60);
+    await tick(gap + sink + 60);
     expect(await shown(told)).toBe(0);
   });
 

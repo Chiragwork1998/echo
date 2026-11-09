@@ -8,12 +8,12 @@ import { copy } from '@/content/copy';
 import { cue } from '@/design/haptics';
 import { createMemoryJournal, setJournal, useVoiceRecorder } from '@/features/journal';
 import { JournalSession } from '@/features/journal-session/JournalSession';
-import { NAME_UNDRAW_MS } from '@/features/journal-session/ImmersiveSession';
+import { BACK_IN_PLACE_NET_MS, NAME_UNDRAW_MS } from '@/features/journal-session/ImmersiveSession';
 import { NAME_IDLE_MS } from '@/features/journal-session/NamePrompt';
 import { clearDialogs } from '@/features/tab-pages/Dialog';
 import { initialOnboarding, useOnboarding } from '@/state/onboarding';
 import { resetPreferences } from '@/state/preferences';
-import { animationClock } from '@/testing/reanimatedMock';
+import { animationClock, keyboard } from '@/testing/reanimatedMock';
 import { render } from '@/testing/render';
 
 import { bookCopy } from './bookCopy';
@@ -22,6 +22,7 @@ import { stampMs } from './InscribedName';
 import { resetBookOwner, useBookOwner } from './owner';
 import type { OwnerRecord } from './ownerStore';
 import { FULL, HURRY_MS, closeTimeline } from './ritual';
+import { KEYS_EASE_MS } from './useEasedKeys';
 
 jest.mock('@/design/haptics');
 jest.mock('expo-router', () => {
@@ -37,10 +38,14 @@ jest.mock(
   'react-native-safe-area-context',
   () => jest.requireActual('react-native-safe-area-context/jest/mock').default,
 );
-jest.mock('react-native-reanimated', () => ({
-  ...jest.requireActual('@/testing/reanimatedMock').reanimatedMock,
-  useAnimatedKeyboard: () => ({ height: { get: () => 0 }, state: { get: () => 0 } }),
-}));
+// The keyboard's height is the stand-in's own shared value, so that a test can raise the keys and let them go.
+jest.mock('react-native-reanimated', () => {
+  const stand = jest.requireActual('@/testing/reanimatedMock');
+  return {
+    ...stand.reanimatedMock,
+    useAnimatedKeyboard: () => ({ height: stand.keyboard, state: { get: () => 0 } }),
+  };
+});
 let mockReduced = false;
 jest.mock('@/design/useReduceMotion', () => ({ useReduceMotion: () => mockReduced }));
 jest.mock('@/features/journal', () => ({
@@ -71,6 +76,7 @@ beforeEach(() => {
   // The cover and the book are walked a frame at a time, as their own animations: the closing follows them.
   animationClock.reset();
   animationClock.stepped = true;
+  keyboard.set(0);
   mockRecord = { v: 1, name: null, asked: false, namedOpens: 0 };
   jest.useFakeTimers();
   jest.clearAllMocks();
@@ -95,6 +101,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   animationClock.reset();
+  keyboard.set(0);
   setJournal(null);
   resetBookOwner();
   jest.restoreAllMocks();
@@ -230,7 +237,10 @@ describe('Write it', () => {
     expect(cue).toHaveBeenCalledWith('fine');
     expect(cue).toHaveBeenCalledTimes(2);
     expect(router.navigate).not.toHaveBeenCalled();
+    // Held, then the rest and the sink, which the late UI thread also begins late.
     await tick(400 + 100);
+    expect(router.navigate).not.toHaveBeenCalled();
+    await tick(2000 + FULL.close.gap + 100);
     expect(navigated()).toEqual(['/home/complete']);
   });
 
@@ -253,18 +263,50 @@ describe('Not now', () => {
     expect(cue).not.toHaveBeenCalledWith('fine');
   });
 
-  it('lets the book go as the line is as good as gone, and asks for the next screen then, to arrive over the sink', async () => {
+  it('lets the book go as the line is as good as gone: it rests, and the next screen comes as it sinks', async () => {
     await writeAndReflect();
     await toContact();
     await fireEvent.press(screen.getByTestId('name-not-now'));
     // The line is taken back over 320 ms, decelerating: it is nearly all gone by half way, and the book
-    // does not wait for its last hair. The next screen is asked for as the answer is given, and the book
-    // rests a beat and sinks as it comes, where the screen was asked for after the book had half gone.
-    await tick(NAME_UNDRAW_MS - 60);
+    // does not wait for its last hair. Then it rests, as a book that was asked nothing does, and the next
+    // screen is asked for once it has begun to sink: asked for as the answer was given, it was mounted over
+    // the book at rest and cut it away (walk v11).
+    await tick(NAME_UNDRAW_MS + FULL.close.gap / 2);
     expect(router.navigate).not.toHaveBeenCalled();
-    await tick(120);
+    await tick(FULL.close.gap / 2 + 80);
     expect(navigated()).toEqual(['/home/complete']);
     expect(NAME_UNDRAW_MS).toBeLessThan(200);
+  });
+
+  it('waits for the book to be back in its place, the keys gone, before it rests and sinks', async () => {
+    await writeAndReflect();
+    await toContact();
+    // The field has the keys: the closed book has stepped back, and risen, from them.
+    await act(async () => keyboard.set(300));
+    await tick(KEYS_EASE_MS + 100);
+    await fireEvent.press(screen.getByTestId('name-not-now'));
+    // The line is long gone, but the keys are still up and the book is not back: nothing goes.
+    await tick(NAME_UNDRAW_MS + FULL.close.gap + 400);
+    expect(router.navigate).not.toHaveBeenCalled();
+    // The keys go, and the book eases back after them; back, it rests, and then it sinks.
+    await act(async () => keyboard.set(0));
+    await tick(KEYS_EASE_MS - 40);
+    expect(router.navigate).not.toHaveBeenCalled();
+    await tick(40 + FULL.close.gap + 100);
+    expect(navigated()).toEqual(['/home/complete']);
+    expect(mockRecord).toMatchObject({ name: null, asked: true });
+  });
+
+  it('goes anyway, a moment later, when the keyboard height is never given back', async () => {
+    await writeAndReflect();
+    await toContact();
+    await act(async () => keyboard.set(300));
+    await tick(KEYS_EASE_MS + 100);
+    await fireEvent.press(screen.getByTestId('name-not-now'));
+    await tick(NAME_UNDRAW_MS + BACK_IN_PLACE_NET_MS - 60);
+    expect(router.navigate).not.toHaveBeenCalled();
+    await tick(60 + FULL.close.gap + 120);
+    expect(navigated()).toEqual(['/home/complete']);
   });
 
   it('does not let the book go before the line has begun to be taken back, on a UI thread two seconds late', async () => {
@@ -277,7 +319,10 @@ describe('Not now', () => {
     expect(router.navigate).not.toHaveBeenCalled();
     await tick(2000 - (NAME_UNDRAW_MS + 1500 + 300) - 1);
     expect(router.navigate).not.toHaveBeenCalled();
+    // The line goes, then the rest and the sink, which the late UI thread also begins late.
     await tick(NAME_UNDRAW_MS + 60);
+    expect(router.navigate).not.toHaveBeenCalled();
+    await tick(2000 + FULL.close.gap + 100);
     expect(navigated()).toEqual(['/home/complete']);
     expect(mockRecord).toMatchObject({ name: null, asked: true });
   });
