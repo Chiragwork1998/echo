@@ -103,6 +103,95 @@ describe('Resolve', () => {
   });
 });
 
+describe('Resolve on a page’s first wait (atOnce)', () => {
+  // The walk (v11): tabs tapped quickly showed Echoes, then Patterns, as a heading on bare sky for
+  // half a second before any glass came. The page's first wait draws its skeleton with the heading.
+  const barred = (ready: boolean, atOnce = true) => (
+    <Resolve
+      ready={ready}
+      skeleton={
+        <Bars>
+          <Text>Bar</Text>
+        </Bars>
+      }
+      atOnce={atOnce}
+    >
+      <Text>Arrived</Text>
+    </Resolve>
+  );
+  /** How see-through the bars are as drawn: the least opacity of them and everything above them. */
+  const barsSeen = () => {
+    let seen = 1;
+    for (
+      let node = screen.getByText('Bar', { includeHiddenElements: true }).parent;
+      node;
+      node = node.parent
+    ) {
+      const opacity = (StyleSheet.flatten(node.props.style) as { opacity?: number } | undefined)
+        ?.opacity;
+      seen = Math.min(seen, opacity ?? 1);
+    }
+    return seen;
+  };
+
+  it('draws the skeleton whole from the first frame, with nothing to fade in', async () => {
+    await render(barred(false));
+    expect(barsSeen()).toBe(1);
+    expect(asked()).toEqual([]);
+  });
+
+  it('without it, keeps the skeleton undrawn for a quarter of a second', async () => {
+    await render(barred(false, false));
+    expect(barsSeen()).toBe(0);
+  });
+
+  it('hands a quick answer over as one: it arrives over the skeleton, which goes under it', async () => {
+    const view = await render(barred(false));
+    await advance(100);
+    await view.rerender(barred(true));
+    expect(screen.getByText('Arrived')).toBeTruthy();
+    expect(screen.getByText('Bar', { includeHiddenElements: true })).toBeTruthy();
+    expect(asked().sort((a, b) => a - b)).toEqual([180, 240]);
+    await advance(1000);
+    expect(screen.queryByText('Bar', { includeHiddenElements: true })).toBeNull();
+  });
+
+  it('lets what comes after a long first wait arrive in its own order, as after any long wait', async () => {
+    const rowsOf = (ready: boolean) => (
+      <Resolve ready={ready} skeleton={<Skeleton />} rows atOnce>
+        <ArriveInOrder index={0} step={40} cap={8}>
+          <Text>First</Text>
+        </ArriveInOrder>
+        <ArriveInOrder index={2} step={40} cap={8}>
+          <Text>Third</Text>
+        </ArriveInOrder>
+      </Resolve>
+    );
+    const quick = await render(rowsOf(false));
+    await advance(100);
+    delay.mockClear();
+    await quick.rerender(rowsOf(true));
+    // Quick: one block, no row waits its turn.
+    expect(waits()).toEqual([0]);
+    await quick.unmount();
+
+    const slow = await render(rowsOf(false));
+    await advance(300);
+    delay.mockClear();
+    await slow.rerender(rowsOf(true));
+    expect(waits()).toEqual([0, 80]);
+  });
+
+  it('keeps the pause for every later wait: only the first is the page’s', async () => {
+    const view = await render(barred(true));
+    await view.rerender(barred(false));
+    expect(barsSeen()).toBe(0);
+    await advance(300);
+    await view.rerender(barred(false));
+    expect(barsSeen()).toBe(1);
+  });
+});
+
 describe('Resolve staggering', () => {
   const lines = (count: number) =>
     Array.from({ length: count }, (_, i) => <Text key={i}>{`Line ${i}`}</Text>);

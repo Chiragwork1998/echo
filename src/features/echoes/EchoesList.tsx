@@ -21,7 +21,6 @@ import { ArriveInOrder, useLaidOut } from '@/features/tab-pages/Resolve';
 import { echoesCopy } from './echoesCopy';
 import { monthKey, monthTitle } from './entryFacts';
 import { EntryRow, EntryRowSkeleton, ROW_TEXT_INSET } from './EntryRow';
-import { useRemovedEchoes } from './removed';
 
 type Month = { key: string; title: string; rows: EntrySummary[] };
 
@@ -82,17 +81,18 @@ const UNLIMITED = 100000;
 
 /**
  * A row that has been deleted, on its way out. It keeps its place and its size until it has been
- * laid out, then fades (a month's glass does not: glass under a fading ancestor loses its blur) and
- * narrows to nothing, and the rows below are carried up with it. All of it is drawn on the UI thread.
- * Under Reduce Motion it only fades, and the gap closes when it has gone. It cannot be touched, and
- * screen readers never see it.
+ * laid out and the list is in view, then fades (a month's glass does not: glass under a fading
+ * ancestor loses its blur) and narrows to nothing, and the rows below are carried up with it. All of
+ * it is drawn on the UI thread. Under Reduce Motion it only fades, and the gap closes when it has
+ * gone. It cannot be touched, and screen readers never see it.
  */
 function Leaving({
   testID,
   fades,
+  inView,
   onGone,
   children,
-}: PropsWithChildren<{ testID: string; fades: boolean; onGone: () => void }>) {
+}: PropsWithChildren<{ testID: string; fades: boolean; inView: boolean; onGone: () => void }>) {
   const reduced = useReduceMotion();
   const { placed, onLayout: laidOut } = useLaidOut(true);
   const measured = useRef(false);
@@ -105,8 +105,11 @@ function Leaving({
   const open = useSharedValue(1);
   // How tall it is when whole, which it says when it is laid out.
   const whole = useSharedValue(0);
+  // Begun once, and never undone: a list that goes out of view part of the way through lets it finish.
+  const [going, setGoing] = useState(false);
+  if (placed && inView && !going) setGoing(true);
   useEffect(() => {
-    if (!placed) return;
+    if (!going) return;
     open.set(
       withTiming(
         0,
@@ -121,7 +124,7 @@ function Leaving({
         },
       ),
     );
-  }, [finish, open, placed, reduced]);
+  }, [finish, going, open, reduced]);
   const narrow = !reduced;
   const style = useAnimatedStyle(() => ({
     opacity: fades ? open.get() : 1,
@@ -153,7 +156,17 @@ type Props = {
   onOpen: (id: string) => void;
   /** Rows from before a search that is still running: shown, quietly, until the answer comes. */
   waiting?: boolean;
+  /** Echoes that have been deleted: a row of one that goes from the list leaves (see useLeftOut). */
+  deleted?: ReadonlySet<string>;
+  /**
+   * Whether the page is in view. A deleted row waits whole in its place until it is: the echo is
+   * deleted from the reader, above the list, and its exit is for the person to see (the walk, v11:
+   * it was over before the reader had gone).
+   */
+  inView?: boolean;
 };
+
+const NONE_DELETED: ReadonlySet<string> = new Set();
 
 /** A search that answers inside this never dims the list at all. */
 const DIM_AFTER_MS = 400;
@@ -168,7 +181,13 @@ const ROWS_THAT_ARRIVE = 8;
  * and are hidden from screen readers, which hear that the search is running instead. The list is
  * one tree whether it waits or not, so the months are never torn down and drawn again.
  */
-export function EchoesList({ rows, onOpen, waiting = false }: Props) {
+export function EchoesList({
+  rows,
+  onOpen,
+  waiting = false,
+  deleted = NONE_DELETED,
+  inView = true,
+}: Props) {
   const reduced = useReduceMotion();
   const dim = useSharedValue(1);
   useEffect(() => {
@@ -197,11 +216,10 @@ export function EchoesList({ rows, onOpen, waiting = false }: Props) {
   const dimmed = useAnimatedStyle(() => ({ opacity: glass ? 1 : dim.get() }));
 
   // The rows as drawn: those given, and deleted ones still leaving, each in its place.
-  const removed = useRemovedEchoes((state) => state.ids);
   const [listed, setListed] = useState<readonly Listed[]>(() =>
     rows.map((entry) => ({ entry, leaving: false })),
   );
-  const current = listRows(listed, rows, removed);
+  const current = listRows(listed, rows, deleted);
   if (current !== listed) setListed(current);
   const gone = (ids: readonly string[]) =>
     setListed((now) => now.filter(({ entry }) => !ids.includes(entry.id)));
@@ -254,6 +272,7 @@ export function EchoesList({ rows, onOpen, waiting = false }: Props) {
                         key={entry.id}
                         testID={`echo-row-${entry.id}-leaving`}
                         fades
+                        inView={inView}
                         onGone={() => gone([entry.id])}
                       >
                         {drawn}
@@ -270,6 +289,7 @@ export function EchoesList({ rows, onOpen, waiting = false }: Props) {
                 key={month.key || 'undated'}
                 testID={`echo-month-${month.key}-leaving`}
                 fades={false}
+                inView={inView}
                 onGone={() => gone(month.rows.map(({ id }) => id))}
               >
                 {body}

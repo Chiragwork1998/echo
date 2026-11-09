@@ -273,7 +273,13 @@ export function PatternsScreen() {
   const { state, entries, retry } = usePatterns();
   return (
     <TabPage title={patternsCopy.title}>
-      <Resolve ready={state.kind !== 'loading'} skeleton={<Counting />} each style={styles.stack}>
+      <Resolve
+        ready={state.kind !== 'loading'}
+        skeleton={<Counting />}
+        each
+        atOnce
+        style={styles.stack}
+      >
         {state.kind === 'error' ? (
           <Notice key="error" message={patternsCopy.loadError} onAction={() => void retry()} />
         ) : null}

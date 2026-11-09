@@ -1,25 +1,45 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { useEffect as mockUseEffect } from 'react';
 import { router } from 'expo-router';
-import { Dimensions } from 'react-native';
+import { Dimensions, StyleSheet } from 'react-native';
 
+import { ThemeProvider } from '@/design/theme';
 import {
   createMemoryJournal,
+  deleteEntry,
   setJournal,
   useEntries,
   type Entry,
   type EntrySummary,
+  type Journal,
 } from '@/features/journal';
+import { notifyJournalChanged } from '@/features/journal/api';
 import { usePreferences } from '@/state/preferences';
+import { glassAncestors, mostFadedGlass } from '@/testing/glass';
 import { render } from '@/testing/render';
 
 import { echoesCopy } from './echoesCopy';
 import { hideEcho, resetRemovedEchoes } from './removed';
 import { EchoesScreen } from './EchoesScreen';
 
+// The page has the focus unless a test puts the reader above it, and the stack says when its
+// transition onto the page has ended when a test says so.
+type Transition = (event: { data?: { closing?: boolean } }) => void;
+const mockStack = {
+  focused: true,
+  transitions: new Set<Transition>(),
+  navigation: {
+    addListener: (_type: string, listener: Transition) => {
+      mockStack.transitions.add(listener);
+      return () => void mockStack.transitions.delete(listener);
+    },
+  },
+};
 jest.mock('expo-router', () => ({
   router: { push: jest.fn(), back: jest.fn(), navigate: jest.fn() },
   usePathname: () => '/home/echoes',
+  useIsFocused: () => mockStack.focused,
+  useNavigation: () => mockStack.navigation,
 }));
 jest.mock(
   'react-native-safe-area-context',
@@ -80,6 +100,8 @@ const unreadable: EntrySummary = {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockStack.focused = true;
+  mockStack.transitions.clear();
   mockMounts.rows = 0;
   mockedEntries.mockImplementation(actualEntries);
   usePreferences.setState({ theme: 'night' });
@@ -108,6 +130,19 @@ describe('EchoesScreen', () => {
     expect(screen.getByText('The newest words')).toBeTruthy();
     expect(screen.getByText(echoesCopy.voiceEcho)).toBeTruthy();
     expect(screen.getByRole('header', { name: echoesCopy.title })).toBeTruthy();
+  });
+
+  it('has its skeleton on glass beside the heading from the first frame: the heading is never alone on the sky', async () => {
+    // The walk (v11): Echoes, reached by a quick tap, was its heading on bare sky for a quarter of a
+    // second before any glass came. The archive has not answered yet here, and may never.
+    const base = createMemoryJournal({ entries: [entry('one', '2026-11-05')] });
+    setJournal({ ...base, listEntries: () => new Promise(() => undefined) });
+    await render(<EchoesScreen />);
+    expect(screen.getByRole('header', { name: echoesCopy.title })).toBeTruthy();
+    expect(screen.getByLabelText(echoesCopy.loading)).toBeTruthy();
+    expect(glassAncestors().length).toBeGreaterThan(0);
+    // Nothing over the glass is see-through: it is drawn, and its bars with it.
+    expect(mostFadedGlass()).toBe(1);
   });
 
   it('says where the first echo will appear when there are none, and what to do', async () => {
@@ -296,5 +331,124 @@ describe('EchoesScreen when an echo is deleted', () => {
     await screen.findByTestId('echo-row-one');
     await act(async () => hideEcho('one'));
     expect(await screen.findByText(echoesCopy.empty)).toBeTruthy();
+  });
+
+  const three = () => [
+    entry('one', '2026-11-05', { title: 'First', committedAt: AT }),
+    entry('two', '2026-11-04', { title: 'Second', committedAt: AT - 1000 }),
+    entry('three', '2026-11-03', { title: 'Third', committedAt: AT - 2000 }),
+  ];
+  const listed = (id: string) => screen.queryAllByTestId(`echo-row-${id}`);
+  const leaving = (id: string) =>
+    screen.queryByTestId(`echo-row-${id}-leaving`, { includeHiddenElements: true });
+
+  /**
+   * A journal whose list is read when it is asked for and answered only when the test says, in
+   * any order: a reading begun before a deletion still holds the echo, however late it lands.
+   */
+  function heldJournal(...entries: Entry[]) {
+    const base = createMemoryJournal({ entries });
+    const held: (() => void)[] = [];
+    const journal: Journal = {
+      ...base,
+      listEntries: async () => {
+        const answer = await base.listEntries();
+        await new Promise<void>((land) => held.push(land));
+        return answer;
+      },
+    };
+    setJournal(journal);
+    return {
+      asked: () => held.length,
+      land: (reading: number) =>
+        act(async () => {
+          held[reading]?.();
+        }),
+    };
+  }
+  /** What the reader does: deletes the echo, which tells every list to read again, then says so. */
+  const deleteInReader = (id: string) =>
+    act(async () => {
+      expect((await deleteEntry(id)).ok).toBe(true);
+      hideEcho(id);
+    });
+
+  it('never lists it again while another list of the archive has read it again first', async () => {
+    // The walk (v11): three Echoes pages were open, one above another, and each read the archive
+    // again after the deletion. One below answered first, the deletion was forgotten, and the page
+    // in view listed the echo again from its own older reading, whole, pushing every row down, then
+    // dropped it in one frame when its own answer came.
+    const archive = heldJournal(...three());
+    await render(
+      <>
+        <EchoesScreen />
+        <EchoesScreen />
+      </>,
+    );
+    expect(archive.asked()).toBe(2);
+    await archive.land(0);
+    await archive.land(1);
+    expect(listed('two')).toHaveLength(2);
+
+    await deleteInReader('two');
+    expect(archive.asked()).toBe(4);
+    // One list's new reading lands; the other's is still on its way.
+    await archive.land(2);
+    expect(listed('two')).toHaveLength(0);
+    expect(listed('one')).toHaveLength(2);
+    expect(listed('three')).toHaveLength(2);
+    await archive.land(3);
+    expect(listed('two')).toHaveLength(0);
+    await waitFor(() => expect(leaving('two')).toBeNull(), { timeout: 3000 });
+    expect(listed('two')).toHaveLength(0);
+  });
+
+  it('never lists it again when a reading begun before the deletion lands after the one begun after it', async () => {
+    const archive = heldJournal(...three());
+    await render(<EchoesScreen />);
+    await archive.land(0);
+    expect(listed('two')).toHaveLength(1);
+    // A reading begins, and is slow; the deletion is made while it is on its way.
+    await act(async () => notifyJournalChanged());
+    await deleteInReader('two');
+    expect(archive.asked()).toBe(3);
+    await archive.land(2);
+    expect(listed('two')).toHaveLength(0);
+    // The stale answer lands last.
+    await archive.land(1);
+    expect(listed('two')).toHaveLength(0);
+    await waitFor(() => expect(leaving('two')).toBeNull(), { timeout: 3000 });
+    expect(listed('two')).toHaveLength(0);
+    expect(listed('one')).toHaveLength(1);
+    expect(listed('three')).toHaveLength(1);
+  });
+
+  it('keeps the row whole in its place while the reader is above the list, and lets it go once the list is in view', async () => {
+    // The walk (v11): the row had faded and narrowed away under the reader, and the list came back
+    // already closed up. The exit waits until the reader has gone.
+    seed(...three());
+    mockStack.focused = false;
+    const view = await render(<EchoesScreen />);
+    await screen.findByTestId('echo-row-two');
+    await deleteInReader('two');
+    expect(leaving('two')).toBeTruthy();
+    await fireEvent(leaving('two')!, 'layout', {
+      nativeEvent: { layout: { x: 0, y: 0, width: 330, height: 68 } },
+    });
+    // Long after the exit would have ended: still whole, still in its place.
+    await act(async () => new Promise((done) => setTimeout(done, 700)));
+    expect(StyleSheet.flatten(leaving('two')!.props.style).opacity).toBe(1);
+
+    // Back: the page has the focus, and the stack has finished taking the reader away.
+    mockStack.focused = true;
+    await view.rerender(
+      <ThemeProvider crossfade={false}>
+        <EchoesScreen />
+      </ThemeProvider>,
+    );
+    expect(leaving('two')).toBeTruthy();
+    await act(async () => mockStack.transitions.forEach((ended) => ended({ data: {} })));
+    await waitFor(() => expect(leaving('two')).toBeNull(), { timeout: 3000 });
+    expect(listed('two')).toHaveLength(0);
   });
 });

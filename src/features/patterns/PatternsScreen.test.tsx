@@ -7,6 +7,7 @@ import { addDays, deviceClock } from '@/features/journal/localDay';
 import { usePreferences } from '@/state/preferences';
 import { installRuntime } from '@/storage/runtime';
 import { createTestRuntime } from '@/storage/testing/nodePorts';
+import { glassAncestors, mostFadedGlass } from '@/testing/glass';
 import { render } from '@/testing/render';
 
 import { patternsCopy } from './patternsCopy';
@@ -77,6 +78,18 @@ afterEach(() => {
 });
 
 describe('PatternsScreen', () => {
+  it('has its skeleton on glass beside the heading from the first frame: the heading is never alone on the sky', async () => {
+    // The walk (v11): Patterns, reached by a quick tap, was its heading on bare sky for a quarter of
+    // a second before its glass came. The echoes have not been counted yet here, and may never be.
+    const base = createMemoryJournal({ entries: [entry('e0')] });
+    setJournal({ ...base, listEntries: () => new Promise(() => undefined) });
+    await render(<PatternsScreen />);
+    expect(screen.getByRole('header', { name: patternsCopy.title })).toBeTruthy();
+    expect(screen.getByLabelText(patternsCopy.loading)).toBeTruthy();
+    expect(glassAncestors().length).toBeGreaterThan(0);
+    expect(mostFadedGlass()).toBe(1);
+  });
+
   it('shows only the waiting line below five reflections', async () => {
     seed(4);
     await render(<PatternsScreen />);

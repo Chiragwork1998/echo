@@ -17,6 +17,8 @@ import {
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
+import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
+
 import { OnGlass } from '@/components/arrival';
 import { EchoText } from '@/components/EchoText';
 import { GlassBlur } from '@/components/GlassCard';
@@ -87,6 +89,16 @@ function useReduceTransparency() {
   return reduced;
 }
 
+/** One of the two tints of a piece of glass that is changing its strength, at its share of it. */
+function FillShare({ share, strong }: { share: SharedValue<number>; strong: boolean }) {
+  const style = useAnimatedStyle(() => ({ opacity: strong ? share.get() : 1 - share.get() }));
+  return (
+    <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, style]}>
+      <GlassFill strong={strong} />
+    </Animated.View>
+  );
+}
+
 /**
  * The pages' glass: the handoff's blur, scrim and fine white edge, with no drop shadow under it
  * (docs/DESIGN_QUALITY.md, Never). With Reduce Transparency it is the strong scrim, unblurred.
@@ -95,6 +107,7 @@ export function Surface({
   strength = 'regular',
   radius = tokens.radius.medium,
   tint,
+  strongShare,
   style,
   children,
 }: PropsWithChildren<{
@@ -102,6 +115,11 @@ export function Surface({
   radius?: number;
   /** A faint colour over the glass, as Completion's reflection card warms its own. */
   tint?: string;
+  /**
+   * For glass whose strength changes while it is on show: how strong it is, 0 to 1, which its tint
+   * follows instead of `strength`. The tints are beside the blur, never above it, so they may fade.
+   */
+  strongShare?: SharedValue<number>;
   style?: StyleProp<ViewStyle>;
 }>) {
   const { colors } = useTheme();
@@ -114,7 +132,14 @@ export function Surface({
       {!reduced && (
         <GlassBlur radius={strength === 'strong' ? tokens.blur.glassStrong : tokens.blur.glass} />
       )}
-      <GlassFill strong={strong} />
+      {strongShare && !reduced ? (
+        <>
+          <FillShare share={strongShare} strong={false} />
+          <FillShare share={strongShare} strong />
+        </>
+      ) : (
+        <GlassFill strong={strong} />
+      )}
       {tint && !reduced ? (
         <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: tint }]} />
       ) : null}

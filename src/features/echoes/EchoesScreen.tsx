@@ -10,6 +10,7 @@ import { Notice, Quiet, Surface, TextAction } from '@/features/tab-pages/parts';
 import { ArriveInOrder, Resolve } from '@/features/tab-pages/Resolve';
 import { TabPage } from '@/features/tab-pages/TabPage';
 import { detail, question } from '@/features/tab-pages/textStyles';
+import { useInView } from '@/features/tab-pages/useInView';
 import { HOME_PATH } from '@/state/routing';
 
 import { echoesCopy } from './echoesCopy';
@@ -48,6 +49,8 @@ function Body({
   view,
   waitingRows,
   previouslyEmpty,
+  deleted,
+  inView,
   onRetry,
   onClear,
 }: {
@@ -56,6 +59,10 @@ function Body({
   waitingRows: readonly EntrySummary[];
   /** The last answer was 'nothing returned', and is still the one on screen. */
   previouslyEmpty: boolean;
+  /** Echoes deleted while the list may still hold them. */
+  deleted: ReadonlySet<string>;
+  /** The page is in view, so a deleted row can be seen to leave. */
+  inView: boolean;
   onRetry: () => void;
   onClear: () => void;
 }) {
@@ -70,7 +77,13 @@ function Body({
         return (
           <>
             {null}
-            <EchoesList rows={waitingRows} onOpen={openEntry} waiting />
+            <EchoesList
+              rows={waitingRows}
+              onOpen={openEntry}
+              waiting
+              deleted={deleted}
+              inView={inView}
+            />
             {null}
           </>
         );
@@ -118,7 +131,7 @@ function Body({
       return (
         <>
           {view.stale && <Notice message={echoesCopy.loadError} onAction={onRetry} />}
-          <EchoesList rows={view.rows} onOpen={openEntry} />
+          <EchoesList rows={view.rows} onOpen={openEntry} deleted={deleted} inView={inView} />
           {view.unreadable > 0 && <Quiet>{echoesCopy.skippedInSearch(view.unreadable)}</Quiet>}
         </>
       );
@@ -134,7 +147,8 @@ const searchable = (view: EchoesView) =>
 /** The private archive: every committed echo, newest first, searchable on this phone. */
 export function EchoesScreen() {
   const [query, setQuery] = useState('');
-  const { view, retry } = useEchoes(query);
+  const { view, retry, deleted } = useEchoes(query);
+  const inView = useInView();
   // While a search runs, the rows already on screen stay, quietly, instead of flashing away.
   const [shown, setShown] = useState<readonly EntrySummary[]>(NONE);
   const latest =
@@ -156,6 +170,7 @@ export function EchoesScreen() {
         skeleton={<EchoesSkeleton />}
         style={styles.body}
         rows
+        atOnce
       >
         {/* Inside the arrival, so the field comes with the first rows and does not pop in ahead of them. */}
         {searchable(view) && (
@@ -167,6 +182,8 @@ export function EchoesScreen() {
           view={view}
           waitingRows={shown}
           previouslyEmpty={settled === 'no_matches' && query.trim() !== ''}
+          deleted={deleted}
+          inView={inView}
           onRetry={() => void retry()}
           onClear={() => setQuery('')}
         />
