@@ -14,7 +14,7 @@
     },
     "android": {
       "package": "com.thesaturnlabs.echo",
-      "versionCode": 11,
+      "versionCode": 12,
       "adaptiveIcon": {
         "foregroundImage": "./assets/app/adaptive-foreground.png",
         "monochromeImage": "./assets/app/adaptive-monochrome.png",
@@ -104,6 +104,14 @@
         "projectId": "41a5c5d7-7758-4278-bc58-75ad954b0ed8"
       }
     },
-    "owner": "chiragtalwar123"
+    "owner": "chiragtalwar123",
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/41a5c5d7-7758-4278-bc58-75ad954b0ed8",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    }
   }
 }
