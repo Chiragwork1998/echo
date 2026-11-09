@@ -211,13 +211,13 @@ export function useDraft(options: UseDraftOptions = {}): DraftController {
   }, []);
 
   useEffect(() => {
+    const s = session.current;
     const subscription = AppState.addEventListener('change', (next) => {
       // Saved on the way out: after this the OS may end the process without warning.
       if (next !== 'active') void flush();
     });
     return () => {
       subscription.remove();
-      const s = session.current;
       // Home and the lists learn of a draft this session wrote. One that wrote nothing has nothing to tell
       // them, and a commit or a discard has told them already.
       void flush().then(() => {
