@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useEffect, useState, type PropsWithChildren, type ReactNode } from 'react';
+import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
 import { EchoText } from '@/components/EchoText';
@@ -11,7 +11,7 @@ import { usePlateThumb } from '@/design/plateThumbs';
 import { useTheme } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 import type { HomeSummary } from '@/features/journal';
-import { Bars } from '@/features/tab-pages/Resolve';
+import { Bars, Resolve } from '@/features/tab-pages/Resolve';
 
 import { homeLabels } from './homeLabels';
 
@@ -119,6 +119,34 @@ export function CardSkeleton({ height }: { height: number }) {
         </GlassCard>
       </Bars>
     </View>
+  );
+}
+
+/**
+ * Where Home's card goes, while the journal is first read and after. A card that arrives has its glass
+ * drawn whole at once and its words faded in on it (glass may not fade: see components/arrival), so its
+ * first frame is empty glass: Home's first look after onboarding showed that, then the card (the walk,
+ * v11, both welcomes). A skeleton that was drawn is no help, as its bars lie beneath the card's glass,
+ * which blurs the plate and not them. So when the first read answers, the slot is drawn afresh and ready:
+ * the card is simply there, its words on its glass from its first frame, in place of the skeleton that
+ * stood for it, if one was drawn at all (only a read that outlasts a quarter of a second draws one).
+ */
+export function CardSlot({
+  loading,
+  skeleton,
+  style,
+  children,
+}: PropsWithChildren<{ loading: boolean; skeleton: ReactNode; style?: StyleProp<ViewStyle> }>) {
+  return (
+    <Resolve
+      key={loading ? 'waiting' : 'there'}
+      ready={!loading}
+      skeleton={skeleton}
+      style={style}
+      each
+    >
+      {children}
+    </Resolve>
   );
 }
 

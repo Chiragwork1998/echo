@@ -259,8 +259,14 @@ export function RehearseScreen() {
       <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, coverStyle]}>
         <EchoBackground screen="home" />
       </Animated.View>
+      {/* A touch on the sky only brings Skip up, and a screen reader always has Skip. On Android a
+          Pressable is focusable, and so clickable, unless told otherwise, and TalkBack stopped on the
+          whole sky as a stop with no name (the walk, v11): it is none of TalkBack's business. */}
       <Pressable
         accessible={false}
+        focusable={false}
+        accessibilityElementsHidden
+        importantForAccessibility="no"
         onPress={touch}
         style={StyleSheet.absoluteFill}
         testID="rehearse-sky"

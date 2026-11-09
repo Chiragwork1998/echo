@@ -228,7 +228,7 @@ describe('Rehearse', () => {
     holdRehearsal(WORDS);
     await render(<RehearseScreen />);
     expect(screen.queryByRole('button', { name: becomeCopy.skip })).toBeNull();
-    await fireEvent.press(screen.getByTestId('rehearse-sky'));
+    await fireEvent.press(screen.getByTestId('rehearse-sky', { includeHiddenElements: true }));
     await fireEvent.press(screen.getByRole('button', { name: becomeCopy.skip }));
     expect(router.replace).toHaveBeenCalledWith('/home/complete');
     expect(heldRehearsal()).toBeNull();
@@ -249,6 +249,20 @@ describe('Rehearse', () => {
     await advance(1500);
     expect(announce).toHaveBeenCalledWith('I will be calm with my team today.', { queue: true });
     // With a screen reader, Skip is always there.
+    expect(screen.getByRole('button', { name: becomeCopy.skip })).toBeTruthy();
+  });
+
+  // TalkBack stopped on the whole sky, a stop with no name (the walk, v11). A touch there only brings Skip
+  // up, and a screen reader always has Skip.
+  it('keeps the sky out of TalkBack’s way, and Skip in it', async () => {
+    jest.spyOn(AccessibilityInfo, 'isScreenReaderEnabled').mockResolvedValue(true);
+    await render(<RehearseScreen />);
+    await advance(1000);
+    const sky = screen.getByTestId('rehearse-sky', { includeHiddenElements: true });
+    // A Pressable on Android is focusable, and so clickable, unless it is told otherwise.
+    expect(sky.props.focusable).toBe(false);
+    expect(sky.props.importantForAccessibility).toBe('no');
+    expect(screen.queryByTestId('rehearse-sky')).toBeNull();
     expect(screen.getByRole('button', { name: becomeCopy.skip })).toBeTruthy();
   });
 
@@ -332,7 +346,7 @@ describe('Rehearse, line to line', () => {
       if (node.props.importantForAccessibility === 'no-hide-descendants') hidden = true;
     }
     expect(hidden).toBe(true);
-    await fireEvent.press(screen.getByTestId('rehearse-sky'));
+    await fireEvent.press(screen.getByTestId('rehearse-sky', { includeHiddenElements: true }));
     expect(timings(spy)).toContainEqual({ to: 1, duration: 450 });
     expect(screen.getByRole('button', { name: becomeCopy.skip })).toBeTruthy();
     await step(4100);
@@ -345,7 +359,7 @@ describe('Rehearse, line to line', () => {
     const spy = jest.spyOn(Reanimated, 'withTiming');
     holdRehearsal(WORDS);
     await render(<RehearseScreen />);
-    await fireEvent.press(screen.getByTestId('rehearse-sky'));
+    await fireEvent.press(screen.getByTestId('rehearse-sky', { includeHiddenElements: true }));
     await step(4100);
     const skip = timings(spy).filter((timing) => timing.to === 1 || timing.to === 0);
     expect(skip.every((timing) => timing.duration <= 700)).toBe(true);
@@ -357,7 +371,7 @@ describe('Rehearse, line to line', () => {
   it('dims Skip while it is pressed, as every quiet word is', async () => {
     holdRehearsal(WORDS);
     await render(<RehearseScreen />);
-    await fireEvent.press(screen.getByTestId('rehearse-sky'));
+    await fireEvent.press(screen.getByTestId('rehearse-sky', { includeHiddenElements: true }));
     const skip = () => screen.getByTestId('rehearse-skip');
     expect(StyleSheet.flatten(skip().props.style).opacity).toBe(1);
     await fingerDown(skip());

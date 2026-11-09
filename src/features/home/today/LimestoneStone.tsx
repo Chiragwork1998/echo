@@ -312,9 +312,17 @@ export function LimestoneStone({ title, arcCaption, accessibilityLabel, onPress 
           : withSpring(0, { ...tokens.motion.spring, reduceMotion: ReduceMotion.System }),
     );
 
+  // The stone is drawn beneath its button, which says all of it ("Begin. Your seven minutes"): the
+  // drawing is hidden from screen readers, or TalkBack stopped on it as a stop of its own, a container
+  // with no name, before the button (the walk, v11).
   return (
     <View style={styles.root}>
-      <Animated.View pointerEvents="none" style={[styles.canvas, halo]}>
+      <Animated.View
+        pointerEvents="none"
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        style={[styles.canvas, halo]}
+      >
         <Svg width={CANVAS} height={CANVAS} viewBox={`0 0 ${CANVAS} ${CANVAS}`}>
           <Defs>
             <RadialGradient id="homeStoneHalo" cx="0.5" cy="0.5" r="0.5">
@@ -326,7 +334,12 @@ export function LimestoneStone({ title, arcCaption, accessibilityLabel, onPress 
         </Svg>
       </Animated.View>
 
-      <Animated.View pointerEvents="none" style={[styles.canvas, body]}>
+      <Animated.View
+        pointerEvents="none"
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        style={[styles.canvas, body]}
+      >
         <Svg width={CANVAS} height={CANVAS} viewBox={`0 0 ${CANVAS} ${CANVAS}`}>
           <Defs>
             <RadialGradient id="homeStoneGround" cx="0.5" cy="0.5" r="0.5">
@@ -345,7 +358,13 @@ export function LimestoneStone({ title, arcCaption, accessibilityLabel, onPress 
         </Svg>
       </Animated.View>
 
-      <Animated.View pointerEvents="none" style={[styles.canvas, body]} testID="home-stone-body">
+      <Animated.View
+        pointerEvents="none"
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        style={[styles.canvas, body]}
+        testID="home-stone-body"
+      >
         <StoneArt arc={ARC} caption={caption} />
         <View style={styles.title}>
           <EchoText

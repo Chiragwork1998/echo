@@ -19,7 +19,6 @@ import { becomeCopy } from '@/features/become/becomeCopy';
 import { useMorning } from '@/features/become/morning';
 import { breatheCopy } from '@/features/breathe/breatheCopy';
 import type { HomeSummary } from '@/features/journal';
-import { Resolve } from '@/features/tab-pages/Resolve';
 
 import { useSessionEntry } from '../dissolve';
 import { FadeLayer } from './FadeLayer';
@@ -27,6 +26,7 @@ import { dayLabel, entryDisplay, homeLabels, minutesOf } from './homeLabels';
 import {
   ArrowGlyph,
   CardSkeleton,
+  CardSlot,
   ECHOES_PATH,
   ErrorNotice,
   go,
@@ -494,17 +494,16 @@ export function DayHome({ summary, stones }: { summary: HomeSummary; stones?: St
         </Pressable>
       </View>
 
-      <Resolve
-        ready={!loading}
+      <CardSlot
+        loading={loading}
         skeleton={<CardSkeleton height={87} />}
         style={[styles.recentSlot, { marginHorizontal: CARD_INSET }]}
-        each
       >
         {summary.status === 'error' && <ErrorNotice summary={summary} />}
         {summary.status !== 'error' || summary.recent ? (
           <RecentCard summary={summary} strong={accessibleLayout} />
         ) : null}
-      </Resolve>
+      </CardSlot>
     </>
   );
 }

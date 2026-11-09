@@ -11,7 +11,7 @@ import { HomeDissolveProvider } from '@/features/home/dissolve';
 import { NightHomeLoop } from '@/features/home/NightHomeLoop';
 import { overHome, SESSION_ROUTE } from '@/features/home/sessionRoute';
 import { readWelcomeCandidate } from '@/features/home/today/useStoneArrival';
-import { HomeTabBar } from '@/features/home/tabs/HomeTabBar';
+import { HomeTabBar, HomeTabBarProvider } from '@/features/home/tabs/HomeTabBar';
 import { useGate } from '@/state/gate';
 
 /**
@@ -45,10 +45,17 @@ export default function HomeLayout() {
       {/* Reached by dissolve, so Home has already melted when it arrives; its fade out is the stack's
           own, so the book goes gently (src/features/home/sessionRoute.ts). */}
       <Stack.Screen name="session" options={{ ...SESSION_ROUTE, ...overHome() }} />
-      {/* Breathe is reached the same way, and breathes over the same plate. */}
+      {/* Breathe is reached the same way, and breathes over the same plate. Presented over Home too, so
+          that Home stays up beneath it and the session it opens, and is there when Completion goes. Its
+          own coming and going is a cut: what moves on it moves by its own animation. */}
       <Stack.Screen
         name="breathe"
-        options={{ animation: 'none', gestureEnabled: false, contentStyle: CLEAR_SCREEN }}
+        options={{
+          animation: 'none',
+          gestureEnabled: false,
+          contentStyle: CLEAR_SCREEN,
+          ...overHome(),
+        }}
       />
       {/* Rehearse fades in over the session it follows, onto the same plate. */}
       <Stack.Screen
@@ -62,23 +69,26 @@ export default function HomeLayout() {
   );
   return (
     <HomeDissolveProvider>
-      <View style={styles.root}>
-        <BlurSurface
-          backdrop={
-            <EchoBackground
-              screen="home"
-              overlay={<NightHomeLoop suspended={locked} welcome={welcome} />}
-            />
-          }
-        >
-          {Platform.OS === 'web' ? (
-            <ThemeProvider value={CLEAR_NAVIGATOR}>{stack}</ThemeProvider>
-          ) : (
-            stack
-          )}
-          <HomeTabBar />
-        </BlurSurface>
-      </View>
+      {/* Completion, in the stack, brings the bar in as its own fade ends (useRevealTabBar). */}
+      <HomeTabBarProvider>
+        <View style={styles.root}>
+          <BlurSurface
+            backdrop={
+              <EchoBackground
+                screen="home"
+                overlay={<NightHomeLoop suspended={locked} welcome={welcome} />}
+              />
+            }
+          >
+            {Platform.OS === 'web' ? (
+              <ThemeProvider value={CLEAR_NAVIGATOR}>{stack}</ThemeProvider>
+            ) : (
+              stack
+            )}
+            <HomeTabBar />
+          </BlurSurface>
+        </View>
+      </HomeTabBarProvider>
     </HomeDissolveProvider>
   );
 }

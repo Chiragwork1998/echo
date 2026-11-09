@@ -1,6 +1,14 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, usePathname } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PropsWithChildren,
+} from 'react';
 import {
   Pressable,
   StyleSheet,
@@ -65,6 +73,61 @@ const TABS = [
 ] as const;
 
 export const tabPaths: readonly string[] = TABS.map((tab) => tab.path);
+
+/**
+ * The bar is drawn above the stack, so a bar that comes with the route is drawn over any screen that
+ * has not yet gone when the route changes. Completion is popped by a route that changed before it had
+ * left the screen, and the walk (v11) saw the bar over its card in two Enter your space of six; after
+ * a Back it was 0.7 s late, behind a busy JS thread. A screen that leaves by a fade of its own tells the
+ * bar here to come as that fade ends, on the UI thread, over a Home that is already whole beneath it.
+ */
+type Bar = {
+  /** The bar gives what says how much of it is drawn. Returns how to take it back. */
+  register: (shown: SharedValue<number>) => () => void;
+  /** Brings the bar in `afterMs` from now. */
+  reveal: (afterMs: number) => void;
+};
+const BarContext = createContext<Bar | null>(null);
+
+/** Lets the screens of Home's stack reach the bar, which is drawn beside them, above the stack. */
+export function HomeTabBarProvider({ children }: PropsWithChildren) {
+  const shownRef = useRef<SharedValue<number> | null>(null);
+  const bar = useMemo<Bar>(
+    () => ({
+      register: (shown) => {
+        shownRef.current = shown;
+        return () => {
+          if (shownRef.current === shown) shownRef.current = null;
+        };
+      },
+      reveal: (afterMs) => {
+        shownRef.current?.set(
+          withDelay(
+            afterMs,
+            withTiming(1, {
+              duration: tokens.motion.fast,
+              easing: EASE,
+              reduceMotion: ReduceMotion.Never,
+            }),
+          ),
+        );
+      },
+    }),
+    [],
+  );
+  return <BarContext.Provider value={bar}>{children}</BarContext.Provider>;
+}
+
+const NO_BAR = () => undefined;
+
+/**
+ * Brings the bar in `afterMs` from now, over the time it always comes in: for a screen whose own fade
+ * of that length is beginning, so that the bar comes once the screen has gone and never over it. Its
+ * touches and its place for TalkBack still follow the route.
+ */
+export function useRevealTabBar(): (afterMs: number) => void {
+  return useContext(BarContext)?.reveal ?? NO_BAR;
+}
 
 /** Space a Home tab needs at the bottom so that nothing sits under the bar. */
 export function useTabBarSpace() {
@@ -273,6 +336,13 @@ export function HomeTabBar() {
   const { progress, phase } = useHomeDissolve();
   const present = visible && phase === 'idle';
 
+  // The screens of the stack can bring the bar in as they go (useRevealTabBar).
+  const register = useContext(BarContext)?.register;
+  useEffect(() => register?.(shown), [register, shown]);
+
+  // Each change of route says again whether the bar is wanted, so that a bar brought in for a route
+  // that then did not come is taken away again by the one that did. Already where it is wanted, it
+  // carries on from where it is.
   useEffect(() => {
     shown.set(
       withTiming(visible ? 1 : 0, {
@@ -281,7 +351,7 @@ export function HomeTabBar() {
         reduceMotion: ReduceMotion.Never,
       }),
     );
-  }, [shown, visible]);
+  }, [pathname, shown, visible]);
 
   // A change of theme: the bar glides the 8 pt between Night's height and Day's, the row of icons
   // dips out before its set is swapped and fades back in on the new one, and the pill follows Night.

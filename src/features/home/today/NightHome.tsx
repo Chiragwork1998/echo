@@ -20,12 +20,20 @@ import { becomeCopy } from '@/features/become/becomeCopy';
 import { useMorning } from '@/features/become/morning';
 import { breatheCopy } from '@/features/breathe/breatheCopy';
 import type { HomeSummary } from '@/features/journal';
-import { Resolve } from '@/features/tab-pages/Resolve';
 
 import { useSessionEntry } from '../dissolve';
 import { dayLabel, entryDisplay, homeLabels, minutesOf } from './homeLabels';
 import { LimestoneStone } from './LimestoneStone';
-import { CardSkeleton, ErrorNotice, go, openEntry, PlateThumb, useClock, YOU_PATH } from './shared';
+import {
+  CardSkeleton,
+  CardSlot,
+  ErrorNotice,
+  go,
+  openEntry,
+  PlateThumb,
+  useClock,
+  YOU_PATH,
+} from './shared';
 import type { StoneView } from './useStoneArrival';
 import { WeekRhythm } from './WeekRhythm';
 
@@ -254,11 +262,10 @@ export function NightHome({ summary, stones }: { summary: HomeSummary; stones?: 
       <View style={{ paddingHorizontal: 4 }}>
         <WeekRhythm rhythm={rhythm} loading={loading} stones={stones} />
       </View>
-      <Resolve
-        ready={!loading}
+      <CardSlot
+        loading={loading}
         skeleton={<CardSkeleton height={CARD_HEIGHT} />}
         style={styles.cardSlot}
-        each
       >
         {status === 'error' && <ErrorNotice summary={summary} />}
         {hasCard && <EchoCard summary={summary} strong={accessibleLayout} />}
@@ -267,7 +274,7 @@ export function NightHome({ summary, stones }: { summary: HomeSummary; stones?: 
             {homeLabels.emptyRecent}
           </EchoText>
         )}
-      </Resolve>
+      </CardSlot>
     </>
   );
 }

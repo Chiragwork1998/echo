@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { router } from 'expo-router';
-import { Dimensions } from 'react-native';
+import { Dimensions, StyleSheet } from 'react-native';
 
 import { copy } from '@/content/copy';
 import { goldenCopy } from '@/content/goldenCopy';
@@ -15,7 +15,9 @@ import {
   type Rhythm,
 } from '@/features/journal';
 import { deviceClock } from '@/features/journal/localDay';
+import { useOnboarding } from '@/state/onboarding';
 import { usePreferences } from '@/state/preferences';
+import { animationClock } from '@/testing/reanimatedMock';
 import { render } from '@/testing/render';
 
 import { homeLabels } from '../today/homeLabels';
@@ -447,5 +449,115 @@ describe('theme changes', () => {
     expect(screen.getByText(copy.home.nightHeadline)).toBeTruthy();
     expect(screen.getByTestId('home-scroll')).toBe(scroll);
     expect(mockedSummary.mock.calls.length).toBeGreaterThan(calls);
+  });
+});
+
+// Home's first look after onboarding (the walk, v11, both welcomes): Home's interface came with its
+// photograph, but its card was empty glass for a frame, and then the card. Home mounts there with the
+// journal still being read, and the card arrived: its glass whole at once, its words faded in on it.
+describe('Home’s card on Home’s first look', () => {
+  const TITLE = 'The weight I didn’t name';
+  const answer = (): HomeSummary =>
+    summary({
+      rhythm: {
+        today: '2026-11-05',
+        week: week(0).map((day) => (day.isToday ? { ...day, completed: true } : day)),
+        weekReflections: 1,
+        currentStreak: 1,
+        totalDays: 1,
+        totalReflections: 1,
+      },
+      recent: {
+        id: 'first',
+        status: 'committed',
+        readable: true,
+        title: TITLE,
+        preview: '',
+        mode: 'text',
+        durationSeconds: 60,
+        hasAudio: false,
+        recovered: false,
+        createdAt: AT,
+        updatedAt: AT,
+        localDay: '2026-11-05',
+      },
+    });
+  type Json = { props: Record<string, unknown>; children?: (Json | string)[] | null };
+  /**
+   * How much of the card's glass is drawn, and how much of the words on it, from what is drawn: each the
+   * product of the opacities above it. Null while the card is not there at all.
+   */
+  function card(): { glass: number; words: number } | null {
+    const blurs = new Map<Json, number>();
+    let words: { drawn: number; above: Json[] } | null = null;
+    const walk = (node: unknown, drawn: number, above: Json[]): void => {
+      if (!node || typeof node !== 'object') return;
+      if (Array.isArray(node)) return node.forEach((child) => walk(child, drawn, above));
+      const json = node as Json;
+      const own = (
+        StyleSheet.flatten(json.props.style as never) as { opacity?: number } | undefined
+      )?.opacity;
+      const here = drawn * (own ?? 1);
+      // A piece of glass is what expo-blur draws, which under jest names its blur method.
+      if ('blurMethod' in json.props && above.length) blurs.set(above[above.length - 1]!, here);
+      if (json.children?.some((child) => typeof child === 'string' && child.includes(TITLE))) {
+        words = { drawn: here, above };
+      }
+      walk(json.children, here, [...above, json]);
+    };
+    walk(screen.toJSON(), 1, []);
+    const found = words as { drawn: number; above: Json[] } | null;
+    if (!found) return null;
+    const glass = [...found.above].reverse().find((node) => blurs.has(node));
+    return { glass: glass ? (blurs.get(glass) ?? 0) : 0, words: found.drawn };
+  }
+  let current: HomeSummary;
+  const advance = (ms: number) =>
+    act(async () => {
+      await jest.advanceTimersByTimeAsync(ms);
+    });
+  const draw = (view: Awaited<ReturnType<typeof render>>) =>
+    view.rerender(
+      <ThemeProvider crossfade={false}>
+        <HomeScreen />
+      </ThemeProvider>,
+    );
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    // What arrives is walked, a frame at a time, so that every frame of it can be looked at.
+    animationClock.stepped = true;
+    // The welcome: onboarding has only just finished, and Home has not welcomed before.
+    useOnboarding.setState({ completedAt: Date.now() });
+    usePreferences.setState({ homeWelcomed: false });
+    current = summary({ status: 'loading' });
+    mockedSummary.mockImplementation(() => current);
+  });
+  afterEach(async () => {
+    // Before the clock is given back: what unmounts clears timers of its own.
+    await screen.unmount();
+    animationClock.reset();
+    jest.useRealTimers();
+  });
+
+  it.each([
+    ['answers before a skeleton would be drawn', 100],
+    ['outlasts the skeleton’s quarter of a second', 600],
+  ])('is never empty glass when the first read %s', async (_when, ms) => {
+    const view = await render(<HomeScreen />);
+    await advance(ms);
+    await draw(view);
+    expect(card()).toBeNull();
+    current = answer();
+    await draw(view);
+    // The card is there, whole, its words on its glass, from the first frame it is drawn.
+    expect(card()).toEqual({ glass: 1, words: 1 });
+    for (let frame = 0; frame < 30; frame += 1) {
+      await advance(16);
+      await draw(view);
+      const now = card();
+      if (now && now.glass > 0) expect(now.words).toBeCloseTo(now.glass, 5);
+    }
+    expect(card()).toEqual({ glass: 1, words: 1 });
   });
 });
