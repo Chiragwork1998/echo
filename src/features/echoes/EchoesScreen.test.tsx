@@ -18,7 +18,7 @@ import { hideEcho, resetRemovedEchoes } from './removed';
 import { EchoesScreen } from './EchoesScreen';
 
 jest.mock('expo-router', () => ({
-  router: { push: jest.fn(), back: jest.fn(), navigate: jest.fn() },
+  router: { push: jest.fn(), back: jest.fn(), navigate: jest.fn(), dismissTo: jest.fn() },
   usePathname: () => '/home/echoes',
 }));
 jest.mock(
@@ -118,7 +118,9 @@ describe('EchoesScreen', () => {
     // Nothing to search yet.
     expect(screen.queryByLabelText(echoesCopy.searchLabel)).toBeNull();
     await fireEvent.press(screen.getByRole('button', { name: echoesCopy.goToday }));
-    expect(router.navigate).toHaveBeenCalledWith('/home');
+    // Back to the Today at the foot of Home's stack, never a second one pushed over it.
+    expect(router.dismissTo).toHaveBeenCalledWith('/home');
+    expect(router.navigate).not.toHaveBeenCalled();
   });
 
   it('names an untitled echo by its first words, cut at a word, never by its question', async () => {

@@ -68,6 +68,13 @@ export default function HomeLayout() {
       {/* Completion follows the session, and Enter your space goes back through it to Home. Presented
           over Home like the session, so that Home's interface is there when its card goes. */}
       <Stack.Screen name="complete" options={{ contentStyle: CLEAR_SCREEN, ...overHome() }} />
+      {/* The other tabs, each pushed over Today once and replaced by the next (goToTab). Presented over
+          Home, so that Home stays up beneath them and Today is a pop onto a Home that was never taken
+          down. Each draws a plate of its own over the whole screen (TabPage), so Home is not seen. The
+          entry page stays a plain screen. */}
+      <Stack.Screen name="echoes" options={overHome()} />
+      <Stack.Screen name="patterns" options={overHome()} />
+      <Stack.Screen name="you" options={overHome()} />
     </Stack>
   );
   return (

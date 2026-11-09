@@ -13,6 +13,7 @@ import { animationClock, reanimatedMock } from '@/testing/reanimatedMock';
 import { render } from '@/testing/render';
 
 import {
+  goToTab,
   HomeTabBar,
   HomeTabBarProvider,
   TAB_BAR_HEIGHT,
@@ -23,7 +24,7 @@ import {
 jest.mock('@/design/haptics');
 jest.mock('@/design/useReduceMotion', () => ({ useReduceMotion: jest.fn(() => false) }));
 jest.mock('expo-router', () => ({
-  router: { navigate: jest.fn() },
+  router: { navigate: jest.fn(), push: jest.fn(), replace: jest.fn(), dismissTo: jest.fn() },
   usePathname: jest.fn(),
 }));
 jest.mock(
@@ -75,12 +76,14 @@ describe('HomeTabBar', () => {
   it('goes to another tab on press, and ignores a press on the current one', async () => {
     await render(<HomeTabBar />);
     await fireEvent.press(tab(copy.home.tabs[2]));
-    expect(router.navigate).toHaveBeenCalledWith('/home/patterns');
+    expect(router.push).toHaveBeenCalledWith('/home/patterns');
     expect(cue).toHaveBeenCalledTimes(1);
     expect(cue).toHaveBeenCalledWith('tick');
     jest.clearAllMocks();
     await fireEvent.press(tab(copy.home.tabs[0]));
-    expect(router.navigate).not.toHaveBeenCalled();
+    for (const go of [router.navigate, router.push, router.replace, router.dismissTo]) {
+      expect(go).not.toHaveBeenCalled();
+    }
     expect(cue).not.toHaveBeenCalled();
   });
 
@@ -90,7 +93,7 @@ describe('HomeTabBar', () => {
     await render(<HomeTabBar />);
     expect(tab(copy.home.tabs[1])).toBeSelected();
     await fireEvent.press(tab(copy.home.tabs[3]));
-    expect(router.navigate).toHaveBeenCalledWith('/home/you');
+    expect(router.replace).toHaveBeenCalledWith('/home/you');
   });
 
   it.each(['/home/session', '/home/complete'])(
@@ -400,5 +403,89 @@ describe('a screen that brings the bar in as it goes', () => {
       ),
     );
     expect(drawn('home-dock').opacity).toBe(0);
+  });
+});
+
+// The diagnostic build (walk v11): `navigate` pushed a new screen on every tab tap, and every tab ever
+// reached stayed mounted and read the journal again on each change. After twelve rounds a change cost a
+// hundred reads, the JS thread stalled for 400 to 700 ms, and Back on an empty page took 7 s.
+describe('tabs never grow Home’s stack', () => {
+  /** Home's stack as the router leaves it: what the navigator's state holds. */
+  let stack: string[];
+  beforeEach(() => {
+    stack = ['/home'];
+    jest.mocked(router.push).mockImplementation(((path: string) => void stack.push(path)) as never);
+    jest.mocked(router.replace).mockImplementation(((path: string) => {
+      stack[stack.length - 1] = path;
+    }) as never);
+    jest.mocked(router.dismissTo).mockImplementation(((path: string) => {
+      const at = stack.lastIndexOf(path);
+      stack = at >= 0 ? stack.slice(0, at + 1) : [...stack, path];
+    }) as never);
+    // As it does on this version of expo-router: it pushes.
+    jest
+      .mocked(router.navigate)
+      .mockImplementation(((path: string) => void stack.push(path)) as never);
+  });
+
+  /** Taps the tab at `index` from wherever the stack has got to. */
+  async function tap(view: Awaited<ReturnType<typeof render>>, index: number) {
+    at(stack[stack.length - 1]!);
+    await view.rerender(wrap(<HomeTabBar />));
+    await fireEvent.press(tab(copy.home.tabs[index]!));
+  }
+
+  it('leaves at most Today and one tab, through ten rounds of every tab in turn', async () => {
+    const view = await render(<HomeTabBar />);
+    for (let round = 0; round < 10; round += 1) {
+      for (const index of [1, 2, 3, 0]) {
+        await tap(view, index);
+        expect(stack.length).toBeLessThanOrEqual(2);
+        expect(stack[0]).toBe('/home');
+        expect(stack[stack.length - 1]).toBe(tabPaths[index]);
+      }
+    }
+    expect(router.navigate).not.toHaveBeenCalled();
+  });
+
+  it('leaves at most Today and one tab, whatever order the tabs are tapped in', async () => {
+    const view = await render(<HomeTabBar />);
+    // A fixed scramble, the same on every run, with taps on the tab already on show among them.
+    let seed = 7;
+    for (let i = 0; i < 60; i += 1) {
+      seed = (seed * 48271) % 2147483647;
+      const index = seed % 4;
+      await tap(view, index);
+      expect(stack.length).toBeLessThanOrEqual(2);
+      expect(stack[0]).toBe('/home');
+      expect(stack[stack.length - 1]).toBe(tabPaths[index]);
+    }
+  });
+
+  it('goes back to Today from any tab by popping to it', async () => {
+    for (const from of tabPaths.slice(1)) {
+      jest.clearAllMocks();
+      at(from);
+      const view = await render(<HomeTabBar />);
+      await fireEvent.press(tab(copy.home.tabs[0]));
+      expect(router.dismissTo).toHaveBeenCalledWith('/home');
+      expect(router.push).not.toHaveBeenCalled();
+      expect(router.replace).not.toHaveBeenCalled();
+      await view.unmount();
+    }
+  });
+
+  it('pushes a tab over Today once, and replaces one tab with the next', () => {
+    goToTab('/home/echoes', '/home');
+    expect(router.push).toHaveBeenCalledWith('/home/echoes');
+    goToTab('/home/patterns', '/home/echoes');
+    expect(router.replace).toHaveBeenCalledWith('/home/patterns');
+    goToTab('/home', '/home/patterns');
+    expect(router.dismissTo).toHaveBeenCalledWith('/home');
+    jest.clearAllMocks();
+    goToTab('/home/you', '/home/you');
+    for (const go of [router.navigate, router.push, router.replace, router.dismissTo]) {
+      expect(go).not.toHaveBeenCalled();
+    }
   });
 });

@@ -101,7 +101,8 @@ function Body({
           action={
             <TextAction
               label={echoesCopy.goToday}
-              onPress={() => router.navigate(HOME_PATH as never)}
+              // Today is at the foot of Home's stack: back to it, never a second one pushed.
+              onPress={() => router.dismissTo(HOME_PATH as never)}
               style={styles.action}
             />
           }

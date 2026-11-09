@@ -136,10 +136,21 @@ describe('Home stays up beneath the session, Rehearse and Completion on Android'
     });
   });
 
+  // The diagnostic build (walk v11): Today from a tab was a new Home pushed over the old. Tabs now go back
+  // to the Home at the foot of the stack, which stays up beneath them as it does beneath the session.
+  it('presents Echoes, Patterns and You over Home too, and leaves the entry page a plain screen', async () => {
+    jest.replaceProperty(Platform, 'OS', 'android');
+    await baseRender(<HomeLayout />);
+    for (const name of ['echoes', 'patterns', 'you']) {
+      expect(mockScreens.get(name)?.presentation).toBe('transparentModal');
+    }
+    expect(mockScreens.get('entry')).toBeUndefined();
+  });
+
   it('changes nothing on iOS, whose navigation controller keeps the screens beneath', async () => {
     jest.replaceProperty(Platform, 'OS', 'ios');
     await baseRender(<HomeLayout />);
-    for (const name of [...OVER_HOME, 'breathe']) {
+    for (const name of [...OVER_HOME, 'breathe', 'echoes', 'patterns', 'you']) {
       expect(mockScreens.get(name)).not.toHaveProperty('presentation');
     }
     expect(mockScreens.get('breathe')?.animation).toBe('none');

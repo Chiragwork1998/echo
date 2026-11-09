@@ -237,7 +237,7 @@ describe('Home, Night', () => {
   it('links the avatar to You', async () => {
     await render(<HomeScreen />);
     await fireEvent.press(button(copy.home.tabs[3]));
-    expect(router.navigate).toHaveBeenCalledWith('/home/you');
+    expect(router.push).toHaveBeenCalledWith('/home/you');
   });
 
   it('offers the latest entry in the card slot when nothing is in progress', async () => {
@@ -246,7 +246,7 @@ describe('Home, Night', () => {
     await waitFor(() => expect(screen.getByText(RECENT.title)).toBeTruthy());
     expect(screen.getByText(`${homeLabels.yesterday} · ${homeLabels.minutes(6)}`)).toBeTruthy();
     await fireEvent.press(button(new RegExp(RECENT.title)));
-    expect(router.navigate).toHaveBeenCalledWith({
+    expect(router.push).toHaveBeenCalledWith({
       pathname: '/home/echoes',
       params: { entryId: 'recent' },
     });
@@ -303,6 +303,7 @@ describe('Home, Night', () => {
     const card = button(new RegExp(homeLabels.unreadable));
     expect(card).toBeDisabled();
     await fireEvent.press(card);
+    expect(router.push).not.toHaveBeenCalled();
     expect(router.navigate).not.toHaveBeenCalled();
   });
 
@@ -408,7 +409,7 @@ describe('Home, Day', () => {
       screen.getByText(`${homeLabels.yesterday} · ${homeLabels.minutes(6)}`.toUpperCase()),
     ).toBeTruthy();
     await fireEvent.press(button(new RegExp(RECENT.title)));
-    expect(router.navigate).toHaveBeenCalledWith({
+    expect(router.push).toHaveBeenCalledWith({
       pathname: '/home/echoes',
       params: { entryId: 'recent' },
     });
@@ -417,7 +418,7 @@ describe('Home, Day', () => {
   it('sends See all to Echoes', async () => {
     await render(<HomeScreen />);
     await fireEvent.press(button(goldenCopy.seeAll));
-    expect(router.navigate).toHaveBeenCalledWith('/home/echoes');
+    expect(router.push).toHaveBeenCalledWith('/home/echoes');
   });
 
   it('reads “Your first echo will appear here.” before there is an entry', async () => {

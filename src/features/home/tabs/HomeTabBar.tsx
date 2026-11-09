@@ -74,6 +74,22 @@ const TABS = [
 
 export const tabPaths: readonly string[] = TABS.map((tab) => tab.path);
 
+const TODAY_PATH = TABS[0].path;
+
+/**
+ * How a tab is reached from where the person is, so that Home's stack never grows: Today is always at
+ * its foot, another tab is pushed over Today once, replaced by the next tab, and popped back to Today.
+ * `navigate` pushed a new screen on every tap, and every tab ever reached stayed mounted and read the
+ * journal again on each change: after twelve rounds a change cost a hundred reads, the JS thread stalled
+ * for 400 to 700 ms, and Back on an empty page took 7 s (the diagnostic build, walk v11).
+ */
+export function goToTab(path: string, from: string): void {
+  if (path === from) return;
+  if (path === TODAY_PATH) router.dismissTo(TODAY_PATH as never);
+  else if (tabPaths.includes(from) && from !== TODAY_PATH) router.replace(path as never);
+  else router.push(path as never);
+}
+
 /**
  * The bar is drawn above the stack, so a bar that comes with the route is drawn over any screen that
  * has not yet gone when the route changes. Completion is popped by a route that changed before it had
@@ -464,7 +480,7 @@ export function HomeTabBar() {
                   onPress={() => {
                     if (pathname === tab.path) return;
                     cue('tick');
-                    router.navigate(tab.path as never);
+                    goToTab(tab.path, pathname);
                   }}
                   onSlot={i === 0 ? (top) => setDotTop(PAD + top) : undefined}
                 />
