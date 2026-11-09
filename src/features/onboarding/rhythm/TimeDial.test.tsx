@@ -1,10 +1,12 @@
 // The reminder dial's time follows the handle (the walk, F2). On a fast drag or a far tap the handle
 // glides to its place over half a second or more, and the time used to be written at once: the
-// number was at 10:05 while the handle was still turning through 6. The number rides the handle.
+// number was at 10:05 while the handle was still turning through 6. The number rides the handle: it is
+// drawn by the UI thread from the handle's own angle, and in jest the screen is drawn on request.
 import { act, fireEvent, screen } from '@testing-library/react-native';
 import { useState } from 'react';
 import { Pressable, Text } from 'react-native';
 
+import { ThemeProvider } from '@/design/theme';
 import { render } from '@/testing/render';
 
 import { clockText } from './time';
@@ -82,9 +84,18 @@ const angleOf = (hours: number, minutes = 0) =>
   (((hours * 60 + minutes - 720) / 1440) * 360 + 360) % 360;
 const handle = () => mockShared[0] as Shared;
 
-/** The UI thread's next frame: every reaction looks at what it watches and says what changed. */
-const frame = () =>
-  act(() => {
+/** Where the dial under test began: what the screen is drawn again with. */
+const drawing = { start: 0 };
+/** The screen drawn again: the UI thread has put each animated value on its view. */
+const draw = () =>
+  screen.rerender(
+    <ThemeProvider crossfade={false}>
+      <Dial start={drawing.start} />
+    </ThemeProvider>,
+  );
+/** The UI thread's next frame: every reaction looks at what it watches, and the screen is drawn. */
+const frame = async () => {
+  await act(() => {
     for (const reaction of mockReactions) {
       const now = reaction.prepare();
       if (now !== reaction.seen.was) {
@@ -94,6 +105,8 @@ const frame = () =>
       }
     }
   });
+  await draw();
+};
 /** The handle carried to an angle, and the frame that sees it. */
 const carry = async (degrees: number) => {
   handle().set(degrees);
@@ -131,11 +144,15 @@ function PresetButton({ onPick }: { onPick: (minutes: number) => void }) {
   );
 }
 
-type Node = string | { children: Node[] };
-const read = (node: Node): string =>
-  typeof node === 'string' ? node : node.children.map(read).join('');
-/** What the dial writes for the time, as a person sees it: its own button, the first there is. */
-const timeText = () => read(screen.getAllByRole('button')[0] as unknown as Node);
+const field = (id: string) =>
+  String(screen.getByTestId(id, { includeHiddenElements: true }).props.animatedProps?.text ?? '');
+/** What the dial writes for the time, as a person sees it: its hours and minutes, and AM or PM. */
+const timeText = () => `${field('dial-time-main')} ${field('dial-time-period')}`;
+/** Puts the dial on the screen, beginning at a time. */
+const renderDial = async (start: number) => {
+  drawing.start = start;
+  await render(<Dial start={start} />);
+};
 const spoken = (time: string) => screen.getByRole('button', { name: time });
 
 beforeEach(() => {
@@ -146,12 +163,12 @@ beforeEach(() => {
 
 describe('the time on the dial', () => {
   it('is the time the handle is at to begin with', async () => {
-    await render(<Dial start={4 * 60} />);
+    await renderDial(4 * 60);
     expect(timeText()).toMatch(/^4:00 /);
   });
 
   it('follows a far tap round: it stays where the handle is, and arrives with it', async () => {
-    await render(<Dial start={4 * 60} />);
+    await renderDial(4 * 60);
     // 9 pm, far across the dial from 4 am: the handle is carried there, half a second.
     await touch('onBegin', onRing(angleOf(21)));
     // The person has chosen 9 pm, and is told so at once, but the number has not got there.
@@ -167,7 +184,7 @@ describe('the time on the dial', () => {
   });
 
   it('follows a fast drag the same way: never ahead of the handle', async () => {
-    await render(<Dial start={4 * 60} />);
+    await renderDial(4 * 60);
     await touch('onBegin', onRing(angleOf(4, 5)));
     await frame();
     // A jump across the dial in one movement: 4 am to 10 am.
@@ -180,7 +197,7 @@ describe('the time on the dial', () => {
   });
 
   it('is under the finger, step for step, when the handle is: a slow drag has nothing to wait for', async () => {
-    await render(<Dial start={21 * 60 + 30} />);
+    await renderDial(21 * 60 + 30);
     await touch('onBegin', onRing(angleOf(21, 35)));
     await frame();
     expect(timeText()).toMatch(/^9:35 /);
@@ -193,7 +210,7 @@ describe('the time on the dial', () => {
   });
 
   it('follows a time chosen elsewhere, a preset, as the handle is carried to it', async () => {
-    await render(<Dial start={21 * 60 + 30} />);
+    await renderDial(21 * 60 + 30);
     await fireEvent.press(screen.getByRole('button', { name: 'Morning' }));
     // Morning is 8:00. The handle has not moved yet, and the number does not run ahead of it.
     expect(timeText()).toMatch(/^9:30 /);
@@ -206,7 +223,7 @@ describe('the time on the dial', () => {
   });
 
   it('says the time that was chosen to a screen reader at once, whatever the handle is doing', async () => {
-    await render(<Dial start={4 * 60} />);
+    await renderDial(4 * 60);
     await touch('onBegin', onRing(angleOf(21)));
     expect(screen.getByRole('adjustable').props.accessibilityValue).toEqual({ text: '9:00 PM' });
   });

@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { useEffect as mockUseEffect } from 'react';
 import { router } from 'expo-router';
 import { Dimensions } from 'react-native';
@@ -14,6 +14,7 @@ import { usePreferences } from '@/state/preferences';
 import { render } from '@/testing/render';
 
 import { echoesCopy } from './echoesCopy';
+import { hideEcho, resetRemovedEchoes } from './removed';
 import { EchoesScreen } from './EchoesScreen';
 
 jest.mock('expo-router', () => ({
@@ -85,7 +86,10 @@ beforeEach(() => {
   const metrics = { width: 393, height: 852, scale: 2, fontScale: 1 };
   Dimensions.set({ window: metrics, screen: metrics });
 });
-afterEach(() => setJournal(null));
+afterEach(() => {
+  setJournal(null);
+  resetRemovedEchoes();
+});
 
 describe('EchoesScreen', () => {
   it('lists committed echoes newest first with a calm fallback title', async () => {
@@ -259,5 +263,38 @@ describe('EchoesScreen', () => {
     expect(screen.getByText(echoesCopy.noMatches)).toBeTruthy();
     expect(screen.queryByLabelText(echoesCopy.loading, { includeHiddenElements: true })).toBeNull();
     expect(await screen.findByText(echoesCopy.noMatches)).toBeTruthy();
+  });
+});
+
+describe('EchoesScreen when an echo is deleted', () => {
+  // The walk (v10): the list kept the deleted echo for a moment, then the rows jumped up. The list
+  // lets go of it when the deletion is known, before it has read the archive again, and the row leaves.
+  const rowsNow = () => screen.queryAllByTestId(/^echo-row-[a-z]+$/).map((row) => row.props.testID);
+
+  it('stops listing it at once, and then the row is gone', async () => {
+    seed(
+      entry('one', '2026-11-05', { title: 'First', committedAt: AT }),
+      entry('two', '2026-11-04', { title: 'Second', committedAt: AT - 1000 }),
+      entry('three', '2026-11-03', { title: 'Third', committedAt: AT - 2000 }),
+    );
+    await render(<EchoesScreen />);
+    await screen.findByTestId('echo-row-two');
+    // No journal change is announced here: only the deletion is known.
+    await act(async () => hideEcho('two'));
+    expect(rowsNow()).toEqual(['echo-row-one', 'echo-row-three']);
+    await waitFor(
+      () =>
+        expect(screen.queryByTestId('echo-row-two', { includeHiddenElements: true })).toBeNull(),
+      { timeout: 3000 },
+    );
+    expect(rowsNow()).toEqual(['echo-row-one', 'echo-row-three']);
+  });
+
+  it('says there are no echoes when the last one is deleted', async () => {
+    seed(entry('one', '2026-11-05', { title: 'Only' }));
+    await render(<EchoesScreen />);
+    await screen.findByTestId('echo-row-one');
+    await act(async () => hideEcho('one'));
+    expect(await screen.findByText(echoesCopy.empty)).toBeTruthy();
   });
 });

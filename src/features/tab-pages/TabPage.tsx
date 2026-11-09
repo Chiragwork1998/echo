@@ -1,4 +1,4 @@
-import type { PropsWithChildren } from 'react';
+import { useCallback, useRef, type ComponentRef, type PropsWithChildren } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -13,12 +13,15 @@ import { useTabBarSpace } from '@/features/home/tabs/HomeTabBar';
 import { NightFloor } from '@/features/home/today/NightHome';
 
 import { pageCopy } from './pageCopy';
+import { BringIntoViewContext, type BringIntoView } from './ScrollIntoView';
 import { detail, onPlate } from './textStyles';
 
 // Same top inset as Home (docs/SPEC_CONFLICTS.md, C-03). Content ends this far above the tab bar.
 const HEADER_OFFSET_FROM_SAFE_TOP = -5;
 const ABOVE_TAB_BAR = 24;
 const BELOW_CONTENT = 32;
+/** What is brought into view is left this far below the top of the screen, as a page leaves a heading. */
+const INTO_VIEW_MARGIN = tokens.space[16];
 
 type Props = PropsWithChildren<{
   title: string;
@@ -49,6 +52,26 @@ export function TabPage({ title, subtitle, onBack, tabBar = true, children }: Pr
   const ink = day ? colors.textInk : colors.textPrimary;
   const shadow = day ? undefined : onPlate;
 
+  // Where the page is, asked of the screen itself at the moment it is needed: the page keeps its own
+  // scroll position through changes to its content, and no count of ours would know about those.
+  const scroller = useRef<ComponentRef<typeof ScrollView>>(null);
+  const column = useRef<ComponentRef<typeof View>>(null);
+  const bringIntoView = useCallback<BringIntoView>((node) => {
+    const scroll = scroller.current;
+    const content = column.current;
+    if (!node || !scroll || !content) return;
+    node.measureInWindow((_x, top, _width, height) => {
+      scroll.measureInWindow((_sx, edge, _sw, shown) => {
+        if (top >= edge + INTO_VIEW_MARGIN && top + height <= edge + shown) return;
+        node.measureLayout(
+          content,
+          (_left, y) => scroll.scrollTo({ y: Math.max(0, y - INTO_VIEW_MARGIN), animated: true }),
+          () => undefined,
+        );
+      });
+    });
+  }, []);
+
   return (
     <View style={styles.root}>
       <BlurSurface backdrop={<EchoBackground screen="home" />}>
@@ -57,6 +80,7 @@ export function TabPage({ title, subtitle, onBack, tabBar = true, children }: Pr
             words scrolled up go out of sight there and never pass under the clock. At rest the title
             sits where it always has. */}
         <ScrollView
+          ref={scroller}
           testID="tab-page-scroll"
           style={[styles.fill, { marginTop: top }]}
           keyboardShouldPersistTaps="handled"
@@ -65,6 +89,8 @@ export function TabPage({ title, subtitle, onBack, tabBar = true, children }: Pr
           contentContainerStyle={styles.scroll}
         >
           <View
+            ref={column}
+            collapsable={false}
             testID="tab-page-column"
             style={[styles.column, { width, paddingHorizontal: gutter, paddingBottom: bottom }]}
           >
@@ -98,7 +124,9 @@ export function TabPage({ title, subtitle, onBack, tabBar = true, children }: Pr
                 </EchoText>
               ) : null}
             </View>
-            {children}
+            <BringIntoViewContext.Provider value={bringIntoView}>
+              {children}
+            </BringIntoViewContext.Provider>
           </View>
         </ScrollView>
       </BlurSurface>

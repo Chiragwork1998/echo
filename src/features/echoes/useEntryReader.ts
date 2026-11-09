@@ -5,6 +5,7 @@ import { deleteEntry, useEntry, type AsyncData, type Entry } from '@/features/jo
 import { showDialog } from '@/features/tab-pages/Dialog';
 
 import { echoesCopy } from './echoesCopy';
+import { hideEcho } from './removed';
 
 export type ReaderView =
   | { kind: 'loading' }
@@ -58,6 +59,8 @@ export function useEntryReader(id: string | null) {
     if (!id) return;
     setDeleteState('deleting');
     const result = await deleteEntry(id);
+    // The archive is read again after a deletion; the list must not show the echo in the meantime.
+    if (result.ok) hideEcho(id);
     if (result.ok || result.error.code === 'not_found') exit();
     else setDeleteState('error');
   }, [exit, id]);

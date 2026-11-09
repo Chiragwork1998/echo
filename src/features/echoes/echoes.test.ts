@@ -77,6 +77,34 @@ describe('entry labels', () => {
   });
 });
 
+describe('deriveEchoesView with echoes that have been deleted', () => {
+  // The walk (v10): a deleted echo stayed in the list for a moment, then the rows jumped up. An echo
+  // that has been deleted is not listed, from the moment the deletion is known, not the moment the
+  // list has been read again.
+  const two = { status: 'ready' as const, data: [row({ id: 'a' }), row({ id: 'b' })] };
+
+  it('leaves it out of the list', () => {
+    const view = deriveEchoesView(two, idle, new Set(['a']));
+    expect(view).toMatchObject({ kind: 'list' });
+    expect(view.kind === 'list' && view.rows.map(({ id }) => id)).toEqual(['b']);
+  });
+
+  it('is empty when the last one goes, and has no matches when a search is left with none', () => {
+    expect(deriveEchoesView(two, idle, new Set(['a', 'b']))).toEqual({ kind: 'empty' });
+    expect(
+      deriveEchoesView(
+        two,
+        { ...idle, status: 'ready', results: [row({ id: 'a' })] },
+        new Set(['a']),
+      ),
+    ).toEqual({ kind: 'no_matches', unreadable: 0 });
+  });
+
+  it('changes nothing when none has been deleted', () => {
+    expect(deriveEchoesView(two, idle, new Set())).toEqual(deriveEchoesView(two, idle));
+  });
+});
+
 describe('deriveEchoesView', () => {
   it('shows loading, then the empty state, then the list', () => {
     expect(deriveEchoesView({ status: 'loading', data: null }, idle)).toEqual({ kind: 'loading' });

@@ -1,18 +1,20 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { useState } from 'react';
-import { Pressable, Text } from 'react-native';
+import { Pressable, StyleSheet, Text } from 'react-native';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 
 import { ThemeProvider } from '@/design/theme';
 import { tokens } from '@/design/tokens';
 import { ownWindowOpen } from '@/state/ownWindows';
 import { usePreferences } from '@/state/preferences';
-import { reanimatedMock } from '@/testing/reanimatedMock';
+import { animationClock, reanimatedMock } from '@/testing/reanimatedMock';
 import {
   backOutOfDialog,
   chooseInDialog,
   dialogChoices,
   dialogPrimary,
+  drawDialogHost,
+  layOutSheet,
   modalHost,
   openDialog,
   renderDialogHost,
@@ -504,5 +506,79 @@ describe('a choice that takes the page away', () => {
     await act(async () => {
       await jest.advanceTimersByTimeAsync(1500);
     });
+  });
+});
+
+// The walk (v10): "Delete this echo" was first drawn opaque and 68 dp above its place, and "Delete all
+// data" faint and above it. A dialog's first drawn frame is its start state, however late the system
+// draws its window, and it rises from there once the window has been laid out (see Sheet).
+describe('the first frame of a dialog', () => {
+  type Look = { opacity?: number; transform?: { translateY: number }[] };
+  const look = (id: string) =>
+    StyleSheet.flatten(screen.getByTestId(id, { includeHiddenElements: true }).props.style) as Look;
+  const drawn = () => ({
+    sheet: look('dialog-paper').opacity,
+    low: look('dialog-paper').transform?.[0]?.translateY,
+    scrim: look('dialog-scrim').opacity,
+  });
+  const START = { sheet: 0, low: 24, scrim: 0 };
+  const advance = (ms: number) =>
+    act(async () => {
+      await jest.advanceTimersByTimeAsync(ms);
+    });
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    animationClock.stepped = true;
+  });
+  afterEach(() => {
+    animationClock.reset();
+    jest.useRealTimers();
+  });
+
+  it('is the start state however late its window is drawn, and rises once it is laid out', async () => {
+    await renderDialogHost();
+    await ask('Delete this echo?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive' },
+    ]);
+    // The system takes 400 ms to put the window on the screen: that is its first frame.
+    await advance(400);
+    await drawDialogHost();
+    expect(drawn()).toEqual(START);
+    await layOutSheet();
+    await advance(16);
+    await drawDialogHost();
+    expect(drawn().sheet).toBeLessThan(1);
+    expect(drawn().low).toBeGreaterThan(0);
+    await advance(700);
+    await drawDialogHost();
+    expect(drawn()).toEqual({ sheet: 1, low: 0, scrim: 1 });
+  });
+
+  it('is the start state for the next dialog, too, after the first has been answered and gone', async () => {
+    await renderDialogHost();
+    await ask('Delete this echo?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive' },
+    ]);
+    await layOutSheet();
+    await advance(700);
+    await chooseInDialog('Cancel');
+    await advance(1500);
+    await drawDialogHost();
+    expect(openDialog()).toBeNull();
+
+    await ask('Delete all data?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Continue', style: 'destructive' },
+    ]);
+    await advance(400);
+    await drawDialogHost();
+    expect(drawn()).toEqual(START);
+    await layOutSheet();
+    await advance(700);
+    await drawDialogHost();
+    expect(drawn()).toEqual({ sheet: 1, low: 0, scrim: 1 });
   });
 });

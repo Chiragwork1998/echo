@@ -1,21 +1,21 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useRef } from 'react';
+import { Pressable, StyleSheet, TextInput, View, type TextInputProps } from 'react-native';
 import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
 import Animated, {
   Easing,
   ReduceMotion,
   runOnJS,
-  useAnimatedReaction,
+  useAnimatedProps,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
 
-import { EchoText } from '@/components/EchoText';
 import { TrackedText } from '@/components/TrackedText';
 import { copy } from '@/content/copy';
 import { cue } from '@/design/haptics';
+import { textStyle } from '@/design/typography';
 
 import { DialFace, HandleLayer, REFERENCE_SIZE } from './DialFace';
 import { Glass } from './Glass';
@@ -26,12 +26,13 @@ import {
   minutesToAngle,
   nearestAngle,
   pointToAngle,
+  SNAP_MINUTES,
   snapMinutes,
   stepMinutes,
   type ClockText,
 } from './time';
 import { useTone, type Tone } from './tone';
-import { useClockText } from './useClock';
+import { useClockTable } from './useClock';
 
 // Dial size by viewport: 262 pt on the 393 pt reference, within the spec's 248 to 292 range.
 const SIZE = { min: 248, max: 292, ratio: 262 / 393 };
@@ -59,55 +60,101 @@ type Props = {
   disabled?: boolean;
 };
 
+// Where the number sits, at reference size. The number is drawn by the UI thread into fields that
+// cannot be measured again as it changes, so each has a width of its own: the hours and minutes are
+// set against the right of theirs, and AM or PM against the left of its, which is how the pair is
+// centred for the times people choose. A 24-hour clock has no AM or PM and one centred field.
+const MAIN_BOX = 104;
+const PERIOD_BOX = 52;
+const PERIOD_GAP = 8;
+const PAIR = MAIN_BOX + PERIOD_GAP + PERIOD_BOX;
+/** How far right of the dial's centre the join of the two sits: the pair is centred for 9:30 and 6:00. */
+const JOIN = 9;
+/** The pair, centred in its box, has the join this far right of centre; it is moved to JOIN. */
+const SHIFT = JOIN - (MAIN_BOX - PAIR / 2);
+
+const AnimatedInput = Animated.createAnimatedComponent(TextInput);
+
 /**
- * The time written on the dial: the time the handle is at. A far tap or a fast drag carries the
- * handle round over half a second, and the number rides with it, a step at a time: written at once it
- * was at its place while the handle was still turning, and read as a jump. What was chosen is still
- * said at once, to a screen reader and by the button's name, from the dial's `clock`. It is a part of
- * its own so that each step redraws only the number, never the face.
+ * The time written on the dial: the time the handle is at, in every frame. The UI thread draws it
+ * from the handle's own angle, as ReText draws a number, so it never waits for JS: a number that JS
+ * was told to write, by a message from the UI thread, was seen half a second behind the handle on a
+ * far tap (the walk, v9 and v10), and any round trip can be late on a real phone. What was chosen is
+ * still said at once, to a screen reader and by the button's name, from the dial's `clock`, and this
+ * is hidden from screen readers so that nothing is said twice. It is a part of its own so that
+ * nothing else on the face is drawn again for it.
  */
-function DialTime({
-  angle,
-  start,
-  k,
-  tone,
-}: {
-  angle: SharedValue<number>;
-  start: number;
-  k: number;
-  tone: Tone;
-}) {
-  const [shown, setShown] = useState(start);
-  const written = useClockText(shown);
-  // The UI thread says that the handle has moved, and JS looks where it is. A message that carried
-  // the time would arrive late on a busy thread, and every one queued behind it would write a time the
-  // handle had passed: the number was seen reading 11:30 PM with the handle near 8:30 AM.
-  const catchUp = useCallback(() => setShown(snapMinutes(angleToMinutes(angle.get()))), [angle]);
-  useAnimatedReaction(
-    () => snapMinutes(angleToMinutes(angle.get())),
-    (now, was) => {
-      if (now !== was) runOnJS(catchUp)();
-    },
-  );
+function DialTime({ angle, k, tone }: { angle: SharedValue<number>; k: number; tone: Tone }) {
+  const { mains, periods, twentyFour } = useClockTable();
+  // `text` is how an animated field is written on the UI thread, `defaultValue` its first drawing.
+  const main = useAnimatedProps(() => {
+    const text = mains[snapMinutes(angleToMinutes(angle.get())) / SNAP_MINUTES] ?? '';
+    return { text, defaultValue: text } as TextInputProps;
+  });
+  const period = useAnimatedProps(() => {
+    const text = periods[snapMinutes(angleToMinutes(angle.get())) / SNAP_MINUTES] ?? '';
+    return { text, defaultValue: text } as TextInputProps;
+  });
+  const field = {
+    ...textStyle('displayL', { serif: true }),
+    color: tone.ink,
+    padding: 0,
+    margin: 0,
+    fontVariant: ['lining-nums'],
+  } as const;
   return (
-    <EchoText
-      variant="displayL"
-      serif
-      allowFontScaling={false}
-      style={[styles.main, { fontSize: 43 * k, lineHeight: 50 * k, color: tone.ink }]}
+    <View
+      testID="dial-time"
+      pointerEvents="none"
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={[
+        styles.written,
+        twentyFour
+          ? { width: TIME_BOX.width * k }
+          : { width: PAIR * k, transform: [{ translateX: SHIFT * k }] },
+      ]}
     >
-      {written.main}
-      {written.period ? (
-        <EchoText
-          variant="displayL"
-          serif
+      <AnimatedInput
+        testID="dial-time-main"
+        animatedProps={main}
+        editable={false}
+        allowFontScaling={false}
+        underlineColorAndroid="transparent"
+        style={[
+          field,
+          styles.main,
+          twentyFour ? styles.alignCentre : styles.alignEnd,
+          {
+            fontSize: 43 * k,
+            lineHeight: 50 * k,
+            height: 50 * k,
+            width: (twentyFour ? TIME_BOX.width : MAIN_BOX) * k,
+          },
+        ]}
+      />
+      {twentyFour ? null : (
+        <AnimatedInput
+          testID="dial-time-period"
+          animatedProps={period}
+          editable={false}
           allowFontScaling={false}
-          style={{ fontSize: 34 * k, letterSpacing: 1.2, color: tone.ink }}
-        >
-          {` ${written.period}`}
-        </EchoText>
-      ) : null}
-    </EchoText>
+          underlineColorAndroid="transparent"
+          style={[
+            field,
+            styles.alignStart,
+            {
+              fontSize: 34 * k,
+              lineHeight: 50 * k,
+              height: 50 * k,
+              width: PERIOD_BOX * k,
+              marginLeft: PERIOD_GAP * k,
+              letterSpacing: 1.2,
+            },
+          ]}
+        />
+      )}
+    </View>
   );
 }
 
@@ -245,7 +292,7 @@ export function TimeDial({
           },
         ]}
       >
-        <DialTime angle={angle} start={minutes} k={k} tone={tone} />
+        <DialTime angle={angle} k={k} tone={tone} />
       </Pressable>
 
       <View
@@ -288,7 +335,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  main: { textAlign: 'center', letterSpacing: 0.4, fontVariant: ['lining-nums'] },
+  written: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center' },
+  main: { letterSpacing: 0.4 },
+  alignEnd: { textAlign: 'right' },
+  alignStart: { textAlign: 'left' },
+  alignCentre: { textAlign: 'center' },
   rule: { position: 'absolute', height: 1 },
   caption: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
 });
