@@ -52,16 +52,17 @@ const fresh = (): Moment => ({ reached: false, wake: null });
  * own, for a UI thread that is not there at all, and `begin` always resolves: a closing can be hurried,
  * and one that is torn down resolves at once, so a session can never hang.
  *
- * The next screen is asked for once the UI thread has begun the sink, and not before. Asked for as the
- * cover landed, it was mounted while the book rested: on the walked emulator a screen appears within a
- * frame or two (the stack's fade is not seen), its plate covered the book, and the sink was cut in four
- * closings of eight. Mounting it also stalled the UI thread, so the rest ran 100 to 350 ms where the
- * ritual means 40 to 80. Asked for as the sink begins, it is mounted while the book goes, and it arrives
- * by its own fade over what is left of it. The sink is the UI thread's, begun by the cover's own landing
- * after the rest, with nothing asked of JS; a closed book that was asked something rests and sinks there
- * too once it is answered. Reduce Motion has no cover to wait for: the book fades where it is, and the
- * next screen is asked for as that fade begins (the UI thread's word, as for the hurried book), so that it
- * arrives over the fading book and not after it has gone.
+ * The next screen is asked for as the cover lands, once the landing has been felt, and fades itself in
+ * from nothing (RehearseScreen, CompletionArrival) over the book as it rests and sinks. The rest and the
+ * sink are the UI thread's, begun by the cover's own landing with nothing asked of JS; a closed book that
+ * was asked something rests and sinks there too once it is answered, and the next screen is asked for as
+ * it is let go. Asked for once the sink had begun, the screen came after the book had gone, and the sky was
+ * bare between the two for 100 to 220 ms in every closing (walk v12); asked for as the cover landed before
+ * it faded itself in, it appeared within a frame or two and its plate cut the book away before the sink
+ * was drawn (walk v11). The sink's first frame is still listened for, after a landing, so that JS can ask
+ * for a sink the UI thread has lost. Reduce Motion has no cover to wait for: the book fades where it is,
+ * and the next screen is asked for as that fade begins (the UI thread's word, as for the hurried book), so
+ * that it arrives over the fading book and not after it has gone.
  */
 export function useBookClosing(ritual: Ritual, reduced: boolean) {
   const [closing, setClosing] = useState<ClosingState | null>(null);
@@ -195,16 +196,18 @@ export function useBookClosing(ritual: Ritual, reduced: boolean) {
             state({ sinking: true });
           } else if (options.atContact) {
             // Answered: the closed book rests and sinks on the UI thread, as one that was asked nothing does from
-            // its landing, and the next screen waits for the sink to have begun.
+            // its landing. The next screen is asked for now, and fades itself in over it (RehearseScreen,
+            // CompletionArrival). Waiting for the sink's first frame left the sky bare between them (walk v12).
             state({ sinking: true });
-            await until(moments.current.sinkBegun, plan.close.gap + UI_HANG_MS);
           } else {
             // The landing began the rest and the sink on the UI thread, with nothing asked of JS. The next screen
-            // waits for the sink's first frame. A UI thread that landed the cover and then lost its word is let go
-            // of a net after the rest, and JS asks for the sink (the book does not begin it a second time).
-            const sinks = await until(moments.current.sinkBegun, netAfterBegin(plan.close.gap));
-            if (!live()) return;
-            if (!sinks) state({ sinking: true });
+            // is asked for now, and fades itself in over the resting and sinking book: asked for once the sink had
+            // begun, it came after the book had gone, and the sky was bare for 100 to 220 ms every time (walk v12).
+            // A UI thread that landed the cover and then lost its word is let go of a net after the rest, and JS
+            // asks for the sink (the book does not begin it a second time).
+            void until(moments.current.sinkBegun, netAfterBegin(plan.close.gap)).then((sinks) => {
+              if (live() && !sinks) state({ sinking: true });
+            });
           }
           if (!live()) return;
           resolve();

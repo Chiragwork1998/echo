@@ -124,7 +124,9 @@ type Props = {
   onLanded?: () => void;
   /**
    * The closing: the UI thread has drawn the first frame of the book's sink (or of its fade), however late
-   * that is, and whoever began it. The next screen is asked for then, and not before (./useBookClosing).
+   * that is, and whoever began it. A hurried book and Reduce Motion's fade ask for the next screen then.
+   * After a landing it has been asked for already, and this only tells JS that it need not ask for the sink
+   * itself (./useBookClosing).
    */
   onSinkBegun?: () => void;
   /**
@@ -405,9 +407,9 @@ export function BookStage({
     // The book sinks from the landing, on the UI thread, and not when JS has heard of it and has had its turn:
     // a JS thread busy with anything at all (a list refreshing, a screen mounting) held a sink that waited on a
     // JS timer at rest for 0.4 to 1 s on the walked emulator, where the ritual means 40 to 80 ms. So the
-    // descent's own end begins it, after the rest, and the next screen is only asked for once it has begun. Not
-    // for a descent that something cancelled (a tap hurries the book), and not while the closed book is being
-    // asked something: that rests and sinks once it is answered, which only JS knows.
+    // descent's own end begins it, after the rest, while JS mounts the next screen it asked for at the landing.
+    // Not for a descent that something cancelled (a tap hurries the book), and not while the closed book is
+    // being asked something: that rests and sinks once it is answered, which only JS knows.
     const rest = close.gap;
     const sinkMs = close.sink;
     const landed = (finished?: boolean) => {
@@ -488,8 +490,8 @@ export function BookStage({
     // take its whole time again.
   }, [sinking, shutHurry, shutReduced, shutRitual, sink, sinkBegunHere]);
   // The book has begun to sink: said from the sink's own first frame, on the UI thread, whoever began it and
-  // however late. The next screen is asked for then (./useBookClosing), and so it is never mounted over a
-  // book that is still at rest: the walked emulator showed it in a frame or two, and its plate cut the book.
+  // however late. The hurried book and Reduce Motion's fade ask for the next screen then; after a landing it
+  // only tells JS that it need not ask for the sink itself (./useBookClosing).
   useAnimatedReaction(
     () => sink.get() > 0,
     (moving, was) => {

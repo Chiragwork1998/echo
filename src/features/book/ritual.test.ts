@@ -46,15 +46,15 @@ describe('the closing ritual', () => {
   });
 
   it('puts the cover down at 840 ms and the book sinking at 920, and at 450 and 490 once practised', () => {
-    expect(closeTimeline(FULL)).toEqual({ contactAt: 840, goAt: 920, sinkAt: 920, endAt: 1380 });
-    expect(closeTimeline(SHORT)).toEqual({ contactAt: 450, goAt: 490, sinkAt: 490, endAt: 750 });
+    expect(closeTimeline(FULL)).toEqual({ contactAt: 840, goAt: 840, sinkAt: 920, endAt: 1380 });
+    expect(closeTimeline(SHORT)).toEqual({ contactAt: 450, goAt: 450, sinkAt: 490, endAt: 750 });
   });
 
-  it('asks for the next screen as the book begins to sink, after its rest, so the sink is never cut', () => {
+  it('asks for the next screen as the cover lands, so that it fades in over the book as it rests and sinks', () => {
     for (const ritual of [FULL, SHORT]) {
       const { contactAt, goAt, sinkAt, endAt } = closeTimeline(ritual);
-      expect(goAt).toBe(sinkAt);
-      expect(sinkAt - contactAt).toBe(ritual.close.gap);
+      expect(goAt).toBe(contactAt);
+      expect(sinkAt - goAt).toBe(ritual.close.gap);
       expect(endAt - sinkAt).toBe(ritual.close.sink);
     }
   });

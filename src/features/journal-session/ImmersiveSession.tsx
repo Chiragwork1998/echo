@@ -377,13 +377,15 @@ export function ImmersiveSession({
     return () => subscription.remove();
   }, [promptShown]);
 
-  // Once the entry is kept, the book shuts before the next screen comes (the session asks for it
-  // when it is ready to go). The keys go first, so the book settles back to its place as it closes
-  // (D-010). The first time, the closed book asks whose it is.
+  // Once the entry is kept, the book shuts before the next screen comes. The session asks for it as the cover
+  // lands, or, when the closed book has asked whose it is (the first time), as it is let go once answered; the
+  // screen fades itself in over the book as it rests and sinks (src/features/book/useBookClosing.ts). The keys
+  // go first, so the book settles back to its place as it closes (D-010).
   //
-  // The journal hears of the entry as the next screen is asked for, and not while the book shuts: told
-  // as it was kept, Home beneath and every list read and drew themselves again through the leaf, the
-  // cover and its landing (holdCommitNews). The book itself counts the entry at once (`echoes`).
+  // The journal hears of the entry as the next screen is asked for, after the landing has been felt, and not
+  // while the book shuts: told as it was kept, Home beneath and every list read and drew themselves again
+  // through the leaf, the cover and its landing (holdCommitNews). The book itself counts the entry at once
+  // (`echoes`).
   const { onLeave } = session;
   useEffect(() => {
     if (!bookInView || !pageOpen) return;

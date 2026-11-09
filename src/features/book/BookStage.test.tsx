@@ -933,7 +933,8 @@ describe('the book sinks from the landing, on the UI thread, whatever JS is doin
   // The sink used to be asked for by JS, a timer after the landing, and so it waited behind whatever JS was
   // doing (mounting the next screen, above all): the walked emulator rested the shut book for 0.4 to 1 s, where
   // the ritual means 40 to 80 ms. The UI thread that lands the cover begins the sink itself, after the rest,
-  // and says so from the sink's first frame; the next screen is asked for only then (./useBookClosing).
+  // and says so from the sink's first frame, while JS mounts the next screen it asked for at the landing
+  // (./useBookClosing).
   beforeEach(() => {
     animationClock.stepped = true;
   });
