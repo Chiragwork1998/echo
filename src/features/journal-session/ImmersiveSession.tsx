@@ -191,9 +191,16 @@ export function ImmersiveSession({
   const bookFrame = { ...clearOfKeyboard, top: clearOfKeyboard.top + bookDrop };
   const bookBottom = bookFrame.top + bookFrame.height;
   const shelfOffset = useShelfOffset();
-  // A draft that is being continued is not a reason to choose a book again.
-  const resumed = ready && draft.resumed && draft.hasContent;
-  const shelf = onboarding && book && picked === null && !resumed;
+  // Where First Echo begins is decided once, when the draft has first loaded (or failed to, which the
+  // page then says). A draft being continued is not a reason to choose a book again, and emptying its
+  // page later is not either. Until then neither the shelf nor the book is drawn: a shelf drawn first
+  // painted its opaque studio over the photograph for a continued draft, then faded it away (walk
+  // v10, a flat slate for 0.6 s), and a book drawn first would open and give way to the shelf.
+  const [begins, setBegins] = useState<'shelf' | 'book' | null>(null);
+  if (onboarding && begins === null && draft.status !== 'loading') {
+    setBegins(ready && draft.resumed && draft.hasContent ? 'book' : 'shelf');
+  }
+  const shelf = onboarding && book && picked === null && begins === 'shelf';
   const studio = useSharedValue(shelf ? 1 : 0);
   useEffect(() => {
     studio.set(
@@ -211,7 +218,7 @@ export function ImmersiveSession({
     setShelfLeaving(true);
     rememberVolume(chosen.id);
   };
-  const bookInView = book && !shelf;
+  const bookInView = book && !shelf && (!onboarding || begins !== null);
   const pageOpen = !book || opened;
 
   // Whose book this is (./NamePrompt.tsx). Only the daily book can be named: First Echo is onboarding,

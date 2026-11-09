@@ -206,6 +206,64 @@ describe('First Echo at the shelf', () => {
     await waitFor(() => expect(field(copy.firstEcho.title).props.value).toBe(BODY));
     expect(screen.queryAllByRole('button', { name: /, volume \d of 8$/ })).toHaveLength(0);
   });
+
+  it('draws neither shelf nor book until it knows, and never the studio for a draft being continued', async () => {
+    await journal.saveDraft('d1', emptyContent({ body: BODY }));
+    // The draft is read slowly, as from a phone's sealed store on a cold start.
+    let open = () => undefined as void;
+    const read = new Promise<void>((resolve) => (open = resolve));
+    const slow: Journal = { ...journal, latestDraft: () => read.then(() => journal.latestDraft()) };
+    setJournal(slow);
+    await render(<JournalSession variant="onboarding" />);
+    const studio = () =>
+      StyleSheet.flatten(
+        screen.getByTestId('shelf-backdrop', { includeHiddenElements: true }).props.style,
+      ).opacity;
+    // Walk v10: the opaque studio and the shelf were drawn over the photograph, then taken away.
+    expect(studio()).toBe(0);
+    expect(shelf()).toBeNull();
+    expect(screen.queryByTestId('book-stage', { includeHiddenElements: true })).toBeNull();
+
+    await act(async () => open());
+    await waitFor(() => expect(field(copy.firstEcho.title).props.value).toBe(BODY));
+    expect(studio()).toBe(0);
+    expect(shelf()).toBeNull();
+  });
+
+  it('brings the shelf in, over the photograph, once it knows the page is new', async () => {
+    let open = () => undefined as void;
+    const read = new Promise<void>((resolve) => (open = resolve));
+    setJournal({ ...journal, latestDraft: () => read.then(() => journal.latestDraft()) });
+    const view = await render(<JournalSession variant="onboarding" />);
+    expect(shelf()).toBeNull();
+    await act(async () => open());
+    await waitFor(() => expect(shelf()).toBeTruthy());
+    expect(screen.queryByTestId('book-stage', { includeHiddenElements: true })).toBeNull();
+    // An animated style is read when the screen is next drawn.
+    await view.rerender(
+      <ThemeProvider crossfade={false}>
+        <JournalSession variant="onboarding" />
+      </ThemeProvider>,
+    );
+    expect(
+      StyleSheet.flatten(
+        screen.getByTestId('shelf-backdrop', { includeHiddenElements: true }).props.style,
+      ).opacity,
+    ).toBe(1);
+  });
+
+  it('keeps the book open when the page of a continued draft is emptied', async () => {
+    await journal.saveDraft('d1', emptyContent({ body: BODY }));
+    await render(<JournalSession variant="onboarding" initialMode="write" />);
+    await waitFor(() => expect(field(copy.firstEcho.title).props.value).toBe(BODY));
+    await waitFor(() => expect(field(copy.firstEcho.title).props.editable).toBe(true));
+    await fireEvent.changeText(field(copy.firstEcho.title), '');
+    expect(field(copy.firstEcho.title).props.value).toBe('');
+    // Emptying the page is not choosing a book again.
+    expect(screen.queryAllByRole('button', { name: /, volume \d of 8$/ })).toHaveLength(0);
+    expect(shelf()).toBeNull();
+    expect(screen.getByTestId('book-stage', { includeHiddenElements: true })).toBeTruthy();
+  });
 });
 
 describe('the daily echo on vellum', () => {
